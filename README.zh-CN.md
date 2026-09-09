@@ -2,36 +2,37 @@
 
 中文 · [English](README.md) · [日本語](README.ja.md)
 
-一个本地优先的论文／专利调查 harness。用户用自然语言描述需求，LLM 逐步澄清关键歧义，生成带版本的 JSON。用户主动发起更新后，系统自动检索和获取资料，与冻结的本地参照库比较，并生成报告及累计人工判断清单。
+本地文献／专利调查框架。目标流程：自然语言需求 → 版本化 JSON → 检索 → 与冻结参照库比较 → 人工判断与报告。
 
-**当前状态：设计交接，尚未实现发布版。** 本仓库提供需求、架构、数据契约和验收标准。另一个 Terra 任务负责实现；随后在设计任务中进行测试、聚合物设计案例验收和 demo 准备。指南中的命令是待实现接口，当前不能视为可运行功能。
+**当前为 D2 合成夹具框架，最终框架验收待完成。** demo 使用合成文本和本地来源／模型函数，实际运行 LangGraph、SQLite、引用核查及中英日报告；无需 API 密钥，不调用外部 API。
 
-## 已确定的产品行为
+## 快速开始
 
-- 需求对话、检索、报告和人工清单支持中英日。
-- 首版本地运行，由用户不定时发出更新指令；不默认后台定时执行。
-- 原文、索引和 Embedding 留在本地，相关证据片段可发送到所配置的模型 API。
-- 模型 API 与论文／专利数据源 API 分开配置；已支持的服务通过配置接入。
-- 证据不足或冲突时继续运行，标为观察项并进入人工清单。
-- 人工判断只影响单条资料；明确要求推广时才修改全局规则。
-- 每份报告保留原文位置、测试条件、配置版本和参照库版本。
+需要 Python 3.11+，在 Windows 源码目录执行：
 
-## 文档入口
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install .
+.venv\Scripts\rh demo --workspace .local\demo
+.venv\Scripts\rh status --workspace .local\demo
+```
 
-| 文档 | 用途 |
-|---|---|
-| [需求规格](docs/PRD.md) | 功能范围、需求编号、默认行为 |
-| [架构设计](docs/ARCHITECTURE.md) | 模块职责、调查流程、恢复与依赖 |
-| [数据契约](docs/CONTRACTS.md) | JSON、证据、判定和人工清单的精确定义 |
-| [验收方案](docs/ACCEPTANCE.md) | 框架自测、真实集成、案例与发布门槛 |
-| [Terra 交接](docs/HANDOFF_TERRA.md) | 实现顺序、交付内容和停止位置 |
-| [决策记录](docs/DECISIONS.md) | 已确认事项、工程默认值和案例待定项 |
-| [中文使用指南](docs/USER_GUIDE.zh-CN.md) | 目标用户流程与命令接口 |
+安装会下载声明的依赖，demo 本身离线运行。macOS/Linux 对应 `.venv/bin/python`、`.venv/bin/rh`；当前独立运行验收针对 Windows。
 
-[调查 JSON Schema](schemas/research-spec.schema.json) · [运行配置 Schema](schemas/runtime.schema.json) · [聚合物设计草案](examples/polymer-design.draft.json)
+demo 生成两条合成候选、核查后的判断、一条人工问题、三份 HTML、三份 Markdown、规范 JSON 和人工清单 CSV。打开命令返回的报告目录即可阅读。
 
-首个案例为**聚合物设计**。领域知识放在调查配置里，不写死到通用引擎。草案没有实验数值、指定目标聚合物或科学结论。
+## 当前能力
 
-拟采用 Python、LangGraph、Docling、按需使用的 LlamaIndex 模块、Qdrant 和 SQLite。首版数据源为 OpenAlex 与 EPO OPS；Lens 留作后续可选接入。依据和接入边界见架构文档。
+- ResearchSpec 校验、手改后的自动修订、冻结运行输入。
+- 本地文本原文与证据，参照快照和新发现分离。
+- 可替换的 fixture 来源／模型函数与最小 LangGraph 流程。
+- 引用归属／原文匹配、持久人工决定、候选上限和明确的部分完成／失败状态。
+- 供未来 GUI 调用的共享 Python 服务、结构化结果、安全错误、产物引用和进度回调。
 
-最终交付目标是带可复现 demo 的 GitHub 开源项目。仓库归属、最终许可证和 demo 材料的再分发条件在发布阶段确定；目前尚未发布。
+真实模型／来源 API、OpenAlex/EPO、生产向量 RAG、PDF/OCR、独立 chat、恢复和 GUI **尚未接入 D2**。安装可选依赖不会自动启用这些功能。未支持的 live/chat 路径明确拒绝；`lexical_test_only` 仅保留测试兼容。当前由宿主助手澄清需求并整理 JSON。
+
+[中文指南](docs/USER_GUIDE.zh-CN.md) · [当前范围](docs/SCOPE_AUDIT.md) · [数据／适配器契约](docs/CONTRACTS.md) · [验收 K01–K07](docs/ACCEPTANCE.md) · [需求](docs/PRD.md) · [架构](docs/ARCHITECTURE.md) · [决策](docs/DECISIONS.md)
+
+后续首个案例为聚合物设计。[案例草案](examples/polymer-design.draft.json) 仍有待定需求，不是可运行的科学案例。真实 API 接入及案例／demo 验收后再发布 GitHub；当前没有科学案例或公开发布验收结论。
+
+密钥、私有原文和运行工作区不要提交 Git。包内演示仅含合成材料。产品调查由用户手动启动，没有默认后台定时任务。

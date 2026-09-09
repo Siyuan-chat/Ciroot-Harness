@@ -1,75 +1,86 @@
-# 日本語ユーザーガイド（実装予定のインターフェース）
+# 利用ガイド：D2 fixture フレームワーク
 
-Terra が実装するユーザーフローを定義します。現時点では rh コマンドは実行できません。インストール手順は実装後に検証して追記します。初版はローカルで動作し、ユーザーの指示で更新します。その後にポリマー設計の事例を検証します。
+D2 はオフライン処理と拡張インターフェースを検証する段階です。実際の API、実運用 RAG、PDF/OCR、独立 chat、GUI は未接続で、追加依存パッケージだけでは有効になりません。現在はホストのアシスタントが要件を確認し、ResearchSpec JSON を用意します。調査は手動で開始します。
 
-## 1. 作業領域と API
+## インストールと実行
 
-調査目的は research.json、サービスやモデルの選択は runtime.json に保存します。認証情報は環境変数で渡し、設定には変数名だけを記載します。
+Python 3.11+ が必要です。Windows のソースディレクトリで実行します。
 
-[実行設定テンプレート](../examples/runtime.example.json) のモデルは null で、未選択を示します。このままでは実行できません。Terra が実接続を検証したローカル多言語 Embedding の既定値を用意し、ユーザーは利用可能な生成モデルを設定します。Schema が正しくても API やモデルが利用できるとは限りません。
-
-OpenAlex と EPO の認証・本文収録範囲は別です。書誌情報が見つかっても全文を取得できるとは限りません。対応済みサービスは設定で変更でき、新しい API にはアダプターが必要です。
-
-原文、データベース、索引、対話履歴、レポートは workspace/ に保存し、既定では Git に含めません。Embedding はローカルで生成し、分析に必要な原文の抜粋は設定したモデルに送信できます。外部の音声文字起こしを chat に貼り付けられます。初版に録音機能はありません。
-
-## 2. 設定確認と調査目的の入力
-
-以下は実装予定のコマンドです。
-
-```text
-rh doctor --runtime runtime.json --workspace workspace
-rh chat --runtime runtime.json --workspace workspace --lang ja
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install .
+.venv\Scripts\rh demo --workspace .local\demo
+.venv\Scripts\rh status --workspace .local\demo
 ```
 
-doctor は既定でローカル検査のみを行い、認証情報、依存関係、モデル選択の不足を説明します。明示的なオンライン検査はローカル検査と区別します。
+依存パッケージの取得にはネットワークまたは準備済みキャッシュが必要ですが、デモにはネットワークもキーも不要です。ビルド済み wheel は `.venv\Scripts\python -m pip install path\research_harness-0.1.0-py3-none-any.whl` で導入できます。実資料とは別のデモ用ディレクトリを使います。macOS/Linux の実行ファイルは `.venv/bin/` 配下です。独立実行検証は現在 Windows が対象です。
 
-例えば「選定したポリマーの設計について、手元の論文と特許を参照して、設計方針と性能に関する証拠を比較したい」と伝えます。
+同梱 ready 設定はプロジェクト `fixture-demo`、合成候補2件、合成参照1件です。戻り値は `run_id/outcome/stage/error/artifacts.report` を含みます。出力先には3言語の HTML、3言語の Markdown、`report.json`、`review.csv` があり、標準では確認事項が1件作成されます。
 
-LLM は結果に影響する点を一つずつ確認し、既知の回答を利用して、要約とバージョン付き JSON を作成します。科学的な閾値を勝手に補いません。要件変更は新しい版として保存し、「調査を開始」「調査を更新」などの明確な指示で実行します。
+## 合成入力の変更
 
-[ポリマー設計の草案](../examples/polymer-design.draft.json) は方向性だけを記録したもので、完全な事例入力ではありません。自動実行されません。
+次を `prepare_fixture.py` として保存・実行すると、インストール済みの例をコピーできます。
 
-## 3. 参照資料の取り込み
-
-```text
-rh import ./my-paper.pdf --workspace workspace --collection baseline --kind paper
-rh import ./my-patent.xml --workspace workspace --collection baseline --kind patent
+```python
+from importlib.resources import files
+from pathlib import Path
+base = files('research_harness').joinpath('fixtures')
+for source, target in [('demo-spec.json', 'research.json'), ('demo.json', 'candidates.json')]:
+    Path(target).write_text(base.joinpath(source).read_text(encoding='utf-8'), encoding='utf-8')
 ```
 
-原文のバージョンと位置を保持します。新たに検索した資料は発見ライブラリに入り、参照ライブラリへの追加は明示的に行います。調査開始時に比較基準の版を固定します。
+topic、objectives、予算などを変更して実行します。
 
-## 4. 更新・再開・レポート
-
-chat で更新、進捗確認、注目点の変更を自然言語で指示できます。同じ機能を明示的なコマンドでも呼び出せます。
-
-```text
-rh validate --spec research.json
-rh run --spec research.json --runtime runtime.json --workspace workspace
-rh status --workspace workspace
-rh resume RUN_ID --runtime runtime.json --workspace workspace
-rh report RUN_ID --workspace workspace --languages zh,en,ja
+```powershell
+.venv\Scripts\rh validate --spec research.json
+.venv\Scripts\rh demo --workspace .local\custom --spec research.json --fixture candidates.json
 ```
 
-候補数、検索回数、モデル呼び出し、ダウンロード量、実行時間に上限を設けます。上限に達したら取得済み結果を保存し、部分レポートを生成します。モデル料金の見積もりは実際の請求額ではなく、料金情報がない場合はゼロではなく不明と表示します。
+validate は検証のみで、調査を開始しません。実行には `status=ready` と `unresolved_questions=[]` が必要です。同じ project/revision の内容を編集すると新しい改訂を保存し、同じ内容の再保存では既存版を再利用します。入力ファイルは上書きせず、過去の設定・参照・レポートを固定します。
 
-HTML/Markdown レポート、正規化 JSON、確認リストの CSV を出力します。三言語で事実と ID を共有し、検索完了で追加なしの場合と、データソースに接続できなかった場合を区別します。技術マップと注目項目から原文の証拠を参照できます。
+fixture の形式は `{"candidates":[{"id":"synthetic-1","quote":"Synthetic text.","locator":"line:1"}]}` です。ID は一意、quote は空でない文字列です。任意の `missing:true` は根拠不足を演示します。検索結果や科学的主張ではありません。`--spec` 指定時は標準の参照資料を自動追加しません。単純なローカル `.txt` を選ぶ場合：
 
-## 5. 人による判断
-
-```text
-rh review list --workspace workspace --lang ja
-rh review decide ISSUE_ID --decision watch --note "追加証拠を待ちながら注視" --workspace workspace
+```powershell
+.venv\Scripts\rh import baseline.txt --workspace .local\custom --collection baseline --kind paper
 ```
 
-判断は include（採用）、exclude（除外）、watch（継続注視）、request_more_evidence（追加調査依頼）です。人が watch を選んだ項目は判断済みで、未回答の証拠不足項目とは区別します。追加調査は次回のユーザー指示による実行時に行います。
+`reference_library.collection_ids/document_ids` で参照を選択します。新規候補は自動で基準になりません。ポリマー設計の例は後続の事例準備用 draft のままです。
 
-同じ問題を重複登録しません。新しい重要な証拠が得られた場合は過去の判断を残して再確認対象にします。三言語の状態は共通です。個別判断によって全体の判定基準は変わりません。全体を変更する場合は明示的に指示します。
+## 人による確認と再出力
 
-## 6. 結果の読み方
+実行結果の ID を `RUN_ID` と `ISSUE_ID` に入れます。
 
-- 未報告の値はゼロや不合格を意味しません。
-- 測定条件が異なる値を直接比較しません。
-- 要約、請求項、明細書、実施例、論文の実験結果を区別します。
-- 引用位置が正しくても結論の正しさが保証されるわけではなく、重要な判断は確認可能です。
-- 過去のレポートは当時の状態を保持します。新しい確認結果で履歴を消しません。
-- 現在は設計資料のみです。実装後はローカルテスト、実 API 検証、科学事例の受入結果を区別して示します。
+```powershell
+.venv\Scripts\rh review list --workspace .local\demo
+.venv\Scripts\rh review decide ISSUE_ID --decision watch --note "追加根拠を待って再確認" --workspace .local\demo
+.venv\Scripts\rh report RUN_ID --workspace .local\demo --languages zh,en,ja
+```
+
+include/exclude/watch は個別判断を保存して対応済みにします。request_more_evidence は未対応のまま残します。全体基準や過去のレポートは変更しません。過去の実行を再出力しても固定済みの事実を使い、現在の判断は review list で確認します。
+
+## Python と将来の GUI
+
+```python
+from research_harness.service import Harness
+from research_harness.errors import HarnessError
+h = Harness('.local/custom')
+try:
+    result = h.run_fixture('research.json', 'candidates.json', on_progress=lambda e: print(e))
+    print(h.status())
+    print(h.get_result(result['run_id']))
+    print(h.get_artifacts(result['run_id']))
+except HarnessError as exc:
+    print(exc.to_dict())
+finally:
+    h.close()
+```
+
+サービス自身は標準出力に書きません。進捗イベントは run_id/stage/status を含みます。get_result は解析済みの固定データ、get_artifacts は `{report,files}` と各ファイルの language/format/path、review_decide は更新した確認事項を返します。SQLite や CLI 出力の解析は不要です。
+
+`source_adapter(candidates)` と `model_adapter(spec,candidate,candidate_evidence,reference_evidence)` を差し替えられます。モデル出力は disposition/comparison_result/rationale と双方の引用 `{evidence_id,quote}` を持つ通常の JSON データです。所属と原文一致をフレームワークが検証します。[契約](CONTRACTS.md) を参照してください。実サービスには対応アダプターの実装が別途必要です。
+
+## 結果と範囲
+
+demo の終了コードは completed=0、partial=4、failed=3、不正入力=2 です。max_candidates 超過時は部分結果を保存し、情報源や出力の失敗も明示します。RH_INVALID_INPUT、RH_PRECONDITION、RH_NOT_FOUND、RH_EXPORT_FAILED、RH_UNSUPPORTED は安定したエラーコードです。公開エラーに外部例外の生テキストは含めません。
+
+代表的な予算／失敗経路を対象とし、クラッシュ復旧や全予算項目は保証しません。chat/live は未対応、lexical_test_only は旧テスト互換用です。原文、キー、SQLite、レポートは Git 対象外のワークスペースに保存します。実 API／資料庫の接続、ポリマー事例の受入、GitHub 公開は後続段階です。
