@@ -13,3 +13,9 @@ class PreflightError(HarnessError):
 
 class BusyError(HarnessError):
     code = "RH_WORKSPACE_BUSY"
+
+class NotFoundError(HarnessError):
+    code = "RH_NOT_FOUND"
+
+class ExportError(HarnessError):
+    code = "RH_EXPORT_FAILED"

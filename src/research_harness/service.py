@@ -2,7 +2,7 @@ from __future__ import annotations
 import csv, html, json, os, shutil, sys, time
 from pathlib import Path
 from .contracts import fingerprint, load_json, validate_runtime, validate_spec
-from .errors import PreflightError, ValidationError
+from .errors import PreflightError, ValidationError, NotFoundError, ExportError
 from .storage import Store
 from .ingestion import parse
 from .retrieval import search
@@ -40,8 +40,10 @@ class Harness:
             if missing: problems.append("missing hybrid retrieval components: "+", ".join(missing))
         return {"ok":not problems,"problems":problems,"optional_components":optional,"network_called":False}
     def import_document(self,path,collection,kind):
-        ident=self.store.import_file(path,collection,kind)
-        raw=Path(path).read_bytes(); text,evidence,errors=parse(path,raw)
+        try:
+            ident=self.store.import_file(path,collection,kind); raw=Path(path).read_bytes()
+        except OSError: raise ValidationError("cannot read import input")
+        text,evidence,errors=parse(path,raw)
         self.store.db.execute("UPDATE documents SET content=?,parse_status=?,parse_errors=? WHERE id=?",(text,"parsed" if not errors else "failed",json.dumps(errors,ensure_ascii=False),ident)); self.store.db.commit()
         self.store.add_evidence(ident,evidence)
         return {"document_id":ident,"evidence_count":len(evidence),"parse_errors":errors}
@@ -76,8 +78,11 @@ class Harness:
         data={"run_id":run_id,"status":status,"execution_mode":manifest["execution_mode"],"synthetic":manifest["synthetic"],"baseline_document_ids":baseline,"sources":manifest["sources"],"documents":[{"id":d["id"],"filename":d["filename"],"kind":d["kind"],"collection":d["collection_name"]} for d in frozen],"issues":self.store.issues(),"technical_map":[{"id":r["document_id"],"route":"unclassified","reported_metrics":"unknown"} for r in retrieval],"retrieval":{"mode":"lexical_test_only" if runtime["retrieval"]["mode"]=="lexical_test_only" else "lexical","results":retrieval},"limits":manifest["notes"]}
         self.store.finish_run(run_id,status,manifest,data); self.report(run_id, spec["languages"]["reports"]); return run_id
     def report(self,run_id,languages):
+        try: return self._write_report(run_id,languages)
+        except OSError: raise ExportError("report export failed")
+    def _write_report(self,run_id,languages):
         run=self.store.run(run_id)
-        if not run: raise KeyError(run_id)
+        if not run: raise NotFoundError("resource not found")
         manifest=json.loads(run["manifest"]); data=json.loads(run["report_data"] or "null")
         if data is None: raise PreflightError("run has no frozen report data")
         out=self.workspace/"reports"/run_id; out.mkdir(parents=True,exist_ok=True); (out/"report.json").write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
@@ -126,18 +131,24 @@ class Harness:
         outcome=result.get("outcome","completed"); error=result.get("error"); stage=error.get("stage","report") if error else "report"
         for issue in result["issues"]: self.store.create_issue(issue)
         data={"run_id":run_id,"status":outcome,"execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":result["candidates"],"candidates":result["candidates"],"findings":result["findings"],"baseline_document_ids":[d["id"] for d in baseline],"reference_evidence":reference_evidence,"sources":{"fixture":{"status":"failed" if outcome=="failed" else "complete"}},"limits":result.get("limits",[]),"error":error}
-        self.store.finish_run(run_id,outcome,{"synthetic":True,"sources":data["sources"],"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])
+        self.store.finish_run(run_id,outcome,{"synthetic":True,"sources":data["sources"],"notes":["synthetic fixture"]},data)
+        try: out=self.report(run_id,["zh","en","ja"])
+        except ExportError as e:
+            if outcome!="failed": outcome="partial"
+            error={**e.to_dict(),"stage":"report"}; stage="report"; data.update(status=outcome,error=error)
+            self.store.finish_run(run_id,outcome,{"synthetic":True,"sources":data["sources"],"notes":["synthetic fixture"]},data); out=self.workspace/"reports"/run_id
         if on_progress:on_progress({"run_id":run_id,"stage":stage,"status":outcome})
         return {"run_id":run_id,"outcome":outcome,"stage":stage,"error":error,"stages":result["stages"],"issues":result["issues"],"artifacts":{"report":str(out)}}
     def get_result(self,run_id):
         run=self.store.run(run_id)
-        if not run: raise KeyError(run_id)
+        if not run: raise NotFoundError("resource not found")
         data=json.loads(run.get("report_data") or "{}")
         out=self.workspace/"reports"/run_id
         return {"run_id":run_id,"project_id":run["project_id"],"revision":run["revision"],"outcome":run["status"],"stage":(data.get("error") or {}).get("stage","report"),"error":data.get("error"),"limits":data.get("limits",[]),"artifacts":self.get_artifacts(run_id),"report_data":data,"findings":data.get("findings",[]),"issues":data.get("issues",[])}
     def get_artifacts(self,run_id):
         out=self.workspace/"reports"/run_id
-        if not self.store.run(run_id) or not out.exists(): raise KeyError(run_id)
+        if not self.store.run(run_id): raise NotFoundError("resource not found")
+        if not out.is_dir(): return {"report":str(out),"files":[]}
         files=[]
         for path in out.iterdir():
             parts=path.name.split("."); files.append({"language":parts[1] if len(parts)>2 else None,"format":parts[-1],"path":str(path)})
@@ -145,5 +156,7 @@ class Harness:
     def review_list(self):
         return [{**i,"events":json.loads(i["events"])} for i in self.store.issues()]
     def review_decide(self,issue,decision,note):
-        self.store.decide(issue,decision,note); return next(i for i in self.review_list() if i["id"]==issue)
+        try: self.store.decide(issue,decision,note)
+        except KeyError: raise NotFoundError("resource not found")
+        return next(i for i in self.review_list() if i["id"]==issue)
     def close(self): self.store.close()
