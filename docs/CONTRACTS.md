@@ -4,6 +4,14 @@
 
 ## D2 application boundary for a future GUI
 
+### D2 fixture finding and citation contract
+
+The fixture model callable receives `(spec, candidate, candidate_evidence, reference_evidence)` as ordinary dictionaries/lists. Evidence includes the existing persisted `id`, `document_id`, `quote` and `locator`. The callable returns a finding dictionary with `disposition` (include/exclude/watch), `comparison_result`, `rationale`, `candidate_citations` and `reference_citations`. Each citation is `{ "evidence_id": "...", "quote": "exact original text" }`. Empty citation arrays explicitly mean missing support. The harness binds the finding's stable `id`, `candidate_id` and `document_id` to the analyzed candidate; model-supplied identities cannot change ownership. This small fixture contract does not require implementing the full D1 observation schema below.
+
+The verify stage resolves candidate citations only against that candidate's persisted evidence and reference citations only against the frozen baseline evidence. Quotes must exactly match the referenced evidence text; locators come from that evidence record. A missing candidate citation or an invalid ID/ownership/quote sets `disposition=watch`, `comparison_result=insufficient_evidence`, and `verification={"status":"invalid","errors":[...]}` with stable reason codes, and creates a persisted issue tied to the real candidate document. A comparative result (advantage/disadvantage/similar/different_approach) also requires a valid reference citation. Valid citations receive `verification.status=valid`; this records structural verification only, not scientific entailment. Preserve the original model output separately if needed for audit; canonical findings and report conclusions must use the verified result.
+
+The default synthetic model constructs citations from the evidence it actually receives. A deliberately missing-support fixture returns empty candidate citations and watch; no dependency on a special missing flag is allowed in the verifier. Model/source provider integrations remain deferred.
+
 The CLI and a future GUI call the same application services. No UI implementation or HTTP server is required in D2. Reuse the existing Harness service where practical; do not introduce a separate framework just to expose these methods.
 
 | Operation | Required boundary |
