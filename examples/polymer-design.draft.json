@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "project_id": "polymer-design",
+  "revision": 1,
+  "status": "draft",
+  "topic": "选定聚合物的设计",
+  "objectives": [
+    "梳理与目标聚合物设计相关的论文和专利路线",
+    "基于原文证据比较结构设计思路、已报告指标和适用条件",
+    "识别相对参照库的新进展，并列出需要人工判断的证据缺口"
+  ],
+  "languages": {
+    "conversation": "zh",
+    "search": [
+      "zh",
+      "en",
+      "ja"
+    ],
+    "reports": [
+      "zh",
+      "en",
+      "ja"
+    ],
+    "timezone": "Asia/Tokyo"
+  },
+  "scope": {
+    "document_types": [
+      "paper",
+      "patent"
+    ],
+    "sources": [
+      "openalex",
+      "epo"
+    ],
+    "publication_date_from": null,
+    "patent_jurisdictions": []
+  },
+  "reference_library": {
+    "collection_ids": [
+      "baseline"
+    ],
+    "document_ids": [],
+    "freeze_each_run": true,
+    "promotion": "explicit_only"
+  },
+  "criteria": [],
+  "inclusion_rules": [],
+  "exclusion_rules": [],
+  "execution": {
+    "trigger": "manual",
+    "missing_evidence": "watch_and_queue",
+    "budget": {
+      "max_candidates": 50,
+      "max_queries_per_source": 3,
+      "max_search_rounds": 2,
+      "max_model_calls": 120,
+      "max_concurrency": 3,
+      "max_active_minutes": 30,
+      "max_file_mib": 30,
+      "max_total_download_mib": 300,
+      "max_estimated_cost_usd": null,
+      "on_limit": "save_partial_report"
+    }
+  },
+  "data_policy": {
+    "original_storage": "local",
+    "embedding": "local",
+    "cloud_excerpt_allowed": true,
+    "llm_context": "relevant_excerpts"
+  },
+  "human_review": {
+    "enabled": true,
+    "scope": "individual_by_default",
+    "global_rule_updates": "explicit_only"
+  },
+  "report": {
+    "formats": [
+      "html",
+      "markdown",
+      "json"
+    ],
+    "review_export": "csv",
+    "include_technical_map": true,
+    "include_cumulative_review": true
+  },
+  "unresolved_questions": [
+    "案例阶段确定目标聚合物及具体设计关注点",
+    "案例阶段选择参照论文／专利和人工评价资料",
+    "案例阶段确认检索时间／地区及所需指标和比较条件"
+  ]
+}

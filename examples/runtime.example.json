@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "llm": {
+    "provider": "openai_compatible",
+    "model": null,
+    "endpoint": null,
+    "api_key_env": "RH_LLM_API_KEY",
+    "local": false,
+    "structured_output": "auto",
+    "max_output_tokens": 4096,
+    "timeout_seconds": 90,
+    "max_retries": 2,
+    "pricing_usd_per_million": null
+  },
+  "retrieval": {
+    "mode": "hybrid",
+    "embedding": {
+      "provider": "fastembed",
+      "model": null,
+      "revision": null
+    },
+    "qdrant": {
+      "mode": "embedded",
+      "url": null,
+      "api_key_env": null
+    }
+  },
+  "sources": {
+    "openalex": {
+      "enabled": true,
+      "api_key_env": "OPENALEX_API_KEY"
+    },
+    "epo": {
+      "enabled": true,
+      "consumer_key_env": "EPO_CONSUMER_KEY",
+      "consumer_secret_env": "EPO_CONSUMER_SECRET"
+    }
+  },
+  "network": {
+    "timeout_seconds": 30,
+    "max_retries": 2
+  },
+  "telemetry": "off"
+}
