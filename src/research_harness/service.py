@@ -107,10 +107,11 @@ class Harness:
                 imported=self.import_document(path,"discovery","paper"); candidate["document_id"]=imported["document_id"]; candidate["evidence"]=self.store.evidence(imported["document_id"])
             return candidates
         result=run(fixture,source_adapter,model_adapter,progress,retrieve)
+        outcome=result.get("outcome","completed"); error=result.get("error"); stage=error.get("stage","report") if error else "report"
         for issue in result["issues"]: self.store.create_issue(issue)
-        data={"run_id":run_id,"status":"completed","execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":result["candidates"],"candidates":result["candidates"],"findings":result["findings"],"baseline_document_ids":[d["id"] for d in baseline],"reference_evidence":reference_evidence,"sources":{"fixture":{"status":"complete"}},"limits":[]}
-        self.store.finish_run(run_id,"completed",{"synthetic":True,"sources":{"fixture":{"status":"complete"}},"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])
-        if on_progress:on_progress({"run_id":run_id,"stage":"report","status":"completed"})
-        return {"run_id":run_id,"outcome":"completed","stage":"report","stages":result["stages"],"issues":result["issues"],"artifacts":{"report":str(out)}}
+        data={"run_id":run_id,"status":outcome,"execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":result["candidates"],"candidates":result["candidates"],"findings":result["findings"],"baseline_document_ids":[d["id"] for d in baseline],"reference_evidence":reference_evidence,"sources":{"fixture":{"status":"failed" if outcome=="failed" else "complete"}},"limits":result.get("limits",[]),"error":error}
+        self.store.finish_run(run_id,outcome,{"synthetic":True,"sources":data["sources"],"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])
+        if on_progress:on_progress({"run_id":run_id,"stage":stage,"status":outcome})
+        return {"run_id":run_id,"outcome":outcome,"stage":stage,"error":error,"stages":result["stages"],"issues":result["issues"],"artifacts":{"report":str(out)}}
     def review_list(self): return self.store.issues()
     def review_decide(self,issue,decision,note): self.store.decide(issue,decision,note)

@@ -4,6 +4,7 @@ def run(fixture, source_adapter=None, model_adapter=None, on_progress=None, retr
     state={"fixture":fixture,"spec":fixture.get("spec",{}),"reference_evidence":fixture.get("reference_evidence",[]),"stages":[],"issues":[],"outcome":"completed","limits":[]}
     def step(name):
         def fn(s):
+            if s["outcome"]=="failed" and name in {"retrieve","analyze","verify"}: return s
             s["stages"].append(name)
             if on_progress: on_progress({"stage":name})
             if name=="search":
@@ -12,7 +13,6 @@ def run(fixture, source_adapter=None, model_adapter=None, on_progress=None, retr
                     if len(candidates)>limit: s["candidates"]=candidates[:limit];s["outcome"]="partial";s["limits"].append({"code":"max_candidates","limit":limit,"processed":limit})
                     else:s["candidates"]=candidates
                 except Exception: s.update(outcome="failed",error={"code":"source_failed","message":"source adapter failed","stage":"search"},candidates=[],findings=[])
-            if s["outcome"]=="failed" and name in {"retrieve","analyze","verify"}: return s
             if name=="retrieve": s["candidates"]=(retrieve or (lambda x:x))(s["candidates"])
             if name=="analyze":
                 def default(spec,candidate,ce,re): return {"disposition":"watch" if candidate.get("missing") else "include","comparison_result":"insufficient_evidence" if candidate.get("missing") else "not_comparable","rationale":"fixture","candidate_citations":[] if candidate.get("missing") else [{"evidence_id":ce[0]["id"],"quote":ce[0]["quote"]}],"reference_citations":[]}
