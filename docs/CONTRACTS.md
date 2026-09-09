@@ -27,6 +27,14 @@ Expose one optional progress observer on the run service, for example `on_progre
 
 Public results and errors must have JSON-compatible representations with stable IDs/codes and safe text. Internal exceptions/framework objects must not be the GUI contract. CLI formatting/printing belongs in the CLI, and application services must not depend on terminal input, stdout parsing or GUI globals. This is an in-process boundary, not a promise of a REST API.
 
+### D2 concrete service projection
+
+Reuse `Harness`: `status()` returns run summaries with `run_id`, `project_id`, `revision`, `outcome`, `stage`, `error`, `limits` and `artifacts`. Add `get_result(run_id)` returning the same fields plus frozen `report_data` as a dictionary and its `findings`/`issues` as lists. Stage is the error stage for failed runs and report for finished fixture runs. `artifacts` retains the existing `report` directory string and adds `files`, a list of `{language, format, path}` for existing exports; shared JSON/CSV use language null. Add `get_artifacts(run_id)` for that list. The service resolves artifact paths from its managed workspace and run record, not from arbitrary caller-supplied paths. Callers never decode serialized database fields.
+
+`review_list()` returns events as lists, and `review_decide(...)` returns the updated issue. This current review state is distinct from frozen run issues. Add `close()` so application clients do not access Store even for cleanup. Existing validate/save/import/run methods remain the public entry points; no generic command dispatcher, REST layer, worker or GUI is required.
+
+For the following error-boundary step, extend existing HarnessError with a safe `to_dict()` representation (`code`, `message`, optional `field`/`stage`), and use stable typed errors for invalid inputs, unmet preconditions, missing run/issue and export failure. Exposed messages must not include raw external exception text or invalid input values. Validate the fixture file and basic candidate shape before creating a run; invalid input must not strand a running record. Keep the already implemented structured source-failure result. These changes define ordinary in-process error handling, not a new error/recovery framework.
+
 This document defines framework-independent boundaries. The input schemas in [schemas](../schemas/) are normative interchange contracts. The implementation may use Pydantic internally. Serialized data must never depend on LangGraph, LlamaIndex or provider SDK classes.
 
 ## 1. ResearchSpec and RuntimeConfig
