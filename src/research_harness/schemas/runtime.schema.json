@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RuntimeConfig D1 / schema 1.0",
+  "description": "No secret values. Environment variable names only. A schema-valid template can still fail doctor/preflight.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "llm": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "enum": [
+            "openai_compatible",
+            "anthropic"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "endpoint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "api_key_env": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "local": {
+          "type": "boolean",
+          "default": false
+        },
+        "structured_output": {
+          "enum": [
+            "auto",
+            "json_schema",
+            "tool_call"
+          ]
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 256,
+          "default": 4096
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "default": 90
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 2
+        },
+        "pricing_usd_per_million": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "output": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "input",
+                "output"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "endpoint",
+        "api_key_env",
+        "local",
+        "structured_output",
+        "max_output_tokens",
+        "timeout_seconds",
+        "max_retries",
+        "pricing_usd_per_million"
+      ],
+      "additionalProperties": false
+    },
+    "retrieval": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "hybrid",
+            "lexical_test_only"
+          ]
+        },
+        "embedding": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "const": "fastembed"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "revision": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "revision"
+          ],
+          "additionalProperties": false
+        },
+        "qdrant": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "enum": [
+                "embedded",
+                "server"
+              ]
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "api_key_env": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "mode",
+            "url",
+            "api_key_env"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "mode",
+        "embedding",
+        "qdrant"
+      ],
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "properties": {
+        "openalex": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "api_key_env": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "enabled",
+            "api_key_env"
+          ],
+          "additionalProperties": false
+        },
+        "epo": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "consumer_key_env": {
+              "type": "string",
+              "minLength": 1
+            },
+            "consumer_secret_env": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "enabled",
+            "consumer_key_env",
+            "consumer_secret_env"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "openalex",
+        "epo"
+      ],
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120,
+          "default": 30
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 2
+        }
+      },
+      "required": [
+        "timeout_seconds",
+        "max_retries"
+      ],
+      "additionalProperties": false
+    },
+    "telemetry": {
+      "const": "off"
+    }
+  },
+  "required": [
+    "schema_version",
+    "llm",
+    "retrieval",
+    "sources",
+    "network",
+    "telemetry"
+  ],
+  "additionalProperties": false
+}

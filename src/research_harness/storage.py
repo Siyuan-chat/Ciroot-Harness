@@ -13,9 +13,11 @@ class Store:
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS specs (project_id TEXT, revision INTEGER, fingerprint TEXT, content TEXT, created REAL, PRIMARY KEY(project_id,revision));
         CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, sha256 TEXT UNIQUE, kind TEXT, collection_name TEXT, filename TEXT, raw_path TEXT, content TEXT, created REAL);
-        CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, project_id TEXT, revision INTEGER, status TEXT, mode TEXT, manifest TEXT, created REAL, updated REAL);
+        CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, project_id TEXT, revision INTEGER, status TEXT, mode TEXT, manifest TEXT, report_data TEXT, created REAL, updated REAL);
         CREATE TABLE IF NOT EXISTS issues (id TEXT PRIMARY KEY, document_id TEXT, rule_id TEXT, issue_type TEXT, evidence_fingerprint TEXT, status TEXT, machine_disposition TEXT, human_decision TEXT, note TEXT, events TEXT, UNIQUE(document_id,rule_id,issue_type));
         """)
+        columns={r[1] for r in self.db.execute("PRAGMA table_info(runs)")}
+        if "report_data" not in columns: self.db.execute("ALTER TABLE runs ADD COLUMN report_data TEXT")
         self.db.commit()
     def close(self): self.db.close()
     def save_spec(self, spec: dict, fp: str) -> None:
@@ -29,8 +31,8 @@ class Store:
         self.db.execute("INSERT OR IGNORE INTO documents VALUES (?,?,?,?,?,?,?,?)", (ident,digest,kind,collection,Path(path).name,str(target.relative_to(self.root)),text,time.time())); self.db.commit(); return ident
     def documents(self): return [dict(x) for x in self.db.execute("SELECT * FROM documents ORDER BY created")]
     def create_run(self, spec: dict, mode: str, manifest: dict) -> str:
-        ident = "run-" + uuid.uuid4().hex[:12]; now=time.time(); self.db.execute("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?)",(ident,spec["project_id"],spec["revision"],"running",mode,json.dumps(manifest,ensure_ascii=False),now,now));self.db.commit();return ident
-    def finish_run(self, ident: str, status: str, manifest: dict): self.db.execute("UPDATE runs SET status=?,manifest=?,updated=? WHERE id=?",(status,json.dumps(manifest,ensure_ascii=False),time.time(),ident));self.db.commit()
+        ident = "run-" + uuid.uuid4().hex[:12]; now=time.time(); self.db.execute("INSERT INTO runs (id,project_id,revision,status,mode,manifest,created,updated) VALUES (?,?,?,?,?,?,?,?)",(ident,spec["project_id"],spec["revision"],"running",mode,json.dumps(manifest,ensure_ascii=False),now,now));self.db.commit();return ident
+    def finish_run(self, ident: str, status: str, manifest: dict, report_data: dict): self.db.execute("UPDATE runs SET status=?,manifest=?,report_data=?,updated=? WHERE id=?",(status,json.dumps(manifest,ensure_ascii=False),json.dumps(report_data,ensure_ascii=False),time.time(),ident));self.db.commit()
     def run(self, ident):
         row=self.db.execute("SELECT * FROM runs WHERE id=?",(ident,)).fetchone(); return dict(row) if row else None
     def runs(self): return [dict(x) for x in self.db.execute("SELECT * FROM runs ORDER BY created DESC")]

@@ -1,4 +1,5 @@
 import json
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,3 +50,25 @@ class HarnessTests(unittest.TestCase):
         with self.assertRaises(ValidationError): self.h.validate(self.spec)
     def test_doctor_never_calls_network(self):
         result=self.h.doctor(self.runtime); self.assertFalse(result["network_called"])
+    def test_schema_rejects_reviewed_counterexamples(self):
+        cases=[]
+        x=ready_spec(); x["execution"]["budget"]["max_candidates"]=-1; cases.append(x)
+        x=ready_spec(); x["human_review"]["global_rule_updates"]="automatic"; cases.append(x)
+        x=ready_spec(); x["scope"]["publication_date_from"]="2026-02-30"; cases.append(x)
+        x=ready_spec(); x["languages"]["reports"]=[]; cases.append(x)
+        x=ready_spec(); x["criteria"]=[{"id":"x","description":"x","mode":"threshold","target":{},"required_conditions":{},"required":True,"minimum_evidence":"fulltext"}]; cases.append(x)
+        for case in cases:
+            with self.assertRaises(ValidationError): self.h.validate(self._write(case))
+        runtime=fixture_runtime(); runtime["llm"]["api_key"]="synthetic-sentinel"
+        self.runtime.write_text(json.dumps(runtime),encoding="utf-8")
+        with self.assertRaises(ValidationError): self.h.doctor(self.runtime)
+    def _write(self, value):
+        self.spec.write_text(json.dumps(value),encoding="utf-8"); return self.spec
+    def test_report_is_a_frozen_snapshot_and_honors_explicit_reference(self):
+        first=self.root/"one.txt"; second=self.root/"two.txt"; later=self.root/"later.txt"
+        first.write_text("one",encoding="utf-8"); second.write_text("two",encoding="utf-8"); later.write_text("later",encoding="utf-8")
+        first_id=self.h.import_document(first,"baseline","paper"); self.h.import_document(second,"baseline","paper")
+        spec=ready_spec(); spec["reference_library"]["collection_ids"]=[]; spec["reference_library"]["document_ids"]=[first_id]; self._write(spec)
+        run=self.h.run(self.spec,self.runtime); report=self.root/"workspace"/"reports"/run/"report.json"; before=report.read_text(encoding="utf-8")
+        self.h.import_document(later,"discovery","paper"); self.h.report(run,["en"])
+        after=report.read_text(encoding="utf-8"); self.assertEqual(before,after); self.assertEqual([first_id],json.loads(after)["baseline_document_ids"])
