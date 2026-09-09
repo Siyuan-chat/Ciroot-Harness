@@ -16,6 +16,9 @@ def _validate(value: dict, name: str) -> None:
     if errors:
         error=errors[0]; raise ValidationError(f"{'.'.join(map(str,error.path)) or '$'}: {error.message}")
 
-def validate_spec(spec: dict) -> None: _validate(spec,"research-spec.schema.json")
+def validate_spec(spec: dict) -> None:
+    _validate(spec,"research-spec.schema.json")
+    ids=[criterion["id"] for criterion in spec["criteria"]]
+    if len(ids)!=len(set(ids)): raise ValidationError("criteria IDs must be unique")
 def validate_runtime(runtime: dict) -> None: _validate(runtime,"runtime.schema.json")
 def fingerprint(value: dict) -> str: return hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(",", ":")).encode()).hexdigest()

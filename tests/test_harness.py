@@ -62,6 +62,12 @@ class HarnessTests(unittest.TestCase):
         runtime=fixture_runtime(); runtime["llm"]["api_key"]="synthetic-sentinel"
         self.runtime.write_text(json.dumps(runtime),encoding="utf-8")
         with self.assertRaises(ValidationError): self.h.doctor(self.runtime)
+        duplicate=ready_spec(); duplicate["criteria"]=[{"id":"same","description":"a","mode":"qualitative","target":None,"required_conditions":{},"required":False,"minimum_evidence":"abstract"},{"id":"same","description":"b","mode":"qualitative","target":None,"required_conditions":{},"required":False,"minimum_evidence":"abstract"}]
+        with self.assertRaises(ValidationError): self.h.validate(self._write(duplicate))
+    def test_doctor_blocks_missing_hybrid_components(self):
+        runtime=fixture_runtime(); runtime["retrieval"]["mode"]="hybrid"; runtime["retrieval"]["embedding"]["model"]="synthetic-model"
+        self.runtime.write_text(json.dumps(runtime),encoding="utf-8")
+        result=self.h.doctor(self.runtime); self.assertFalse(result["ok"]); self.assertTrue(any("hybrid retrieval" in x for x in result["problems"]))
     def _write(self, value):
         self.spec.write_text(json.dumps(value),encoding="utf-8"); return self.spec
     def test_report_is_a_frozen_snapshot_and_honors_explicit_reference(self):
@@ -76,3 +82,9 @@ class HarnessTests(unittest.TestCase):
         xml=self.root/"record.xml"; xml.write_text("<article><p id='p1'>Measured result</p></article>",encoding="utf-8")
         ident=self.h.import_document(xml,"baseline","paper")["document_id"]
         evidence=self.h.store.evidence(ident); self.assertEqual(evidence[0]["locator"],"element:1"); self.assertEqual(evidence[1]["locator"],"p1")
+    def test_local_retrieval_uses_only_frozen_baseline(self):
+        hit=self.root/"hit.txt"; discovery=self.root/"discovery.txt"; hit.write_text("polymer design evidence",encoding="utf-8"); discovery.write_text("polymer design secret",encoding="utf-8")
+        hit_id=self.h.import_document(hit,"baseline","paper")["document_id"]; self.h.import_document(discovery,"discovery","paper")
+        spec=ready_spec(); spec["topic"]="polymer design"; self._write(spec)
+        run=self.h.run(self.spec,self.runtime); data=json.loads((self.root/"workspace"/"reports"/run/"report.json").read_text(encoding="utf-8"))
+        self.assertEqual([hit_id],[r["document_id"] for r in data["retrieval"]["results"]])

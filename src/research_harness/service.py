@@ -5,6 +5,7 @@ from .contracts import fingerprint, load_json, validate_runtime, validate_spec
 from .errors import PreflightError
 from .storage import Store
 from .ingestion import parse
+from .retrieval import search
 
 MESSAGES={"zh":{"no_model":"未选择模型","need_ready":"ResearchSpec 必须为 ready 且不存在未解决问题"},"en":{"no_model":"no model selected","need_ready":"ResearchSpec must be ready with no unresolved questions"},"ja":{"no_model":"モデルが選択されていません","need_ready":"ResearchSpec は ready で未解決事項がない必要があります"}}
 
@@ -23,6 +24,9 @@ class Harness:
                 for key,val in cfg.items():
                     if key.endswith("_env") and not os.getenv(val): problems.append(f"missing {name} credential: {val}")
         optional={x: bool(__import__("importlib").util.find_spec(x)) for x in ("langgraph","docling","fastembed","qdrant_client","llama_index")}
+        if retrieval["mode"]=="hybrid":
+            missing=[name for name in ("fastembed","qdrant_client","llama_index") if not optional[name]]
+            if missing: problems.append("missing hybrid retrieval components: "+", ".join(missing))
         return {"ok":not problems,"problems":problems,"optional_components":optional,"network_called":False}
     def import_document(self,path,collection,kind):
         ident=self.store.import_file(path,collection,kind)
@@ -55,7 +59,9 @@ class Harness:
         enabled=[name for name,cfg in runtime["sources"].items() if cfg.get("enabled")]
         for source in enabled: manifest["sources"][source]={"status":"pending","reason":"online adapter requires explicit integration execution"}
         status="partial" if enabled else "completed"
-        data={"run_id":run_id,"status":status,"execution_mode":manifest["execution_mode"],"synthetic":manifest["synthetic"],"baseline_document_ids":baseline,"sources":manifest["sources"],"documents":[{"id":d["id"],"filename":d["filename"],"kind":d["kind"],"collection":d["collection_name"]} for d in all_docs if d["id"] in baseline],"issues":self.store.issues(),"technical_map":[],"limits":manifest["notes"]}
+        frozen=[d for d in all_docs if d["id"] in baseline]
+        retrieval=search(frozen,spec["topic"])
+        data={"run_id":run_id,"status":status,"execution_mode":manifest["execution_mode"],"synthetic":manifest["synthetic"],"baseline_document_ids":baseline,"sources":manifest["sources"],"documents":[{"id":d["id"],"filename":d["filename"],"kind":d["kind"],"collection":d["collection_name"]} for d in frozen],"issues":self.store.issues(),"technical_map":[{"id":r["document_id"],"route":"unclassified","reported_metrics":"unknown"} for r in retrieval],"retrieval":{"mode":"lexical_test_only" if runtime["retrieval"]["mode"]=="lexical_test_only" else "lexical","results":retrieval},"limits":manifest["notes"]}
         self.store.finish_run(run_id,status,manifest,data); self.report(run_id, spec["languages"]["reports"]); return run_id
     def report(self,run_id,languages):
         run=self.store.run(run_id)
