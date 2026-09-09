@@ -4,7 +4,7 @@
 
 A local literature/patent investigation framework. The target workflow is natural-language requirements → versioned JSON → retrieval → comparison with a frozen reference library → human review and reports.
 
-**D2 fixture framework; final framework acceptance pending.** The demo uses synthetic text and local source/model callables. It runs real LangGraph, SQLite and citation verification, producing Chinese, English and Japanese reports. It needs no API keys and makes no external API calls.
+**D2 fixture framework independently accepted on 2026-09-09.** See the [acceptance report](docs/FRAMEWORK_ACCEPTANCE.md). The demo uses synthetic text and local source/model callables. It runs real LangGraph, SQLite and citation verification, producing Chinese, English and Japanese reports. It needs no API keys and makes no external API calls.
 
 ## Quick start
 

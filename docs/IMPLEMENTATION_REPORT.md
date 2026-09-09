@@ -1,5 +1,7 @@
 # Research Harness implementation report — Alpha 0.1.0
 
+> Design-task closeout, 2026-09-09: D2 K01–K07 independently accepted; see [FRAMEWORK_ACCEPTANCE.md](FRAMEWORK_ACCEPTANCE.md). The self-test checkpoints and Alpha history below retain their original status at the time of recording. Real API/scientific-case acceptance and publication remain pending.
+
 ## D2 fixture-framework checkpoint (2026-09-09)
 
 - `cb7cbc0`: `python -m research_harness.cli demo --workspace .local\demo-k01` completed the synthetic fixture workflow through all seven stages, retained the review issue, and wrote the report artifacts.
