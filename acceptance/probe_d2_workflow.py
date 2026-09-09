@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory() as tmp:
     results['stages_observed']=[e.get('stage') for e in events]
     results['model_adapter_called']=bool(calls)
     results['run_result']=out
+    h.store.close();h=Harness(root/'workspace')
     results['persisted_run_count']=len(h.status())
     results['persisted_issue_count']=len(h.review_list())
     results['progress_has_run_and_status']=all('run_id' in e and 'status' in e for e in events)
