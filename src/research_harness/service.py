@@ -100,10 +100,13 @@ class Harness:
         reference_evidence=[e for d in baseline for e in self.store.evidence(d["id"])]
         fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); fixture["spec"]=spec; fixture["reference_evidence"]=reference_evidence
         fixture_dir=self.workspace/"fixture-inputs"; fixture_dir.mkdir(exist_ok=True)
-        for candidate in fixture["candidates"]:
-            path=fixture_dir/(candidate["id"].replace("/","_")+".txt"); path.write_text(candidate["quote"],encoding="utf-8")
-            imported=self.import_document(path,"discovery","paper"); candidate["evidence"] = self.store.evidence(imported["document_id"])
-        result=run(fixture,source_adapter,model_adapter,progress)
+        def retrieve(candidates):
+            import hashlib
+            for candidate in candidates:
+                raw=candidate["quote"].encode("utf-8"); path=fixture_dir/(hashlib.sha256(raw).hexdigest()+".txt"); path.write_bytes(raw)
+                imported=self.import_document(path,"discovery","paper"); candidate["document_id"]=imported["document_id"]; candidate["evidence"]=self.store.evidence(imported["document_id"])
+            return candidates
+        result=run(fixture,source_adapter,model_adapter,progress,retrieve)
         for issue in result["issues"]: self.store.create_issue(issue)
         data={"run_id":run_id,"status":"completed","execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":result["candidates"],"candidates":result["candidates"],"findings":result["findings"],"baseline_document_ids":[d["id"] for d in baseline],"reference_evidence":reference_evidence,"sources":{"fixture":{"status":"complete"}},"limits":[]}
         self.store.finish_run(run_id,"completed",{"synthetic":True,"sources":{"fixture":{"status":"complete"}},"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])

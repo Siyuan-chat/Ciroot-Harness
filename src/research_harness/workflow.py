@@ -1,12 +1,13 @@
 from langgraph.graph import StateGraph, START, END
 
-def run(fixture, source_adapter=None, model_adapter=None, on_progress=None):
-    state={"fixture":fixture,"spec":fixture.get("spec",{}),"stages":[],"issues":[]}
+def run(fixture, source_adapter=None, model_adapter=None, on_progress=None, retrieve=None):
+    state={"fixture":fixture,"spec":fixture.get("spec",{}),"reference_evidence":fixture.get("reference_evidence",[]),"stages":[],"issues":[]}
     def step(name):
         def fn(s):
             s["stages"].append(name)
             if on_progress: on_progress({"stage":name})
             if name=="search": s["candidates"]=(source_adapter or (lambda x:x))(s["fixture"]["candidates"])
+            if name=="retrieve": s["candidates"]=(retrieve or (lambda x:x))(s["candidates"])
             if name=="analyze":
                 model=model_adapter or (lambda spec,candidate,candidate_evidence,reference_evidence:{"id":candidate["id"],"quote":candidate["quote"],"locator":candidate["locator"],"disposition":"watch" if candidate.get("missing") else "include"})
                 s["findings"]=[model(s.get("spec",{}),x,x.get("evidence",[]),s.get("reference_evidence",[])) for x in s["candidates"]]
