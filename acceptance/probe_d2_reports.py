@@ -60,6 +60,8 @@ with tempfile.TemporaryDirectory() as tmp:
             'run_id_visible': all(run['run_id'] in t for t in both),
             'partial_visible': all(any(s in t for s in ('partial', '部分完成', '一部完了')) for t in both),
             'budget_reason_visible': all('max_candidates' in t for t in both),
+            'synthetic_notice_visible': all(any(s in t for s in ('合成夹具', 'Synthetic fixture', '合成フィクスチャ')) for t in both),
+            'verification_visible': all(any(s in t for s in ('invalid', '无效', '無効')) for t in both),
             'localized_body_headings': lang == 'en' or not any(s in md for s in ('Evidence (original)', '| Disposition |', '| Comparison |', '| Verification |')),
             'html_no_active_external_tags': not any(tag in page.tags for tag in ('img', 'script', 'iframe')),
             'markdown_no_active_external_tags': not re.search(r'<\s*(img|script|iframe)\b', md, re.I),
