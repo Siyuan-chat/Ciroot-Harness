@@ -8,13 +8,13 @@ from .errors import ValidationError
 
 def load_json(path: str | Path) -> dict:
     try: return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc: raise ValidationError(f"cannot read JSON: {exc}") from exc
+    except (OSError, json.JSONDecodeError): raise ValidationError("cannot read JSON input")
 
 def _validate(value: dict, name: str) -> None:
     schema=json.loads(resources.files("research_harness").joinpath("schemas",name).read_text(encoding="utf-8"))
     errors=sorted(Draft202012Validator(schema,format_checker=FormatChecker()).iter_errors(value),key=lambda e:list(e.path))
     if errors:
-        error=errors[0]; raise ValidationError(f"{'.'.join(map(str,error.path)) or '$'}: {error.message}")
+        error=errors[0]; raise ValidationError(f"{'.'.join(map(str,error.path)) or '$'}: invalid {error.validator}")
 
 def validate_spec(spec: dict) -> None:
     _validate(spec,"research-spec.schema.json")

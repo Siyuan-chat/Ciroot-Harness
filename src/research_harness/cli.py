@@ -39,6 +39,6 @@ def main(argv=None):
         elif a.cmd=="review" and a.review_cmd=="list": result=h.review_list()
         else: h.review_decide(a.issue_id,a.decision,a.note); result={"ok":True}
         print(json.dumps(result,ensure_ascii=False,indent=2));return 4 if a.cmd=="run" and h.store.run(result["run_id"])["status"]=="partial" else 0
-    except HarnessError as e: print(json.dumps({"error":e.code,"message":str(e)},ensure_ascii=False),file=sys.stderr);return 2 if e.code=="RH_INVALID_INPUT" else 3
+    except HarnessError as e: print(json.dumps(e.to_dict(),ensure_ascii=False),file=sys.stderr);return 2 if e.code=="RH_INVALID_INPUT" else 3
     except (KeyError,ValueError) as e: print(json.dumps({"error":"RH_INVALID_INPUT","message":str(e)}),file=sys.stderr);return 2
 if __name__=="__main__": raise SystemExit(main())

@@ -1,5 +1,6 @@
 class HarnessError(Exception):
     code = "RH_ERROR"
+    def to_dict(self): return {"code":self.code,"message":"operation failed"}
 
 
 class ValidationError(HarnessError):

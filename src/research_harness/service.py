@@ -104,6 +104,9 @@ class Harness:
         return [{key:self.get_result(run["id"])[key] for key in fields} for run in self.store.runs()]
     def run_fixture(self,spec_path,fixture_path,*,source_adapter=None,model_adapter=None,on_progress=None):
         from .workflow import run
+        fixture=load_json(fixture_path)
+        candidates=fixture.get("candidates") if isinstance(fixture,dict) else None
+        if not isinstance(candidates,list) or any(not isinstance(c,dict) or not isinstance(c.get("id"),str) or not c["id"].strip() or not isinstance(c.get("quote"),str) or not c["quote"].strip() or ("missing" in c and not isinstance(c["missing"],bool)) for c in candidates) or len({c["id"] for c in candidates})!=len(candidates): raise ValidationError("invalid fixture input")
         spec=self.validate(spec_path)
         if spec["status"]!="ready" or spec["unresolved_questions"]: raise PreflightError("fixture run requires ready spec")
         spec=self.store.save_spec(spec,fingerprint(spec)); run_id=self.store.create_run(spec,"fixture",{"synthetic":True})
@@ -111,7 +114,7 @@ class Harness:
             if on_progress:on_progress({"run_id":run_id,"stage":e["stage"],"status":"running"})
         baseline_ids=set(spec["reference_library"]["document_ids"]); baseline=[d for d in self.store.documents() if d["id"] in baseline_ids or d["collection_name"] in spec["reference_library"]["collection_ids"]]
         reference_evidence=[e for d in baseline for e in self.store.evidence(d["id"])]
-        fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); fixture["spec"]=spec; fixture["reference_evidence"]=reference_evidence
+        fixture["spec"]=spec; fixture["reference_evidence"]=reference_evidence
         fixture_dir=self.workspace/"fixture-inputs"; fixture_dir.mkdir(exist_ok=True)
         def retrieve(candidates):
             import hashlib
