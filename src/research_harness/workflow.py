@@ -9,7 +9,7 @@ def run(fixture, source_adapter=None, model_adapter=None, on_progress=None):
             if name=="search": s["candidates"]=(source_adapter or (lambda x:x))(s["fixture"]["candidates"])
             if name=="analyze":
                 model=model_adapter or (lambda spec,candidate,candidate_evidence,reference_evidence:{"id":candidate["id"],"quote":candidate["quote"],"locator":candidate["locator"],"disposition":"watch" if candidate.get("missing") else "include"})
-                s["findings"]=[model(s.get("spec",{}),x,[{"id":x["id"],"quote":x["quote"]}],s.get("reference_evidence",[])) for x in s["candidates"]]
+                s["findings"]=[model(s.get("spec",{}),x,x.get("evidence",[]),s.get("reference_evidence",[])) for x in s["candidates"]]
             if name=="verify": s["issues"]=[{"id":"issue-"+x["id"],"status":"open","note":"missing evidence"} for x in s["candidates"] if x.get("missing")]
             return s
         return fn

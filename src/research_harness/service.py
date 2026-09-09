@@ -96,9 +96,16 @@ class Harness:
         self.store.save_spec(spec,fingerprint(spec)); run_id=self.store.create_run(spec,"fixture",{"synthetic":True})
         def progress(e):
             if on_progress:on_progress({"run_id":run_id,"stage":e["stage"],"status":"running"})
-        fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); fixture["spec"]=spec; result=run(fixture,source_adapter,model_adapter,progress)
+        baseline_ids=set(spec["reference_library"]["document_ids"]); baseline=[d for d in self.store.documents() if d["id"] in baseline_ids or d["collection_name"] in spec["reference_library"]["collection_ids"]]
+        reference_evidence=[e for d in baseline for e in self.store.evidence(d["id"])]
+        fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); fixture["spec"]=spec; fixture["reference_evidence"]=reference_evidence
+        fixture_dir=self.workspace/"fixture-inputs"; fixture_dir.mkdir(exist_ok=True)
+        for candidate in fixture["candidates"]:
+            path=fixture_dir/(candidate["id"].replace("/","_")+".txt"); path.write_text(candidate["quote"],encoding="utf-8")
+            imported=self.import_document(path,"discovery","paper"); candidate["evidence"] = self.store.evidence(imported["document_id"])
+        result=run(fixture,source_adapter,model_adapter,progress)
         for issue in result["issues"]: self.store.create_issue(issue)
-        data={"run_id":run_id,"status":"completed","execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":[],"sources":{"fixture":{"status":"complete"}},"limits":[]}
+        data={"run_id":run_id,"status":"completed","execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":result["candidates"],"candidates":result["candidates"],"findings":result["findings"],"baseline_document_ids":[d["id"] for d in baseline],"reference_evidence":reference_evidence,"sources":{"fixture":{"status":"complete"}},"limits":[]}
         self.store.finish_run(run_id,"completed",{"synthetic":True,"sources":{"fixture":{"status":"complete"}},"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])
         if on_progress:on_progress({"run_id":run_id,"stage":"report","status":"completed"})
         return {"run_id":run_id,"outcome":"completed","stage":"report","stages":result["stages"],"issues":result["issues"],"artifacts":{"report":str(out)}}
