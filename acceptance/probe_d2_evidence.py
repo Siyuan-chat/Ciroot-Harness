@@ -56,6 +56,16 @@ with tempfile.TemporaryDirectory() as tmp:
         'finding_persisted_in_report': marker in json.dumps(report.get('findings', [])),
         'baseline_frozen_in_report': baseline_id in report.get('baseline_document_ids', []),
     }
+    replacement_text = 'Synthetic replacement source: route gamma is described.'
+    def replacement_source(_candidates):
+        return [{'id': 'replacement-candidate', 'quote': replacement_text, 'locator': 'line:1'}]
+
+    harness.run_fixture(spec_file, fixture_file, source_adapter=replacement_source, model_adapter=model)
+    replacement_evidence = calls[-1][1]
+    current_evidence = {e['id']: e for d in harness.store.documents() for e in harness.store.evidence(d['id'])}
+    checks['replacement_source_evidence_persisted'] = bool(replacement_evidence) and all(
+        e.get('id') in current_evidence and current_evidence[e['id']]['quote'] == replacement_text
+        for e in replacement_evidence)
     harness.store.close()
 output = Path(args.output)
 output.parent.mkdir(parents=True, exist_ok=True)
