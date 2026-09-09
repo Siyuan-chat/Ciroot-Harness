@@ -9,16 +9,20 @@ def run(fixture, source_adapter=None, model_adapter=None, on_progress=None, retr
             if name=="search": s["candidates"]=(source_adapter or (lambda x:x))(s["fixture"]["candidates"])
             if name=="retrieve": s["candidates"]=(retrieve or (lambda x:x))(s["candidates"])
             if name=="analyze":
-                def default(spec,candidate,ce,re): return {"disposition":"watch" if candidate.get("missing") else "include","comparison_result":"insufficient_evidence" if candidate.get("missing") else "similar","rationale":"fixture","candidate_citations":[] if candidate.get("missing") else [{"evidence_id":ce[0]["id"],"quote":ce[0]["quote"]}],"reference_citations":[]}
+                def default(spec,candidate,ce,re): return {"disposition":"watch" if candidate.get("missing") else "include","comparison_result":"insufficient_evidence" if candidate.get("missing") else "not_comparable","rationale":"fixture","candidate_citations":[] if candidate.get("missing") else [{"evidence_id":ce[0]["id"],"quote":ce[0]["quote"]}],"reference_citations":[]}
                 model=model_adapter or default
                 s["findings"]=[dict(model(s.get("spec",{}),x,x.get("evidence",[]),s.get("reference_evidence",[])),id="finding-"+x["id"],candidate_id=x["id"],document_id=x["document_id"]) for x in s["candidates"]]
             if name=="verify":
                 s["issues"]=[]
                 for f,x in zip(s["findings"],s["candidates"]):
-                    allowed={e["id"]:e["quote"] for e in x["evidence"]}; errors=[]
-                    for c in f["candidate_citations"]:
-                        if allowed.get(c.get("evidence_id"))!=c.get("quote"): errors.append("invalid_candidate_citation")
-                    if not f["candidate_citations"]: errors.append("missing_candidate_citation")
+                    allowed={e["id"]:e["quote"] for e in x["evidence"]}; refs={e["id"]:e["quote"] for e in s["reference_evidence"]}; errors=[]
+                    def check(items,pool,label):
+                        if not isinstance(items,list): return ["invalid_"+label+"_citations"]
+                        return ["invalid_"+label+"_citation" for c in items if not isinstance(c,dict) or not isinstance(c.get("evidence_id"),str) or not isinstance(c.get("quote"),str) or c["evidence_id"] not in pool or pool[c["evidence_id"]]!=c["quote"]]
+                    errors+=check(f.get("candidate_citations"),allowed,"candidate")
+                    if not f.get("candidate_citations"): errors.append("missing_candidate_citation")
+                    errors+=check(f.get("reference_citations"),refs,"reference")
+                    if f.get("comparison_result") in {"advantage","disadvantage","similar","different_approach"} and not f.get("reference_citations"): errors.append("missing_reference_citation")
                     if errors: f.update(disposition="watch",comparison_result="insufficient_evidence",verification={"status":"invalid","errors":errors});s["issues"].append({"id":"issue-"+x["id"],"document_id":x["document_id"],"status":"open","note":errors[0]})
                     else:f["verification"]={"status":"valid","errors":[]}
             return s
