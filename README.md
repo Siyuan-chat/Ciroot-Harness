@@ -4,7 +4,7 @@
 
 A local-first literature and patent investigation harness. Describe a research need in natural language; an LLM clarifies consequential ambiguities and produces a versioned JSON specification. A manually triggered investigation retrieves documents, compares cited evidence with a frozen local reference library, and produces reports plus a persistent human-review queue.
 
-**Current status: design handoff, not an implemented release.** This repository contains requirements, architecture, contracts and acceptance criteria. Product implementation belongs to a separate Terra task. Real polymer-design case evaluation and a publishable demo come afterwards. Installation and CLI commands in the guides describe the required future interface.
+**Current status: implemented alpha, pending independent acceptance.** The local CLI, versioned specification store, SQLite document store, offline fixture workflow and report renderer are implemented. Optional production integrations (LangGraph, Docling, FastEmbed/Qdrant/LlamaIndex, OpenAlex/EPO and model APIs) require their documented extras, configuration and independent acceptance. No real polymer-design case evaluation or publishable demo has been performed.
 
 ## Agreed behavior
 
@@ -32,6 +32,6 @@ A local-first literature and patent investigation harness. Describe a research n
 
 The first case is **polymer design**. The domain belongs in a research specification; it must not be hard-coded into the harness. The draft contains no measured values, named target polymer or scientific conclusions.
 
-Proposed implementation stack: Python, LangGraph, Docling, selected LlamaIndex modules, Qdrant and SQLite. Initial source adapters: OpenAlex and EPO OPS. Lens is a later optional adapter. See architecture for verified primary sources and limits.
+Install from source with `python -m pip install --no-build-isolation -e .`, then run `rh --help`. The `--no-build-isolation` switch is useful in offline environments with a preinstalled build backend. See `docs/IMPLEMENTATION_REPORT.md` for tested commands and evidence boundaries.
 
 The target is a GitHub open-source release with a reproducible demo after acceptance. Repository identity, final license and demo redistribution rights are resolved before publication; no publication has occurred.

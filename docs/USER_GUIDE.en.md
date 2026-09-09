@@ -1,6 +1,6 @@
-# English user guide — target interface, not implemented yet
+# English user guide — implemented alpha
 
-This guide specifies the user journey Terra must implement. The design package does not currently provide a working rh command. Terra will add installation steps after testing them. v1 runs locally and updates only when the user asks; polymer-design case evaluation follows implementation.
+This guide describes the implemented alpha CLI. Install with `python -m pip install --no-build-isolation -e .` and run `rh --help`. v1 runs locally and updates only when the user asks; polymer-design case evaluation is not included.
 
 ## 1. Workspace and APIs
 
