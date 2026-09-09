@@ -85,7 +85,15 @@ class HarnessTests(unittest.TestCase):
     def test_xml_parser_keeps_stable_locator(self):
         xml=self.root/"record.xml"; xml.write_text("<article><p id='p1'>Measured result</p></article>",encoding="utf-8")
         ident=self.h.import_document(xml,"baseline","paper")["document_id"]
-        evidence=self.h.store.evidence(ident); self.assertEqual(evidence[0]["locator"],"element:1"); self.assertEqual(evidence[1]["locator"],"p1")
+        evidence=self.h.store.evidence(ident); self.assertEqual(["p1"],[x["locator"] for x in evidence])
+    def test_xml_mixed_content_and_parse_failure_are_persisted(self):
+        xml=self.root/"mixed.xml"; xml.write_text("<article><p id='p1'>Before <b>bold</b> after</p><p id='p2'>Second</p></article>",encoding="utf-8")
+        ident=self.h.import_document(xml,"baseline","paper")["document_id"]
+        self.assertEqual(["Before bold after","Second"],[x["quote"] for x in self.h.store.evidence(ident)])
+        bad=self.root/"bad.xml"; bad.write_text("<article><p>",encoding="utf-8"); bad_id=self.h.import_document(bad,"baseline","paper")["document_id"]
+        self.h.store.close(); self.h=Harness(self.root/"workspace")
+        row=[d for d in self.h.store.documents() if d["id"]==bad_id][0]
+        self.assertEqual("failed",row["parse_status"]); self.assertIn("xml_parse_error",row["parse_errors"])
     def test_local_retrieval_uses_only_frozen_baseline(self):
         hit=self.root/"hit.txt"; discovery=self.root/"discovery.txt"; hit.write_text("polymer design evidence",encoding="utf-8"); discovery.write_text("polymer design secret",encoding="utf-8")
         hit_id=self.h.import_document(hit,"baseline","paper")["document_id"]; self.h.import_document(discovery,"discovery","paper")

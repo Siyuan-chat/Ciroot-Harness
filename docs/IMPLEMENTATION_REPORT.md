@@ -21,6 +21,8 @@ $env:PYTHONPATH='src'
 
 Result: six fixture tests passed: draft preflight rejection, immutable import + baseline freeze + multilingual report export, full Schema regression counterexamples, frozen report snapshots, and offline doctor. `compileall` and `git diff --check` passed. A non-editable wheel was built and installed in an isolated project venv; `rh --help` ran from that installed wheel and confirmed the bundled public Schema resource.
 
+XML/text ingestion now persists `parsed`/`failed` status and parse errors in SQLite. Supported XML paragraph-like nodes retain mixed inline text and stable IDs; unsupported XML structures and PDF page/bounding-box provenance remain pending Docling integration.
+
 `pip install -e . --no-deps` built the editable wheel with `--no-build-isolation`; installation then failed because this managed interpreter cannot write its user site-packages. This is an environment-permission limitation, not an installation-success claim. A normal developer Python environment should use `python -m pip install --no-build-isolation -e .`; this remains pending independent environment verification.
 
 ## Dependency and model record

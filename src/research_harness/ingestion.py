@@ -12,10 +12,13 @@ def parse(path: str | Path, raw: bytes) -> tuple[str, list[dict], list[str]]:
     if suffix==".xml":
         try:
             root=ElementTree.fromstring(raw); parts=[]; evidence=[]
+            semantic={"p","paragraph","claim","abstract","title"}
             for n,node in enumerate(root.iter(),1):
+                tag=node.tag.rsplit("}",1)[-1]
+                if tag not in semantic: continue
                 value=" ".join("".join(node.itertext()).split())
                 if value:
-                    tag=node.tag.rsplit("}",1)[-1]; locator=node.attrib.get("id") or f"element:{n}"
+                    locator=node.attrib.get("id") or f"element:{n}"
                     parts.append(value); evidence.append({"quote":value,"locator":locator,"role":tag})
             return "\n".join(parts),evidence,errors
         except ElementTree.ParseError as exc: return "",[],[f"xml_parse_error:{exc}"]

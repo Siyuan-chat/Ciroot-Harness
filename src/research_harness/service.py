@@ -42,8 +42,7 @@ class Harness:
     def import_document(self,path,collection,kind):
         ident=self.store.import_file(path,collection,kind)
         raw=Path(path).read_bytes(); text,evidence,errors=parse(path,raw)
-        if text:
-            self.store.db.execute("UPDATE documents SET content=? WHERE id=?",(text,ident)); self.store.db.commit()
+        self.store.db.execute("UPDATE documents SET content=?,parse_status=?,parse_errors=? WHERE id=?",(text,"parsed" if not errors else "failed",json.dumps(errors,ensure_ascii=False),ident)); self.store.db.commit()
         self.store.add_evidence(ident,evidence)
         return {"document_id":ident,"evidence_count":len(evidence),"parse_errors":errors}
     def save_spec(self, spec_path):
