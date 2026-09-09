@@ -2,7 +2,7 @@ from __future__ import annotations
 import csv, html, json, os, shutil, sys, time
 from pathlib import Path
 from .contracts import fingerprint, load_json, validate_runtime, validate_spec
-from .errors import PreflightError, ValidationError, NotFoundError, ExportError
+from .errors import PreflightError, ValidationError, NotFoundError, ExportError, UnsupportedError
 from .storage import Store
 from .ingestion import parse
 from .retrieval import search
@@ -63,6 +63,7 @@ class Harness:
                 if missing: raise PreflightError(f"{name} credential is required")
     def run(self,spec_path,runtime_path):
         spec=self.save_spec(spec_path); runtime=load_json(runtime_path); self._preflight(spec,runtime)
+        if runtime["retrieval"]["mode"]!="lexical_test_only" or any(x.get("enabled") for x in runtime["sources"].values()): raise UnsupportedError("live investigation is not supported")
         all_docs=self.store.documents(); ref=spec["reference_library"]
         allowed_collections=set(ref["collection_ids"]); requested=set(ref["document_ids"])
         by_id={d["id"]:d for d in all_docs}; missing=requested-set(by_id)

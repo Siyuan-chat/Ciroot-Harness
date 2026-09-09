@@ -19,3 +19,6 @@ class NotFoundError(HarnessError):
 
 class ExportError(HarnessError):
     code = "RH_EXPORT_FAILED"
+
+class UnsupportedError(HarnessError):
+    code = "RH_UNSUPPORTED"

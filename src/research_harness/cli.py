@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse,json,sys
 from importlib import resources
 from .contracts import load_json, validate_spec
-from .errors import HarnessError, PreflightError
+from .errors import HarnessError, PreflightError, UnsupportedError
 from .service import Harness
 from .intake import respond
 
@@ -20,15 +20,14 @@ def main(argv=None):
     x=sub.add_parser("report");x.add_argument("run_id");ws(x);x.add_argument("--languages",default="zh,en,ja")
     x=sub.add_parser("review"); rs=x.add_subparsers(dest="review_cmd",required=True);l=rs.add_parser("list");ws(l);l.add_argument("--lang",default="en");d=rs.add_parser("decide");d.add_argument("issue_id");d.add_argument("--decision",required=True);d.add_argument("--note",required=True);ws(d)
     a=p.parse_args(argv)
+    h=None
     try:
         if a.cmd=="validate":
             result=load_json(a.spec); validate_spec(result); print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
         if a.cmd=="doctor":
             result=Harness.doctor(a.runtime,a.lang); print(json.dumps(result,ensure_ascii=False,indent=2)); return 0 if result["ok"] else 3
         h=Harness(a.workspace); result=None
-        if a.cmd=="chat":
-            message=a.message if a.message is not None else input("> ")
-            result=respond(a.workspace,message,a.lang)
+        if a.cmd=="chat": raise UnsupportedError("interactive chat is not supported")
         elif a.cmd=="import": result=h.import_document(a.path,a.collection,a.kind)
         elif a.cmd=="run": result={"run_id":h.run(a.spec,a.runtime)}
         elif a.cmd=="resume":
@@ -46,5 +45,7 @@ def main(argv=None):
         else: h.review_decide(a.issue_id,a.decision,a.note); result={"ok":True}
         print(json.dumps(result,ensure_ascii=False,indent=2));return {"completed":0,"partial":4,"failed":3}.get(result.get("outcome"),0) if a.cmd=="demo" else (4 if a.cmd=="run" and h.store.run(result["run_id"])["status"]=="partial" else 0)
     except HarnessError as e: print(json.dumps(e.to_dict(),ensure_ascii=False),file=sys.stderr);return 2 if e.code=="RH_INVALID_INPUT" else 3
-    except (KeyError,ValueError) as e: print(json.dumps({"error":"RH_INVALID_INPUT","message":str(e)}),file=sys.stderr);return 2
+    except (KeyError,ValueError): print(json.dumps({"error":"RH_INVALID_INPUT","message":"invalid input"}),file=sys.stderr);return 2
+    finally:
+        if h is not None: h.close()
 if __name__=="__main__": raise SystemExit(main())
