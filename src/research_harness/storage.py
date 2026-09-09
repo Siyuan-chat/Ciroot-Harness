@@ -24,10 +24,15 @@ class Store:
         if "parse_errors" not in doc_columns: self.db.execute("ALTER TABLE documents ADD COLUMN parse_errors TEXT DEFAULT '[]'")
         self.db.commit()
     def close(self): self.db.close()
-    def save_spec(self, spec: dict, fp: str) -> None:
+    def save_spec(self, spec: dict, fp: str) -> dict:
         row = self.db.execute("SELECT fingerprint FROM specs WHERE project_id=? AND revision=?", (spec["project_id"], spec["revision"])).fetchone()
-        if row and row["fingerprint"] != fp: raise BusyError("revision conflict: manual edit requires a new revision")
-        self.db.execute("INSERT OR IGNORE INTO specs VALUES (?,?,?,?,?)", (spec["project_id"], spec["revision"], fp, json.dumps(spec,ensure_ascii=False), time.time())); self.db.commit()
+        if row and row["fingerprint"] != fp:
+            rows=self.db.execute("SELECT revision,content,fingerprint FROM specs WHERE project_id=? ORDER BY revision DESC",(spec["project_id"],)).fetchall(); comparable={**spec,"revision":0}
+            for old in rows:
+                value=json.loads(old["content"]); value["revision"]=0
+                if value==comparable: return json.loads(old["content"])
+            spec={**spec,"revision":rows[0]["revision"]+1}; fp=__import__("hashlib").sha256(json.dumps(spec,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        self.db.execute("INSERT OR IGNORE INTO specs VALUES (?,?,?,?,?)", (spec["project_id"], spec["revision"], fp, json.dumps(spec,ensure_ascii=False), time.time())); self.db.commit(); return spec
     def import_file(self, path: str | Path, collection: str, kind: str) -> str:
         raw = Path(path).read_bytes(); digest = hashlib.sha256(raw).hexdigest(); ident = "doc-" + digest[:16]
         target = self.root / "raw" / digest; target.write_bytes(raw) if not target.exists() else None

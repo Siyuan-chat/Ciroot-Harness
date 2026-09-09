@@ -46,7 +46,7 @@ class Harness:
         self.store.add_evidence(ident,evidence)
         return {"document_id":ident,"evidence_count":len(evidence),"parse_errors":errors}
     def save_spec(self, spec_path):
-        spec=self.validate(spec_path); self.store.save_spec(spec,fingerprint(spec)); return spec
+        spec=self.validate(spec_path); return self.store.save_spec(spec,fingerprint(spec))
     def _preflight(self,spec,runtime):
         if spec["status"]!="ready" or spec["unresolved_questions"]: raise PreflightError(MESSAGES[spec["languages"]["conversation"]]["need_ready"])
         validate_runtime(runtime)
@@ -93,7 +93,7 @@ class Harness:
         from .workflow import run
         spec=self.validate(spec_path)
         if spec["status"]!="ready" or spec["unresolved_questions"]: raise PreflightError("fixture run requires ready spec")
-        self.store.save_spec(spec,fingerprint(spec)); run_id=self.store.create_run(spec,"fixture",{"synthetic":True})
+        spec=self.store.save_spec(spec,fingerprint(spec)); run_id=self.store.create_run(spec,"fixture",{"synthetic":True})
         def progress(e):
             if on_progress:on_progress({"run_id":run_id,"stage":e["stage"],"status":"running"})
         baseline_ids=set(spec["reference_library"]["document_ids"]); baseline=[d for d in self.store.documents() if d["id"] in baseline_ids or d["collection_name"] in spec["reference_library"]["collection_ids"]]
