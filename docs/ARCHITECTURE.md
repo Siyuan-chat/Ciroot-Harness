@@ -1,5 +1,7 @@
 # 架构设计 D1
 
+> D2 当前只落地框架主干：LangGraph 最小流程、现有 SQLite、可替换 fixture 适配器及报告；Docling/向量库/真实来源集成后移。CLI 和未来 GUI 作为薄入口调用同一应用服务，不重复业务逻辑。GUI 不读取 CLI stdout、不直接操作数据库，也不直接依赖 LangGraph 状态对象；本轮不增加 HTTP/WebSocket 或 UI 技术栈。
+
 目标：用成熟组件实现可恢复、证据可追溯的本地调查。职责边界以 [PRD](PRD.md) 和 [数据契约](CONTRACTS.md) 为准；目录结构是建议，实现者可在不改变接口和验收要求的前提下简化。
 
 ## 1. 组件与依赖

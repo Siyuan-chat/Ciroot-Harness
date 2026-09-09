@@ -2,36 +2,37 @@
 
 [中文](README.zh-CN.md) · English · [日本語](README.ja.md)
 
-A local-first literature and patent investigation harness. Describe a research need in natural language; an LLM clarifies consequential ambiguities and produces a versioned JSON specification. A manually triggered investigation retrieves documents, compares cited evidence with a frozen local reference library, and produces reports plus a persistent human-review queue.
+A local literature/patent investigation framework. The target workflow is natural-language requirements → versioned JSON → retrieval → comparison with a frozen reference library → human review and reports.
 
-**Current status: implemented alpha, pending independent acceptance.** The local CLI, versioned specification store, SQLite document store, offline fixture workflow and report renderer are implemented. Optional production integrations (LangGraph, Docling, FastEmbed/Qdrant/LlamaIndex, OpenAlex/EPO and model APIs) require their documented extras, configuration and independent acceptance. No real polymer-design case evaluation or publishable demo has been performed.
+**D2 fixture framework; final framework acceptance pending.** The demo uses synthetic text and local source/model callables. It runs real LangGraph, SQLite and citation verification, producing Chinese, English and Japanese reports. It needs no API keys and makes no external API calls.
 
-## Agreed behavior
+## Quick start
 
-- Chinese, English and Japanese conversation, retrieval, reports and review lists.
-- Manual updates on a local computer; no background scheduler in v1.
-- Local originals, local indexes and local embeddings; relevant evidence excerpts may be sent to the configured model API.
-- Separate model API and data-source credentials. Supported providers are configured without changing source code.
-- Missing or conflicting evidence becomes a watch item and a human-review issue; the investigation continues.
-- Human decisions apply to individual findings. Global criteria change only when explicitly requested.
-- Reports preserve document identity, source locations, test conditions, baseline and specification versions.
+Python 3.11+ is required. In a Windows source checkout:
 
-## Design package
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install .
+.venv\Scripts\rh demo --workspace .local\demo
+.venv\Scripts\rh status --workspace .local\demo
+```
 
-| Document | Purpose |
-|---|---|
-| [Product requirements](docs/PRD.md) | Scope, requirement IDs and default behavior |
-| [Architecture](docs/ARCHITECTURE.md) | Components, workflow, persistence and provider boundaries |
-| [Data contracts](docs/CONTRACTS.md) | Executable JSON, evidence, findings and review semantics |
-| [Acceptance plan](docs/ACCEPTANCE.md) | Framework, integration, case and release gates |
-| [Terra handoff](docs/HANDOFF_TERRA.md) | Implementation order and required delivery |
-| [Decision register](docs/DECISIONS.md) | Accepted decisions, defaults and remaining case inputs |
-| [English guide](docs/USER_GUIDE.en.md) | Intended user journey and CLI contract |
+Installation downloads the declared dependencies; the demo itself is offline. On macOS/Linux use `.venv/bin/python` and `.venv/bin/rh`; independent runtime acceptance currently targets Windows.
 
-[Research specification schema](schemas/research-spec.schema.json) · [Runtime schema](schemas/runtime.schema.json) · [Polymer-design draft](examples/polymer-design.draft.json)
+The default demo produces two synthetic candidates, verified findings, one human-review issue, three HTML reports, three Markdown reports, canonical JSON and review CSV. Open the returned report directory to read the HTML.
 
-The first case is **polymer design**. The domain belongs in a research specification; it must not be hard-coded into the harness. The draft contains no measured values, named target polymer or scientific conclusions.
+## Available now
 
-Install from source with `python -m pip install --no-build-isolation -e .`, then run `rh --help`. The `--no-build-isolation` switch is useful in offline environments with a preinstalled build backend. See `docs/IMPLEMENTATION_REPORT.md` for tested commands and evidence boundaries.
+- Validated ResearchSpec, automatic revisions for manual edits and frozen run inputs.
+- Local text originals/evidence, separate reference snapshots and discoveries.
+- Replaceable fixture source/model callables in a minimal LangGraph workflow.
+- Citation ownership/quote checks, persistent review decisions, candidate limits and explicit partial/failed outcomes.
+- Shared Python services with structured results, safe errors, artifact references and progress callbacks for a future GUI.
 
-The target is a GitHub open-source release with a reproducible demo after acceptance. Repository identity, final license and demo redistribution rights are resolved before publication; no publication has occurred.
+Real model/source APIs, OpenAlex/EPO, production vector RAG, PDF/OCR, standalone chat, recovery and GUI are **not integrated in D2**. Installing optional dependencies does not enable them. Unsupported live/chat paths are refused; `lexical_test_only` is retained only for test compatibility. The host assistant currently clarifies requirements and supplies JSON.
+
+[English guide](docs/USER_GUIDE.en.md) · [Current scope](docs/SCOPE_AUDIT.md) · [Contracts/adapters](docs/CONTRACTS.md) · [Acceptance K01–K07](docs/ACCEPTANCE.md) · [Requirements](docs/PRD.md) · [Architecture](docs/ARCHITECTURE.md) · [Decisions](docs/DECISIONS.md)
+
+The first later case is polymer design. [Its draft](examples/polymer-design.draft.json) has unresolved requirements and is not runnable scientific evidence. Real API integration and case/demo validation precede GitHub publication. No scientific case or public release has been accepted yet.
+
+Keep credentials, private originals and runtime workspaces outside Git. Packaged demo material is synthetic. Product investigations are manually triggered, with no default background schedule.

@@ -1,5 +1,40 @@
 # Data and application contracts — D1
 
+> D2 current scope: the executable fixture framework is accepted against K01–K07. Full provider, parsing, retrieval and recovery requirements below remain the later product contract. The following application boundary is required now for a future GUI wrapper.
+
+## D2 application boundary for a future GUI
+
+### D2 fixture finding and citation contract
+
+The fixture model callable receives `(spec, candidate, candidate_evidence, reference_evidence)` as ordinary dictionaries/lists. Evidence includes the existing persisted `id`, `document_id`, `quote` and `locator`. The callable returns a finding dictionary with `disposition` (include/exclude/watch), `comparison_result`, `rationale`, `candidate_citations` and `reference_citations`. Each citation is `{ "evidence_id": "...", "quote": "exact original text" }`. Empty citation arrays explicitly mean missing support. The harness binds the finding's stable `id`, `candidate_id` and `document_id` to the analyzed candidate; model-supplied identities cannot change ownership. This small fixture contract does not require implementing the full D1 observation schema below.
+
+The verify stage resolves candidate citations only against that candidate's persisted evidence and reference citations only against the frozen baseline evidence. Quotes must exactly match the referenced evidence text; locators come from that evidence record. A missing candidate citation or an invalid ID/ownership/quote sets `disposition=watch`, `comparison_result=insufficient_evidence`, and `verification={"status":"invalid","errors":[...]}` with stable reason codes, and creates a persisted issue tied to the real candidate document. A comparative result (advantage/disadvantage/similar/different_approach) also requires a valid reference citation. Valid citations receive `verification.status=valid`; this records structural verification only, not scientific entailment. Preserve the original model output separately if needed for audit; canonical findings and report conclusions must use the verified result.
+
+The default synthetic model constructs citations from the evidence it actually receives. A deliberately missing-support fixture returns empty candidate citations and watch; no dependency on a special missing flag is allowed in the verifier. Model/source provider integrations remain deferred.
+
+The CLI and a future GUI call the same application services. No UI implementation or HTTP server is required in D2. Reuse the existing Harness service where practical; do not introduce a separate framework just to expose these methods.
+
+| Operation | Required boundary |
+|---|---|
+| Validate/save a specification | Accept a validated JSON-compatible ResearchSpec or an explicitly selected file; return its saved revision/reference and validation errors. Preserve manual edits and immutable run inputs. |
+| Import/select local material | Accept user-selected supported text/normalized fixture inputs; return stable document/evidence references and declared coverage. Managed writes remain in the selected workspace. |
+| Execute the fixture workflow | Accept a saved spec and explicit fixture runtime/adapters; return a structured run result with run_id, outcome and artifact references. A synchronous callable is sufficient now. |
+| Read status/results | Return structured stage/outcome, findings/review and artifact references through a service method. Callers must not inspect SQLite tables, CLI output or LangGraph internals. |
+| Record a human decision | Accept the stable issue ID and an explicit decision/note; persist it and expose the effective current state without rewriting frozen reports or global rules. |
+| Export/get report artifacts | Return language, format and workspace-scoped path references. Rendering failure has a structured error; no automatic browser launching from the application service. |
+
+Expose one optional progress observer on the run service, for example `on_progress(event)`. Events are JSON-compatible and contain `run_id`, `stage`, `status` and optional safe message/counts. Emit actual stage changes, including a terminal outcome; do not invent completion percentages. Without an observer the same workflow remains callable. Callbacks and Python objects do not become persisted provider payloads. A future GUI can dispatch the synchronous service in its own worker and consume these events; worker scheduling, cancellation and network transport are deferred.
+
+Public results and errors must have JSON-compatible representations with stable IDs/codes and safe text. Internal exceptions/framework objects must not be the GUI contract. CLI formatting/printing belongs in the CLI, and application services must not depend on terminal input, stdout parsing or GUI globals. This is an in-process boundary, not a promise of a REST API.
+
+### D2 concrete service projection
+
+Reuse `Harness`: `status()` returns run summaries with `run_id`, `project_id`, `revision`, `outcome`, `stage`, `error`, `limits` and `artifacts`. Add `get_result(run_id)` returning the same fields plus frozen `report_data` as a dictionary and its `findings`/`issues` as lists. Stage is the error stage for failed runs and report for finished fixture runs. `artifacts` retains the existing `report` directory string and adds `files`, a list of `{language, format, path}` for existing exports; shared JSON/CSV use language null. `get_artifacts(run_id)` returns this same `{report, files}` object, keeping the implemented result and artifact endpoint consistent. The service resolves artifact paths from its managed workspace and run record, not from arbitrary caller-supplied paths. Callers never decode serialized database fields.
+
+`review_list()` returns events as lists, and `review_decide(...)` returns the updated issue. This current review state is distinct from frozen run issues. Add `close()` so application clients do not access Store even for cleanup. Existing validate/save/import/run methods remain the public entry points; no generic command dispatcher, REST layer, worker or GUI is required.
+
+For the following error-boundary step, extend existing HarnessError with a safe `to_dict()` representation (`code`, `message`, optional `field`/`stage`), and use stable typed errors for invalid inputs, unmet preconditions, missing run/issue and export failure. Exposed messages must not include raw external exception text or invalid input values. Validate the fixture file and basic candidate shape before creating a run; invalid input must not strand a running record. Keep the already implemented structured source-failure result. These changes define ordinary in-process error handling, not a new error/recovery framework.
+
 This document defines framework-independent boundaries. The input schemas in [schemas](../schemas/) are normative interchange contracts. The implementation may use Pydantic internally. Serialized data must never depend on LangGraph, LlamaIndex or provider SDK classes.
 
 ## 1. ResearchSpec and RuntimeConfig

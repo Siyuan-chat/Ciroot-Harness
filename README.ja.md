@@ -2,36 +2,37 @@
 
 [中文](README.zh-CN.md) · [English](README.md) · 日本語
 
-ローカル環境を中心に動作する論文・特許調査 harness です。自然言語で調査目的を伝えると、LLM が判断に影響する曖昧さを一つずつ確認し、バージョン付き JSON 仕様を作成します。ユーザーが更新を指示すると、資料の検索・取得、固定した参照ライブラリとの証拠比較、レポートと人による確認リストの作成を実行します。
+ローカルの文献・特許調査フレームワークです。目標の流れは、自然言語の要件 → バージョン付き JSON → 検索 → 固定した参照資料との比較 → 人による確認とレポートです。
 
-**現在の状態：実装済み Alpha、独立受入待ちです。** ローカル CLI、JSON 契約検証、SQLite 原文・版管理、オフライン fixture フロー、三言語レポート描画を追加しました。実運用の外部連携とポリマー事例は未検証です。`docs/IMPLEMENTATION_REPORT.md` を参照してください。
+**現在は D2 合成フィクスチャ段階で、最終受入は未完了です。** デモは合成テキストとローカルの情報源／モデル関数を使い、実際の LangGraph、SQLite、引用検証と中国語・英語・日本語レポートを動作させます。API キーや外部 API は使いません。
 
-## 合意した動作
+## クイックスタート
 
-- 対話、検索、レポート、確認リストで中国語・英語・日本語をサポート。
-- 初版はローカルで手動更新。バックグラウンドの定期実行は初版の対象外。
-- 原文、索引、Embedding はローカルに保存。関連する証拠の抜粋は設定したモデル API に送信可能。
-- モデル API と論文・特許データソース API の認証情報を分離。
-- 証拠不足や矛盾があっても調査を継続し、注目・要確認としてリストに追加。
-- 人の判断は対象の資料に適用。全体の判定基準を変更するのは明示的な指示がある場合のみ。
-- 原文の位置、試験条件、調査仕様と参照ライブラリのバージョンを保持。
+Python 3.11+ が必要です。Windows のソースディレクトリで実行します。
 
-## 設計資料
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install .
+.venv\Scripts\rh demo --workspace .local\demo
+.venv\Scripts\rh status --workspace .local\demo
+```
 
-| 文書 | 内容 |
-|---|---|
-| [製品要件](docs/PRD.md) | 対象範囲、要件 ID、既定動作 |
-| [アーキテクチャ](docs/ARCHITECTURE.md) | 構成、処理フロー、永続化と依存関係 |
-| [データ契約](docs/CONTRACTS.md) | JSON、証拠、判定、確認リストの定義 |
-| [受入計画](docs/ACCEPTANCE.md) | フレームワーク、実接続、事例、公開の検証 |
-| [Terra 引き継ぎ](docs/HANDOFF_TERRA.md) | 実装順序と成果物 |
-| [決定記録](docs/DECISIONS.md) | 合意事項、既定値、未確定の事例情報 |
-| [日本語ガイド](docs/USER_GUIDE.ja.md) | ユーザーフローと CLI 仕様 |
+インストール時は宣言済みの依存パッケージを取得します。デモ自体はオフラインです。macOS/Linux では `.venv/bin/python` と `.venv/bin/rh` を使用します。独立実行検証は現在 Windows が対象です。
 
-[調査 JSON Schema](schemas/research-spec.schema.json) · [実行設定 Schema](schemas/runtime.schema.json) · [ポリマー設計の草案](examples/polymer-design.draft.json)
+デモは合成候補2件、検証後の判定、確認事項1件、HTML 3ファイル、Markdown 3ファイル、共通 JSON、確認用 CSV を生成します。返されたレポートディレクトリから HTML を開けます。
 
-最初の事例は**ポリマー設計**です。分野固有の知識は調査設定に置き、汎用エンジンには固定しません。草案には実験値、指定した対象ポリマー、科学的結論は含まれていません。
+## 現在の機能
 
-候補技術は Python、LangGraph、Docling、必要な LlamaIndex モジュール、Qdrant、SQLite です。初期データソースは OpenAlex と EPO OPS、Lens は将来の任意拡張です。
+- ResearchSpec 検証、手動編集後の自動改訂、実行入力の固定。
+- ローカル原文とエビデンス、参照スナップショットと新規候補の分離。
+- 差し替え可能な fixture 情報源／モデル関数と最小 LangGraph フロー。
+- 引用の所属／原文一致、人の判断の保存、候補数上限、一部完了／失敗の明示。
+- 将来の GUI 用 Python サービス、構造化結果、安全なエラー、成果物参照、進捗コールバック。
 
-最終目標は再現可能な demo を含む GitHub オープンソース公開です。公開先、最終ライセンス、demo 資料の再配布条件は公開段階で確定します。現在は未公開です。
+実際のモデル／情報源 API、OpenAlex/EPO、実運用ベクトル RAG、PDF/OCR、独立 chat、再開処理、GUI は **D2 に未接続**です。追加依存パッケージだけでは有効になりません。未対応の live/chat は拒否し、`lexical_test_only` はテスト互換用です。現在はホストのアシスタントが要件を確認して JSON を用意します。
+
+[日本語ガイド](docs/USER_GUIDE.ja.md) · [現在の範囲](docs/SCOPE_AUDIT.md) · [契約／アダプター](docs/CONTRACTS.md) · [受入 K01–K07](docs/ACCEPTANCE.md) · [要件](docs/PRD.md) · [構成](docs/ARCHITECTURE.md) · [決定事項](docs/DECISIONS.md)
+
+最初の実例はポリマー設計を予定しています。[草案](examples/polymer-design.draft.json) には未確定要件があり、実行可能な科学的事例ではありません。実際の API 接続と事例／デモ検証後に GitHub で公開します。科学的事例や公開リリースの受入はまだ行っていません。
+
+キー、非公開原文、実行ワークスペースは Git に保存しないでください。同梱デモは合成資料のみです。調査は手動で開始し、標準の定期実行はありません。

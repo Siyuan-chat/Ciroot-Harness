@@ -1,5 +1,11 @@
 # Research Harness implementation report — Alpha 0.1.0
 
+## D2 fixture-framework checkpoint (2026-09-09)
+
+- `cb7cbc0`: `python -m research_harness.cli demo --workspace .local\demo-k01` completed the synthetic fixture workflow through all seven stages, retained the review issue, and wrote the report artifacts.
+- `2a8cf5d`: the fixture specification and baseline text were added to package resources; the bundled-resource checks and source-tree compile check passed.
+- Final clean-wheel installation and independent K01–K07 acceptance remain pending the design task.
+
 Date: 2026-09-09. This is an implementation self-test record, not independent acceptance and not a scientific-case result.
 
 ## Delivered scope

@@ -1,75 +1,86 @@
-# English user guide — implemented alpha
+# User guide: D2 fixture framework
 
-This guide describes the implemented alpha CLI. Install with `python -m pip install --no-build-isolation -e .` and run `rh --help`. v1 runs locally and updates only when the user asks; polymer-design case evaluation is not included.
+D2 validates the offline framework and extension interfaces. Real APIs, production RAG, PDF/OCR, standalone chat and GUI are not integrated; optional dependencies do not enable them. The host assistant clarifies requirements and supplies ResearchSpec JSON. Product runs are manually triggered.
 
-## 1. Workspace and APIs
+## Install and run
 
-Research intent belongs in research.json. Provider/model selection belongs in runtime.json. Credentials are supplied through environment variables referenced by name.
+Python 3.11+; run in a source checkout on Windows:
 
-The [runtime template](../examples/runtime.example.json) has null model selections. It cannot start an investigation. Terra must supply a verified multilingual local embedding default after integration testing; users select a generation model they can access. Schema validity does not prove model/API availability.
-
-OpenAlex and EPO have separate credentials and content coverage. A discovered record does not guarantee full-text access. Supported providers need configuration only; a new API service needs an adapter.
-
-Original files, databases, indexes, dialogue sessions and reports live under workspace/ and stay out of Git by default. Embeddings are generated locally. Relevant source excerpts may be sent to the configured model for analysis. External speech-to-text output can be pasted into chat; v1 does not include microphone recording.
-
-## 2. Check configuration and describe the task
-
-The commands below are required future interfaces:
-
-```text
-rh doctor --runtime runtime.json --workspace workspace
-rh chat --runtime runtime.json --workspace workspace --lang en
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install .
+.venv\Scripts\rh demo --workspace .local\demo
+.venv\Scripts\rh status --workspace .local\demo
 ```
 
-doctor performs local checks by default. Missing credentials, dependencies or model selections receive actionable messages. Optional explicit online checks must be distinguished from local validation.
+Dependency installation needs network access or prepared package caches. The demo needs neither network access nor keys. A built wheel can be installed with `.venv\Scripts\python -m pip install path\research_harness-0.1.0-py3-none-any.whl`. Keep the demo workspace separate from real materials. On macOS/Linux, executable paths use `.venv/bin/`; independent runtime acceptance currently targets Windows.
 
-Describe the task, for example: “Investigate the design of the selected polymer using my local papers and patents. Compare design approaches and the available performance evidence.”
+The packaged ready spec uses project `fixture-demo`, two synthetic candidates and one synthetic reference. The command returns `run_id/outcome/stage/error/artifacts.report`. The report directory contains three language-specific HTML files, three Markdown files, `report.json` and `review.csv`. One default candidate creates a review issue.
 
-The intake agent asks one consequential question at a time, reuses known answers and produces a readable summary plus a versioned JSON specification. It does not invent scientific thresholds. Revising requirements saves a new version; an explicit “start the investigation” or “update the investigation” triggers execution.
+## Custom synthetic input
 
-The [polymer-design draft](../examples/polymer-design.draft.json) records the agreed topic only. It is not a complete case and cannot execute.
+Save this as `prepare_fixture.py` and run it to copy installed examples:
 
-## 3. Import reference material
-
-```text
-rh import ./my-paper.pdf --workspace workspace --collection baseline --kind paper
-rh import ./my-patent.xml --workspace workspace --collection baseline --kind patent
+```python
+from importlib.resources import files
+from pathlib import Path
+base = files('research_harness').joinpath('fixtures')
+for source, target in [('demo-spec.json', 'research.json'), ('demo.json', 'candidates.json')]:
+    Path(target).write_text(base.joinpath(source).read_text(encoding='utf-8'), encoding='utf-8')
 ```
 
-Originals retain version and location information. Newly retrieved material enters the discovery library. Promotion into the reference library is explicit. Each investigation freezes its reference versions before comparison begins.
+Edit the topic, objectives or budget, then run:
 
-## 4. Update, resume and inspect reports
-
-Use natural-language requests in chat to update, inspect progress or revise the focus. Explicit commands provide the same services:
-
-```text
-rh validate --spec research.json
-rh run --spec research.json --runtime runtime.json --workspace workspace
-rh status --workspace workspace
-rh resume RUN_ID --runtime runtime.json --workspace workspace
-rh report RUN_ID --workspace workspace --languages zh,en,ja
+```powershell
+.venv\Scripts\rh validate --spec research.json
+.venv\Scripts\rh demo --workspace .local\custom --spec research.json --fixture candidates.json
 ```
 
-Candidate counts, query rounds, model calls, download sizes and active execution time are bounded. Reaching a limit saves available results and produces a partial report. Estimated model cost is not the provider invoice; missing pricing is reported as unknown, not zero.
+Validation does not start a run. Execution requires `status=ready` and `unresolved_questions=[]`. Edited content at an existing project/revision receives a new revision; repeated identical content reuses the saved version. Input files are not rewritten. Old configurations, reference snapshots and reports stay frozen.
 
-Outputs include HTML/Markdown reports, canonical JSON facts and a CSV review list. The three languages share facts and record IDs. Reports distinguish completed searches with no additions from unavailable sources. Technical-map entries and noteworthy developments link to original evidence.
+Fixture shape: `{"candidates":[{"id":"synthetic-1","quote":"Synthetic text.","locator":"line:1"}]}`. IDs must be unique and quotes nonempty; optional `missing:true` demonstrates missing support. These are test inputs, not search results or scientific claims. With `--spec`, the default reference is not automatically imported. To select a simple local text reference:
 
-## 5. Human review
-
-```text
-rh review list --workspace workspace --lang en
-rh review decide ISSUE_ID --decision watch --note "Monitor for further evidence" --workspace workspace
+```powershell
+.venv\Scripts\rh import baseline.txt --workspace .local\custom --collection baseline --kind paper
 ```
 
-Decisions are include, exclude, watch or request_more_evidence. A human watch decision is resolved monitoring, distinct from an unanswered evidence issue. Follow-up evidence requests are handled on the next user-triggered run.
+Use `reference_library.collection_ids/document_ids` to select references. Discoveries are not automatically promoted. The polymer-design example remains a draft for later case preparation.
 
-The same issue is not repeatedly added. Material new evidence can reopen it, preserving prior decisions. All language views share state. An individual decision does not change global rules; explicitly request a rule change when that is intended.
+## Review and export
 
-## 6. Reading results
+Replace `RUN_ID` and `ISSUE_ID` with IDs returned by your run:
 
-- An unreported value is neither zero nor a failed threshold.
-- Measurements made under different conditions are not directly comparable.
-- Abstracts, claims, descriptions, examples and paper results have distinct evidence roles.
-- A valid citation location does not by itself prove a conclusion; important judgments remain reviewable.
-- Historical reports preserve their original snapshot. A newer review view does not erase history.
-- This is currently a design package. Later versions must distinguish local tests, live API verification and scientific case acceptance.
+```powershell
+.venv\Scripts\rh review list --workspace .local\demo
+.venv\Scripts\rh review decide ISSUE_ID --decision watch --note "Keep pending further evidence" --workspace .local\demo
+.venv\Scripts\rh report RUN_ID --workspace .local\demo --languages zh,en,ja
+```
+
+include/exclude/watch saves a per-item decision and resolves the issue; request_more_evidence keeps it open. Decisions do not change global criteria or frozen reports. Re-exporting an old run uses its original snapshot; review list shows current decisions.
+
+## Python and future GUI boundary
+
+```python
+from research_harness.service import Harness
+from research_harness.errors import HarnessError
+h = Harness('.local/custom')
+try:
+    result = h.run_fixture('research.json', 'candidates.json', on_progress=lambda e: print(e))
+    print(h.status())
+    print(h.get_result(result['run_id']))
+    print(h.get_artifacts(result['run_id']))
+except HarnessError as exc:
+    print(exc.to_dict())
+finally:
+    h.close()
+```
+
+The service itself does not print. Progress events contain run_id/stage/status. get_result returns decoded frozen facts; get_artifacts returns `{report,files}` with language/format/path per file; review_decide returns the updated issue. Clients need no SQLite access or CLI-output parsing.
+
+Inject `source_adapter(candidates)` or `model_adapter(spec,candidate,candidate_evidence,reference_evidence)`. Model output uses ordinary JSON fields disposition/comparison_result/rationale and candidate/reference citations `{evidence_id,quote}`. The harness verifies ownership and exact text. See [contracts](CONTRACTS.md). Real provider integration still requires implementing its adapter.
+
+## Outcomes and limits
+
+Demo exit codes: completed=0, partial=4, failed=3, invalid input=2. Exceeding max_candidates saves partial results. Source and export failures remain explicit. Stable codes include RH_INVALID_INPUT, RH_PRECONDITION, RH_NOT_FOUND, RH_EXPORT_FAILED and RH_UNSUPPORTED; public errors exclude raw external exceptions.
+
+D2 covers representative budget/failure paths, not crash recovery or every budget dimension. chat/live are unsupported; lexical_test_only is a legacy test path. Keep originals, credentials, SQLite and reports in ignored workspaces. Real API/library integration, polymer case acceptance and GitHub publication follow this framework phase.
