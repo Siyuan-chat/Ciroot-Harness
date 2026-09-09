@@ -2,7 +2,7 @@ from __future__ import annotations
 import csv, html, json, os, shutil, sys, time
 from pathlib import Path
 from .contracts import fingerprint, load_json, validate_runtime, validate_spec
-from .errors import PreflightError
+from .errors import PreflightError, ValidationError
 from .storage import Store
 from .ingestion import parse
 from .retrieval import search
