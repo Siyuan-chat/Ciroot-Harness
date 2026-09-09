@@ -99,7 +99,7 @@ class Harness:
         fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); result=run(fixture,source_adapter,model_adapter,progress)
         for issue in result["issues"]: self.store.create_issue(issue)
         data={"run_id":run_id,"status":"completed","execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":[],"sources":{"fixture":{"status":"complete"}},"limits":[]}
-        self.store.finish_run(run_id,"completed",{"synthetic":True},data); out=self.report(run_id,["zh","en","ja"])
+        self.store.finish_run(run_id,"completed",{"synthetic":True,"sources":{"fixture":{"status":"complete"}},"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])
         if on_progress:on_progress({"run_id":run_id,"stage":"report","status":"completed"})
         return {"run_id":run_id,"outcome":"completed","stage":"report","stages":result["stages"],"issues":result["issues"],"artifacts":{"report":str(out)}}
     def review_list(self): return self.store.issues()
