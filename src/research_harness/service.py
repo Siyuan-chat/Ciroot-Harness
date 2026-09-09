@@ -83,8 +83,11 @@ class Harness:
         out=self.workspace/"reports"/run_id; out.mkdir(parents=True,exist_ok=True); (out/"report.json").write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
         for lang in languages:
             title={"zh":"研究报告","en":"Research report","ja":"調査レポート"}[lang]
-            md=f"# {title}\n\nRun: `{run_id}`\n\nStatus: **{run['status']}**\n\nExecution mode: `{run['mode']}`; synthetic: `{manifest['synthetic']}`\n\n## Coverage\n\n"+json.dumps(manifest["sources"],ensure_ascii=False,indent=2)+"\n\n## Limits\n\n"+"\n".join('- '+x for x in manifest["notes"])+"\n"
-            (out/f"report.{lang}.md").write_text(md,encoding="utf-8"); (out/f"report.{lang}.html").write_text(f"<!doctype html><meta charset=utf-8><title>{title}</title><pre>{html.escape(md)}</pre>",encoding="utf-8")
+            labels={"zh":("候选与判定","人工清单","合成夹具"),"en":("Candidates and findings","Review issues","Synthetic fixture"),"ja":("候補と判定","確認リスト","合成フィクスチャ")}[lang]
+            rows=[]
+            for f in data.get("findings",[]): rows.append(f"| {f.get('candidate_id','')} | {f.get('disposition','')} | {f.get('comparison_result','')} | {f.get('verification',{}).get('status','')} |")
+            md=f"# {title}\n\n> {labels[2]}: `{data.get('synthetic',False)}`\n\n## {labels[0]}\n\n| ID | Disposition | Comparison | Verification |\n|---|---|---|---|\n"+"\n".join(rows)+"\n\n## Evidence (original)\n\n"+json.dumps({"candidates":data.get("candidates",[]),"reference_evidence":data.get("reference_evidence",[])},ensure_ascii=False,indent=2).replace("<","&lt;")+f"\n\n## {labels[1]}\n\n"+json.dumps(data.get("issues",[]),ensure_ascii=False,indent=2).replace("<","&lt;")+"\n"
+            (out/f"report.{lang}.md").write_text(md,encoding="utf-8"); (out/f"report.{lang}.html").write_text(f"<!doctype html><meta charset=utf-8><title>{html.escape(title)}</title><pre>{html.escape(md)}</pre>",encoding="utf-8")
         with (out/"review.csv").open("w",encoding="utf-8",newline="") as f:
             w=csv.DictWriter(f,fieldnames=["id","status","machine_disposition","human_decision","note"]);w.writeheader();[w.writerow({k:("'"+str(i[k]) if isinstance(i.get(k),str) and i[k][:1] in "=+-@" else i.get(k)) for k in w.fieldnames}) for i in data["issues"]]
         return out
