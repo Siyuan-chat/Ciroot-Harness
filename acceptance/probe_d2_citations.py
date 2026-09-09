@@ -14,7 +14,7 @@ sys.path.insert(0, str(source / 'src'))
 from research_harness.service import Harness
 
 results = {}
-for mode in ('valid', 'unknown_id', 'wrong_quote', 'wrong_owner'):
+for mode in ('valid', 'unknown_id', 'wrong_quote', 'wrong_owner', 'missing_reference', 'wrong_reference', 'null_citation'):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         h = Harness(root / 'workspace')
@@ -38,8 +38,16 @@ for mode in ('valid', 'unknown_id', 'wrong_quote', 'wrong_owner'):
                 citation['quote'] = 'This synthetic quote is absent from the original.'
             if mode == 'wrong_owner':
                 citation = {'evidence_id': reference_evidence[0]['id'], 'quote': reference_evidence[0]['quote']}
-            return {'id': 'synthetic-finding', 'disposition': 'include', 'comparison_result': 'not_comparable',
-                    'rationale': 'Synthetic plumbing check.', 'candidate_citations': [citation], 'reference_citations': []}
+            if mode == 'null_citation':
+                citation = {'evidence_id': None, 'quote': None}
+            references = []
+            comparison = 'not_comparable'
+            if mode in ('missing_reference', 'wrong_reference'):
+                comparison = 'advantage'
+            if mode == 'wrong_reference':
+                references = [{'evidence_id': e['id'], 'quote': e['quote']}]
+            return {'id': 'synthetic-finding', 'disposition': 'include', 'comparison_result': comparison,
+                    'rationale': 'Synthetic plumbing check.', 'candidate_citations': [citation], 'reference_citations': references}
 
         out = h.run_fixture(sp, fp, model_adapter=model)
         h.store.close()
