@@ -1,13 +1,15 @@
 from langgraph.graph import StateGraph, START, END
 
 def run(fixture, source_adapter=None, model_adapter=None, on_progress=None):
-    state={"fixture":fixture,"stages":[],"issues":[]}
+    state={"fixture":fixture,"spec":fixture.get("spec",{}),"stages":[],"issues":[]}
     def step(name):
         def fn(s):
             s["stages"].append(name)
             if on_progress: on_progress({"stage":name})
             if name=="search": s["candidates"]=(source_adapter or (lambda x:x))(s["fixture"]["candidates"])
-            if name=="analyze": s["findings"]=[{"id":x["id"],"quote":x["quote"],"locator":x["locator"],"disposition":"watch" if x.get("missing") else "include"} for x in s["candidates"]]
+            if name=="analyze":
+                model=model_adapter or (lambda spec,candidate,candidate_evidence,reference_evidence:{"id":candidate["id"],"quote":candidate["quote"],"locator":candidate["locator"],"disposition":"watch" if candidate.get("missing") else "include"})
+                s["findings"]=[model(s.get("spec",{}),x,[{"id":x["id"],"quote":x["quote"]}],s.get("reference_evidence",[])) for x in s["candidates"]]
             if name=="verify": s["issues"]=[{"id":"issue-"+x["id"],"status":"open","note":"missing evidence"} for x in s["candidates"] if x.get("missing")]
             return s
         return fn

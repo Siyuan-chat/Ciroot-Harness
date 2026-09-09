@@ -96,7 +96,7 @@ class Harness:
         self.store.save_spec(spec,fingerprint(spec)); run_id=self.store.create_run(spec,"fixture",{"synthetic":True})
         def progress(e):
             if on_progress:on_progress({"run_id":run_id,"stage":e["stage"],"status":"running"})
-        fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); result=run(fixture,source_adapter,model_adapter,progress)
+        fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); fixture["spec"]=spec; result=run(fixture,source_adapter,model_adapter,progress)
         for issue in result["issues"]: self.store.create_issue(issue)
         data={"run_id":run_id,"status":"completed","execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":[],"sources":{"fixture":{"status":"complete"}},"limits":[]}
         self.store.finish_run(run_id,"completed",{"synthetic":True,"sources":{"fixture":{"status":"complete"}},"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])
