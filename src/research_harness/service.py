@@ -91,7 +91,16 @@ class Harness:
     def status(self): return self.store.runs()
     def run_fixture(self,spec_path,fixture_path,*,source_adapter=None,model_adapter=None,on_progress=None):
         from .workflow import run
-        spec=self.save_spec(spec_path); fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); result=run(fixture,source_adapter,model_adapter,on_progress)
-        return {"run_id":"fixture", "outcome":"completed", "stage":"report", "stages":result["stages"], "candidates":result["candidates"], "issues":result["issues"]}
+        spec=self.validate(spec_path)
+        if spec["status"]!="ready" or spec["unresolved_questions"]: raise PreflightError("fixture run requires ready spec")
+        self.store.save_spec(spec,fingerprint(spec)); run_id=self.store.create_run(spec,"fixture",{"synthetic":True})
+        def progress(e):
+            if on_progress:on_progress({"run_id":run_id,"stage":e["stage"],"status":"running"})
+        fixture=json.loads(Path(fixture_path).read_text(encoding="utf-8")); result=run(fixture,source_adapter,model_adapter,progress)
+        for issue in result["issues"]: self.store.create_issue(issue)
+        data={"run_id":run_id,"status":"completed","execution_mode":"fixture","synthetic":True,"issues":self.store.issues(),"documents":[],"sources":{"fixture":{"status":"complete"}},"limits":[]}
+        self.store.finish_run(run_id,"completed",{"synthetic":True},data); out=self.report(run_id,["zh","en","ja"])
+        if on_progress:on_progress({"run_id":run_id,"stage":"report","status":"completed"})
+        return {"run_id":run_id,"outcome":"completed","stage":"report","stages":result["stages"],"issues":result["issues"],"artifacts":{"report":str(out)}}
     def review_list(self): return self.store.issues()
     def review_decide(self,issue,decision,note): self.store.decide(issue,decision,note)

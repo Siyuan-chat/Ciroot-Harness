@@ -53,3 +53,5 @@ class Store:
         state="open" if decision=="request_more_evidence" else "resolved"
         self.db.execute("UPDATE issues SET status=?,human_decision=?,note=?,events=? WHERE id=?",(state,decision,note,json.dumps(events,ensure_ascii=False),issue_id));self.db.commit()
     def issues(self): return [dict(x) for x in self.db.execute("SELECT * FROM issues ORDER BY id")]
+    def create_issue(self, issue):
+        self.db.execute("INSERT OR IGNORE INTO issues VALUES (?,?,?,?,?,?,?,?,?,?)",(issue["id"],issue.get("document_id",issue["id"]),"fixture","missing_evidence","fixture","open","watch",None,issue.get("note",""),"[]")); self.db.commit()
