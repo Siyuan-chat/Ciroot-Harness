@@ -3,6 +3,7 @@ import argparse,json,sys
 from .contracts import load_json, validate_spec
 from .errors import HarnessError, PreflightError
 from .service import Harness
+from .intake import respond
 
 def main(argv=None):
     p=argparse.ArgumentParser(prog="rh"); sub=p.add_subparsers(dest="cmd",required=True)
@@ -23,7 +24,9 @@ def main(argv=None):
         if a.cmd=="doctor":
             result=Harness.doctor(a.runtime,a.lang); print(json.dumps(result,ensure_ascii=False,indent=2)); return 0 if result["ok"] else 3
         h=Harness(a.workspace); result=None
-        if a.cmd=="chat": result={"intent":"clarify","message":"Interactive intake is not implemented; use validate/run with a versioned JSON spec."}
+        if a.cmd=="chat":
+            message=a.message if a.message is not None else input("> ")
+            result=respond(a.workspace,message,a.lang)
         elif a.cmd=="import": result={"document_id":h.import_document(a.path,a.collection,a.kind)}
         elif a.cmd=="run": result={"run_id":h.run(a.spec,a.runtime)}
         elif a.cmd=="resume":
