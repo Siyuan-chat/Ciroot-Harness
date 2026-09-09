@@ -7,7 +7,7 @@ name = "research-harness"
 version = "0.1.0"
 description = "Local-first, evidence-traceable research harness"
 requires-python = ">=3.11"
-dependencies = ["jsonschema>=4.23", "requests>=2.32"]
+dependencies = ["jsonschema>=4.23", "requests>=2.32", "langgraph>=1.2"]
 
 [project.optional-dependencies]
 full = ["langgraph>=0.2", "docling>=2", "fastembed>=0.4", "qdrant-client>=1.12", "llama-index-core>=0.11"]
@@ -23,4 +23,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-research_harness = ["schemas/*.json"]
+research_harness = ["schemas/*.json", "fixtures/*.json"]
