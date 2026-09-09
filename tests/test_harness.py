@@ -38,7 +38,7 @@ class HarnessTests(unittest.TestCase):
         with self.assertRaises(PreflightError): self.h.run(self.spec,self.runtime)
     def test_import_run_and_reports_are_local_fixture(self):
         source=self.root/"paper.txt"; source.write_text("Evidence paragraph 1\n",encoding="utf-8")
-        doc=self.h.import_document(source,"baseline","paper")
+        doc=self.h.import_document(source,"baseline","paper")["document_id"]
         run=self.h.run(self.spec,self.runtime)
         record=self.h.store.run(run); self.assertEqual(record["status"],"completed")
         report=self.root/"workspace"/"reports"/run
@@ -67,8 +67,12 @@ class HarnessTests(unittest.TestCase):
     def test_report_is_a_frozen_snapshot_and_honors_explicit_reference(self):
         first=self.root/"one.txt"; second=self.root/"two.txt"; later=self.root/"later.txt"
         first.write_text("one",encoding="utf-8"); second.write_text("two",encoding="utf-8"); later.write_text("later",encoding="utf-8")
-        first_id=self.h.import_document(first,"baseline","paper"); self.h.import_document(second,"baseline","paper")
+        first_id=self.h.import_document(first,"baseline","paper")["document_id"]; self.h.import_document(second,"baseline","paper")
         spec=ready_spec(); spec["reference_library"]["collection_ids"]=[]; spec["reference_library"]["document_ids"]=[first_id]; self._write(spec)
         run=self.h.run(self.spec,self.runtime); report=self.root/"workspace"/"reports"/run/"report.json"; before=report.read_text(encoding="utf-8")
         self.h.import_document(later,"discovery","paper"); self.h.report(run,["en"])
         after=report.read_text(encoding="utf-8"); self.assertEqual(before,after); self.assertEqual([first_id],json.loads(after)["baseline_document_ids"])
+    def test_xml_parser_keeps_stable_locator(self):
+        xml=self.root/"record.xml"; xml.write_text("<article><p id='p1'>Measured result</p></article>",encoding="utf-8")
+        ident=self.h.import_document(xml,"baseline","paper")["document_id"]
+        evidence=self.h.store.evidence(ident); self.assertEqual(evidence[0]["locator"],"element:1"); self.assertEqual(evidence[1]["locator"],"p1")

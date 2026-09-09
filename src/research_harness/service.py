@@ -4,6 +4,7 @@ from pathlib import Path
 from .contracts import fingerprint, load_json, validate_runtime, validate_spec
 from .errors import PreflightError
 from .storage import Store
+from .ingestion import parse
 
 MESSAGES={"zh":{"no_model":"未选择模型","need_ready":"ResearchSpec 必须为 ready 且不存在未解决问题"},"en":{"no_model":"no model selected","need_ready":"ResearchSpec must be ready with no unresolved questions"},"ja":{"no_model":"モデルが選択されていません","need_ready":"ResearchSpec は ready で未解決事項がない必要があります"}}
 
@@ -23,7 +24,13 @@ class Harness:
                     if key.endswith("_env") and not os.getenv(val): problems.append(f"missing {name} credential: {val}")
         optional={x: bool(__import__("importlib").util.find_spec(x)) for x in ("langgraph","docling","fastembed","qdrant_client","llama_index")}
         return {"ok":not problems,"problems":problems,"optional_components":optional,"network_called":False}
-    def import_document(self,path,collection,kind): return self.store.import_file(path,collection,kind)
+    def import_document(self,path,collection,kind):
+        ident=self.store.import_file(path,collection,kind)
+        raw=Path(path).read_bytes(); text,evidence,errors=parse(path,raw)
+        if text:
+            self.store.db.execute("UPDATE documents SET content=? WHERE id=?",(text,ident)); self.store.db.commit()
+        self.store.add_evidence(ident,evidence)
+        return {"document_id":ident,"evidence_count":len(evidence),"parse_errors":errors}
     def save_spec(self, spec_path):
         spec=self.validate(spec_path); self.store.save_spec(spec,fingerprint(spec)); return spec
     def _preflight(self,spec,runtime):

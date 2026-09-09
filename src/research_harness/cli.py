@@ -27,7 +27,7 @@ def main(argv=None):
         if a.cmd=="chat":
             message=a.message if a.message is not None else input("> ")
             result=respond(a.workspace,message,a.lang)
-        elif a.cmd=="import": result={"document_id":h.import_document(a.path,a.collection,a.kind)}
+        elif a.cmd=="import": result=h.import_document(a.path,a.collection,a.kind)
         elif a.cmd=="run": result={"run_id":h.run(a.spec,a.runtime)}
         elif a.cmd=="resume":
             run=h.store.run(a.run_id)
