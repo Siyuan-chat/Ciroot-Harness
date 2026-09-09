@@ -1,8 +1,11 @@
 # Project working agreement
 
+- 当前执行范围为 D2 框架阶段，见 `docs/SCOPE_AUDIT.md` 和 `docs/ACCEPTANCE.md` 的 K01–K07；D1 全量 M1–M5/A01–A34 是后续路线，不作为本轮门槛。
+- GUI 在内部流程通过后封装；本轮仅落实可直接调用的应用服务、结构化结果/错误和进度事件，不实现界面或 HTTP 服务。
+
 - 用户沟通默认中文。产品、用户指南与 README 支持中文、英文、日文。
 - 先读 `docs/PRD.md`、`docs/ARCHITECTURE.md`、`docs/CONTRACTS.md`、`docs/ACCEPTANCE.md`。Terra 从 `docs/HANDOFF_TERRA.md` 开始。
-- 任务提示词决定分工：设计任务负责需求、设计、独立测试和验收；Terra 实现任务负责产品实现和自测。不要在设计任务中继续开发产品代码。
+- 任务提示词决定分工：设计任务负责计划、需求设计、根因诊断和独立验收；Terra 仅按明确任务编码并做简单自测。不要在设计任务中继续开发产品代码。
 - 明确的用户新要求优先；把变化记录到 `docs/DECISIONS.md`，更新受影响的规范。普通可逆实现选择由实现者决定。
 - 先用成熟库公开接口。LangGraph 负责调查编排；LlamaIndex 仅复用 RAG 所需模块；不要叠加第二套任务状态机。
 - 科学数据、原文、条件和引文不得补造。测试夹具、真实材料与发布 demo 必须明确区分。

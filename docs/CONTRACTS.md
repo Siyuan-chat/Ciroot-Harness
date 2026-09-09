@@ -1,5 +1,24 @@
 # Data and application contracts — D1
 
+> D2 current scope: the executable fixture framework is accepted against K01–K07. Full provider, parsing, retrieval and recovery requirements below remain the later product contract. The following application boundary is required now for a future GUI wrapper.
+
+## D2 application boundary for a future GUI
+
+The CLI and a future GUI call the same application services. No UI implementation or HTTP server is required in D2. Reuse the existing Harness service where practical; do not introduce a separate framework just to expose these methods.
+
+| Operation | Required boundary |
+|---|---|
+| Validate/save a specification | Accept a validated JSON-compatible ResearchSpec or an explicitly selected file; return its saved revision/reference and validation errors. Preserve manual edits and immutable run inputs. |
+| Import/select local material | Accept user-selected supported text/normalized fixture inputs; return stable document/evidence references and declared coverage. Managed writes remain in the selected workspace. |
+| Execute the fixture workflow | Accept a saved spec and explicit fixture runtime/adapters; return a structured run result with run_id, outcome and artifact references. A synchronous callable is sufficient now. |
+| Read status/results | Return structured stage/outcome, findings/review and artifact references through a service method. Callers must not inspect SQLite tables, CLI output or LangGraph internals. |
+| Record a human decision | Accept the stable issue ID and an explicit decision/note; persist it and expose the effective current state without rewriting frozen reports or global rules. |
+| Export/get report artifacts | Return language, format and workspace-scoped path references. Rendering failure has a structured error; no automatic browser launching from the application service. |
+
+Expose one optional progress observer on the run service, for example `on_progress(event)`. Events are JSON-compatible and contain `run_id`, `stage`, `status` and optional safe message/counts. Emit actual stage changes, including a terminal outcome; do not invent completion percentages. Without an observer the same workflow remains callable. Callbacks and Python objects do not become persisted provider payloads. A future GUI can dispatch the synchronous service in its own worker and consume these events; worker scheduling, cancellation and network transport are deferred.
+
+Public results and errors must have JSON-compatible representations with stable IDs/codes and safe text. Internal exceptions/framework objects must not be the GUI contract. CLI formatting/printing belongs in the CLI, and application services must not depend on terminal input, stdout parsing or GUI globals. This is an in-process boundary, not a promise of a REST API.
+
 This document defines framework-independent boundaries. The input schemas in [schemas](../schemas/) are normative interchange contracts. The implementation may use Pydantic internally. Serialized data must never depend on LangGraph, LlamaIndex or provider SDK classes.
 
 ## 1. ResearchSpec and RuntimeConfig

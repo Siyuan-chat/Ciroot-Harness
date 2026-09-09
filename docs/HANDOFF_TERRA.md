@@ -1,5 +1,31 @@
 # Terra 实现交接 D1
 
+## D2：当前执行任务，优先于下文全量路线
+
+用户已批准 SCOPE_AUDIT 的收敛方案，并要求未来 GUI 在内部流程跑通后封装、现在留接口。请先读 DECISIONS D14/D15、SCOPE_AUDIT、ACCEPTANCE K01–K07、CONTRACTS 的 D2 GUI 接口节。下文 M1–M5 是后续最终产品路线，不再作为本轮全部实现要求。
+
+本轮具体交付：基于已有代码搭通一条真实调用的 fixture 调查流程（JSON → 规划 → fixture 检索/证据 → fixture 分析 → 引用核查 → 人工清单 → 三语基础报告），使用 LangGraph 最小图及现有存储，保留 reference/discovery 和冻结配置；定义实际用到的模型/来源/检索可替换边界，不建立插件市场。演示输入变化应影响输出，不能用固定最终报告冒充主流程。演示的来源与模型调用全部明确为 fixture，不发真实 API 请求。
+
+CLI 必须复用可调用应用服务，进度通过可选事件回调提供；接口不绑定未来 GUI 技术。当前不实现图形界面、HTTP/WebSocket、后台调度平台或复杂取消恢复。自然语言需求由当前 Codex 宿主整理成 JSON；原固定问答 chat 若不满足需求，应标记未支持/后移，不伪称完整 intake。
+
+现有真实来源/复杂解析草稿可保留但不进入框架默认启用路径；本轮停止修扩 OpenAlex/EPO 协议、PDF/OCR、生产向量 RAG 和两家真实模型。只修当前启用路径所需的数据完整性与错误问题。新增依赖限制为运行主干所需，不安装整套 full extras。
+
+按下列设计计划编码，Terra 仅跑简单测试并记录实际命令/结果，不承担根因诊断和独立验收。设计任务负责 K01–K07 的独立检查及失败诊断。Terra 遇到新设计问题或非例行阻塞时提供复现和错误，等待设计任务给出明确修正；不扩大架构和范围。通过框架验收即停。
+
+## D2 编码计划与已诊断差距（设计任务制定）
+
+当前代码缺口：service.run 只有关键词检索和基础报告，没有实际分析/引用核查/issue 创建的完整链；Store 有人工决定写入但无主流程创建问题；report 主要展示运行说明；status 返回原始库记录而非面向 UI 的结果；没有进度通知。它们是本轮工作，providers 的既有未接入缺陷不是当前主线。
+
+按以下三步编码，保留现有已验证的数据快照与 Schema：
+
+1. **主流程及替换点。** 新增明确的 `Harness.run_fixture(spec_path, fixture_path, *, source_adapter=None, model_adapter=None, on_progress=None)` 应用入口；fixture 文件保存合成候选及可控模型输出输入，不存固定最终报告。使用 LangGraph 最小图执行 plan/search/retrieve/analyze/verify/review/report；各阶段传递已有记录和稳定 ID。来源适配器提供候选，检索只用本轮参照证据，模型适配器接收 spec/候选/双方证据并输出结构化判断，程序检查引用归属/原文匹配，无效引用转 watch 和 issue。用简单接口注入即可，不加插件注册平台。默认 fixture 全程不调用 providers 或云模型；不改生产 RuntimeConfig 枚举伪装 fixture 为真实供应商。原 `run` 未支持的 live 路径明确拒绝；显式旧 lexical_test_only 测试路径可保留兼容，但不能作为生产模式。
+2. **保存结果与界面边界。** 复用 SQLite 保存 run、finding/issue 与冻结 ReportData；一次人工决定可读回。把当前服务状态/结果整理为普通 dict，至少含 run_id/outcome/stage/artifact references，避免要求调用者解析 manifest JSON 字符串或操作 Store。提供可选 on_progress 回调，产生真实阶段变化和终态；服务不打印。保存 spec 时保留手改内容，检测同 revision 不同内容，分配后续 revision 后保存而不改旧行。只实施单次 max_candidates 的明确截断（partial）和代表性 source/model 失败状态；本轮不做并发与全面恢复。
+3. **演示与基础报告。** 提供 `rh demo --workspace <dir> [--spec <file>] [--fixture <file>]`，默认资源放包内，CLI 只组装参数并调用同一个 run_fixture。默认 fixture 应覆盖一条带有效引用的判断和一条缺证据的人工问题，不含真实科学测量。三语 HTML/Markdown、canonical JSON 和 CSV 展示候选、判断、引用、清单与 fixture 标识；变更候选输入或替换 model/source 对象会影响事实输出。返回产物路径供未来 GUI 使用，不在服务中打开浏览器。尚未实现的独立 chat/复杂导入/live 功能须明确标为未支持，不进入默认演示。
+
+Terra 的简单自测：跑默认演示一次（看到非空候选/判断/人工清单及三语产物），通过 Python 调用一次并收集进度；运行受影响的现有简短测试。如失败，报告最短复现、错误和当前改动，由设计任务诊断。记录新增必要依赖、命令、提交号；只安装 LangGraph 主干所需依赖，不安装 full extras。代码内接口细节可做普通可逆选择，产品行为按本计划。
+
+本任务独立负责：干净 wheel 安装、输入变更/替换适配器、历史快照、人工状态、故障/预算、引用与多语事实、GUI 边界的验收。Terra 不需另建大测试矩阵或自称 K01–K07 通过。
+
 ## 分工与当前任务
 
 你负责另一个任务中的 Research Harness 实现。本设计任务负责需求、架构和最终独立验收。先做完整通用框架和文档落地，再返回这里进行测试验收；真实聚合物设计案例和带 demo 的 GitHub 发布在后续阶段。
