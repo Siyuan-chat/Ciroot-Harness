@@ -99,7 +99,9 @@ class Harness:
         with (out/"review.csv").open("w",encoding="utf-8",newline="") as f:
             w=csv.DictWriter(f,fieldnames=["id","status","machine_disposition","human_decision","note"]);w.writeheader();[w.writerow({k:("'"+str(i[k]) if isinstance(i.get(k),str) and i[k][:1] in "=+-@" else i.get(k)) for k in w.fieldnames}) for i in data["issues"]]
         return out
-    def status(self): return [{"run_id":r["id"],"project_id":r["project_id"],"revision":r["revision"],"outcome":r["status"],"stage":(json.loads(r.get("report_data") or "{}").get("error") or {}).get("stage","report")} for r in self.store.runs()]
+    def status(self):
+        fields=("run_id","project_id","revision","outcome","stage","error","limits","artifacts")
+        return [{key:self.get_result(run["id"])[key] for key in fields} for run in self.store.runs()]
     def run_fixture(self,spec_path,fixture_path,*,source_adapter=None,model_adapter=None,on_progress=None):
         from .workflow import run
         spec=self.validate(spec_path)
