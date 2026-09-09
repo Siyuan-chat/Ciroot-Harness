@@ -107,3 +107,14 @@ class HarnessTests(unittest.TestCase):
         os.environ["TEST_OPENALEX"]="synthetic"
         result=openalex_search("query","TEST_OPENALEX",1,1)
         self.assertEqual("partial",result["completeness"]); self.assertEqual("W1",result["candidates"][0]["source_id"])
+    @patch("research_harness.providers.requests.request")
+    def test_openalex_rejects_missing_cursor_and_bad_envelope(self, request):
+        import os
+        os.environ["TEST_OPENALEX"]="synthetic-key"
+        response=Mock(ok=True,status_code=200); request.return_value=response
+        response.json.return_value={"results":[{}],"meta":{"count":3}}
+        with self.assertRaises(SourceError) as error: openalex_search("q","TEST_OPENALEX",2,1)
+        self.assertEqual("invalid_response",error.exception.kind)
+        response.json.return_value={"results":[None],"meta":None}
+        with self.assertRaises(SourceError) as error: openalex_search("q","TEST_OPENALEX",2,1)
+        self.assertEqual("invalid_response",error.exception.kind)
