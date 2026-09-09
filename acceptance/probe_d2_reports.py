@@ -63,6 +63,9 @@ with tempfile.TemporaryDirectory() as tmp:
             'synthetic_notice_visible': all(any(s in t for s in ('合成夹具', 'Synthetic fixture', '合成フィクスチャ')) for t in both),
             'verification_visible': all(any(s in t for s in ('invalid', '无效', '無効')) for t in both),
             'localized_body_headings': lang == 'en' or not any(s in md for s in ('Evidence (original)', '| Disposition |', '| Comparison |', '| Verification |')),
+            'localized_markdown_run_state': lang == 'en' or {'zh': '部分完成', 'ja': '一部完了'}[lang] in decoded_md,
+            'localized_html_review_headers': lang == 'en' or not any(s in text for s in ('StatusMachineDecisionNote', 'StatusMachine')),
+            'rationale_original_label': all({'zh': '模型原文', 'en': 'model original', 'ja': 'モデル原文'}[lang] in t for t in both),
             'html_no_active_external_tags': not any(tag in page.tags for tag in ('img', 'script', 'iframe')),
             'markdown_no_active_external_tags': not re.search(r'<\s*(img|script|iframe)\b', md, re.I),
         }
