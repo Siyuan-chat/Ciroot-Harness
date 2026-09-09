@@ -99,7 +99,7 @@ class Harness:
         with (out/"review.csv").open("w",encoding="utf-8",newline="") as f:
             w=csv.DictWriter(f,fieldnames=["id","status","machine_disposition","human_decision","note"]);w.writeheader();[w.writerow({k:("'"+str(i[k]) if isinstance(i.get(k),str) and i[k][:1] in "=+-@" else i.get(k)) for k in w.fieldnames}) for i in data["issues"]]
         return out
-    def status(self): return self.store.runs()
+    def status(self): return [{"run_id":r["id"],"project_id":r["project_id"],"revision":r["revision"],"outcome":r["status"],"stage":(json.loads(r.get("report_data") or "{}").get("error") or {}).get("stage","report")} for r in self.store.runs()]
     def run_fixture(self,spec_path,fixture_path,*,source_adapter=None,model_adapter=None,on_progress=None):
         from .workflow import run
         spec=self.validate(spec_path)
@@ -124,5 +124,21 @@ class Harness:
         self.store.finish_run(run_id,outcome,{"synthetic":True,"sources":data["sources"],"notes":["synthetic fixture"]},data); out=self.report(run_id,["zh","en","ja"])
         if on_progress:on_progress({"run_id":run_id,"stage":stage,"status":outcome})
         return {"run_id":run_id,"outcome":outcome,"stage":stage,"error":error,"stages":result["stages"],"issues":result["issues"],"artifacts":{"report":str(out)}}
-    def review_list(self): return self.store.issues()
-    def review_decide(self,issue,decision,note): self.store.decide(issue,decision,note)
+    def get_result(self,run_id):
+        run=self.store.run(run_id)
+        if not run: raise KeyError(run_id)
+        data=json.loads(run.get("report_data") or "{}")
+        out=self.workspace/"reports"/run_id
+        return {"run_id":run_id,"project_id":run["project_id"],"revision":run["revision"],"outcome":run["status"],"stage":(data.get("error") or {}).get("stage","report"),"error":data.get("error"),"limits":data.get("limits",[]),"artifacts":self.get_artifacts(run_id),"report_data":data,"findings":data.get("findings",[]),"issues":data.get("issues",[])}
+    def get_artifacts(self,run_id):
+        out=self.workspace/"reports"/run_id
+        if not self.store.run(run_id) or not out.exists(): raise KeyError(run_id)
+        files=[]
+        for path in out.iterdir():
+            parts=path.name.split("."); files.append({"language":parts[1] if len(parts)>2 else None,"format":parts[-1],"path":str(path)})
+        return {"report":str(out),"files":files}
+    def review_list(self):
+        return [{**i,"events":json.loads(i["events"])} for i in self.store.issues()]
+    def review_decide(self,issue,decision,note):
+        self.store.decide(issue,decision,note); return next(i for i in self.review_list() if i["id"]==issue)
+    def close(self): self.store.close()
