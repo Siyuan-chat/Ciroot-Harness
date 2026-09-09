@@ -14,6 +14,17 @@ class Harness:
     def validate(self, spec_path):
         spec=load_json(spec_path); validate_spec(spec); return spec
     @staticmethod
+    def doctor_runtime(runtime, lang="en"):
+        problems=[]; llm=runtime["llm"]; retrieval=runtime["retrieval"]
+        if not llm.get("model"): problems.append(MESSAGES[lang]["no_model"])
+        if not llm.get("local") and (not llm.get("api_key_env") or not os.getenv(llm["api_key_env"])): problems.append("missing LLM credential: " + str(llm.get("api_key_env")))
+        if retrieval["mode"]=="hybrid" and not retrieval["embedding"].get("model"): problems.append("missing FastEmbed model selection")
+        optional={x: bool(__import__("importlib").util.find_spec(x)) for x in ("fastembed","qdrant_client","llama_index")}
+        if retrieval["mode"]=="hybrid":
+            missing=[x for x in optional if not optional[x]]
+            if missing: problems.append("missing hybrid retrieval components: "+", ".join(missing))
+        return problems
+    @staticmethod
     def doctor(runtime_path, lang="en"):
         runtime=load_json(runtime_path); validate_runtime(runtime); problems=[]; llm=runtime["llm"]; retrieval=runtime["retrieval"]
         if not llm.get("model"): problems.append(MESSAGES[lang]["no_model"])
@@ -40,6 +51,8 @@ class Harness:
     def _preflight(self,spec,runtime):
         if spec["status"]!="ready" or spec["unresolved_questions"]: raise PreflightError(MESSAGES[spec["languages"]["conversation"]]["need_ready"])
         validate_runtime(runtime)
+        doctor=self.doctor_runtime(runtime, spec["languages"]["conversation"])
+        if doctor: raise PreflightError("; ".join(doctor))
         if not runtime["llm"].get("model"): raise PreflightError("LLM model is required")
         if not runtime["llm"].get("local") and not os.getenv(runtime["llm"]["api_key_env"]): raise PreflightError("LLM credential is required")
         if runtime["retrieval"]["mode"]=="hybrid" and not runtime["retrieval"]["embedding"].get("model"): raise PreflightError("FastEmbed model is required for hybrid retrieval")
