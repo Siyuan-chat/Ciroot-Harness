@@ -2,10 +2,12 @@ import json
 import copy
 import tempfile
 import unittest
+from unittest.mock import patch, Mock
 from pathlib import Path
 
 from research_harness.errors import PreflightError, ValidationError
 from research_harness.service import Harness
+from research_harness.providers import SourceError, openalex_search
 
 ROOT = Path(__file__).parents[1]
 
@@ -67,7 +69,9 @@ class HarnessTests(unittest.TestCase):
     def test_doctor_blocks_missing_hybrid_components(self):
         runtime=fixture_runtime(); runtime["retrieval"]["mode"]="hybrid"; runtime["retrieval"]["embedding"]["model"]="synthetic-model"
         self.runtime.write_text(json.dumps(runtime),encoding="utf-8")
-        result=self.h.doctor(self.runtime); self.assertFalse(result["ok"]); self.assertTrue(any("hybrid retrieval" in x for x in result["problems"]))
+        with patch("importlib.util.find_spec",return_value=None):
+            result=self.h.doctor(self.runtime)
+        self.assertFalse(result["ok"]); self.assertTrue(any("hybrid retrieval" in x for x in result["problems"]))
     def _write(self, value):
         self.spec.write_text(json.dumps(value),encoding="utf-8"); return self.spec
     def test_report_is_a_frozen_snapshot_and_honors_explicit_reference(self):
@@ -88,3 +92,10 @@ class HarnessTests(unittest.TestCase):
         spec=ready_spec(); spec["topic"]="polymer design"; self._write(spec)
         run=self.h.run(self.spec,self.runtime); data=json.loads((self.root/"workspace"/"reports"/run/"report.json").read_text(encoding="utf-8"))
         self.assertEqual([hit_id],[r["document_id"] for r in data["retrieval"]["results"]])
+    @patch("research_harness.providers.requests.request")
+    def test_openalex_adapter_records_partial_cursor(self, request):
+        response=Mock(ok=True,status_code=200); response.json.return_value={"results":[{"id":"W1","doi":"https://doi.org/x","title":"Title","abstract_inverted_index":{}}],"meta":{"next_cursor":"cursor"}}; request.return_value=response
+        import os
+        os.environ["TEST_OPENALEX"]="synthetic"
+        result=openalex_search("query","TEST_OPENALEX",1,1)
+        self.assertEqual("partial",result["completeness"]); self.assertEqual("W1",result["candidates"][0]["source_id"])
