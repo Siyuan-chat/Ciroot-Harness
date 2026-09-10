@@ -260,8 +260,13 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         if not count:
             return False
         try:
-            from qdrant_client import QdrantClient
-            return QdrantClient(path=str(self.root / "qdrant")).collection_exists("evidence")
+            from qdrant_client import QdrantClient, models
+            if self._qdrant is None:
+                self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
+            if not self._qdrant.collection_exists("evidence"):
+                return False
+            query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchValue(value=version_id))])
+            return self._qdrant.count("evidence", count_filter=query_filter, exact=True).count == count
         except Exception:
             return False
 
@@ -319,7 +324,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         filters = self._valid_filters(filters); candidates = self._candidates(filters)
         if not candidates: return {"query": query, "items": [], "snapshot_version_ids": [], "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": 0, "vector_hits": 0, "coverage_limits": ["no evidence in selected scope"]}}
         embedder, qdrant, _splitter = self._components()
-        query_vector = list(embedder.embed(["query: " + query]))[0].tolist()
+        query_vector = list(embedder.embed([query]))[0].tolist()
         allowed = {item["evidence_id"] for item in candidates}
         vector_scores: dict[str, float] = {}
         if qdrant.collection_exists("evidence"):
