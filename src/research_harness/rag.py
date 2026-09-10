@@ -234,6 +234,56 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         return ([{"text": text, "locator": {"line_start": 1, "line_end": text.count("\n") + 1}, "section": None, "role": "text"}], None, "full_text", [])
 
     @staticmethod
+    def _docling_version() -> str:
+        try:
+            return package_version("docling")
+        except Exception:
+            return "unavailable"
+
+    def _parse_cache_path(self, digest: str) -> tuple[Path, dict[str, str]]:
+        key = {"content_sha256": digest, "parser": _PARSER_FINGERPRINT, "docling": self._docling_version()}
+        name = hashlib.sha256(json.dumps(key, sort_keys=True).encode("utf-8")).hexdigest()
+        return self.root / "parse-cache" / f"{name}.json", key
+
+    @staticmethod
+    def _cached_parse_payload(payload: Any, key: dict[str, str]) -> tuple[list[dict[str, Any]], int | None, str, list[str]] | None:
+        if not isinstance(payload, dict) or payload.get("key") != key:
+            return None
+        blocks, pages, coverage, errors = (payload.get(field) for field in ("blocks", "pages", "coverage", "errors"))
+        if not isinstance(blocks, list) or not all(isinstance(block, dict) and isinstance(block.get("text"), str) and isinstance(block.get("locator"), dict) and isinstance(block.get("role"), str) for block in blocks):
+            return None
+        if pages is not None and (not isinstance(pages, int) or isinstance(pages, bool)):
+            return None
+        if coverage not in {"full_text", "partial"} or not isinstance(errors, list) or not all(isinstance(error, str) for error in errors):
+            return None
+        return blocks, pages, coverage, errors
+
+    def _parse_with_cache(self, source: Path, digest: str) -> tuple[list[dict[str, Any]], int | None, str, list[str], bool]:
+        cache_path, key = self._parse_cache_path(digest)
+        cache_invalid = False
+        try:
+            if cache_path.exists():
+                cached = self._cached_parse_payload(json.loads(cache_path.read_text(encoding="utf-8")), key)
+                if cached is not None:
+                    return (*cached, True)
+                cache_invalid = True
+        except (OSError, ValueError, TypeError):
+            cache_invalid = True
+        blocks, pages, coverage, errors = self._parse(source)
+        errors = list(errors)
+        if cache_invalid:
+            errors.append("invalid parse cache was discarded")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_name(f"{cache_path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(json.dumps({"key": key, "blocks": blocks, "pages": pages, "coverage": coverage, "errors": errors}, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(cache_path)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        return blocks, pages, coverage, errors, False
+
+    @staticmethod
     def _chunks(blocks: list[dict[str, Any]], splitter_cls: Any) -> Iterator[dict[str, Any]]:
         splitter = splitter_cls(chunk_size=_CHUNK_SIZE, chunk_overlap=_CHUNK_OVERLAP)
         for block in blocks:
@@ -265,7 +315,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             if old and self._version_is_indexed(old["version_id"]):
                 reused += 1; documents.append({"document_id": document_id, "version_id": old["version_id"], "parse_status": "reused"}); continue
             try:
-                blocks, pages, coverage, parse_errors = self._parse(source)
+                blocks, pages, coverage, parse_errors, _cache_reused = self._parse_with_cache(source, digest)
                 _embedder, qdrant, splitter = self._components()
                 chunks = list(self._chunks(blocks, splitter))
                 if not chunks:
@@ -289,6 +339,50 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 failed += 1; errors.append({"document_id": document_id, **_safe_error("RH_RAG_FAILED", "document import failed")})
         outcome = "completed" if not failed else "partial" if imported or reused else "failed"
         return {"outcome": outcome, "imported": imported, "reused": reused, "failed": failed, "documents": documents, "errors": errors}
+
+    def prepare_library(self, catalog_path: str | Path, *, limit: int | None = None) -> dict[str, Any]:
+        """Populate reusable parse artifacts without creating evidence or vectors."""
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise RagError("RH_RAG_INVALID_INPUT", "limit must be a positive integer")
+        root, records = self._catalog(catalog_path)
+        processed = records[:limit] if limit else records
+        prepared = reused = failed = 0
+        documents: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for record in processed:
+            file_value = record.get("file")
+            if not isinstance(file_value, str):
+                failed += 1
+                errors.append(_safe_error("RH_RAG_INVALID_INPUT", "catalog record has no file"))
+                continue
+            source = (root / file_value).resolve()
+            document_id = self._document_id(record, source)
+            if root not in source.parents or not source.is_file():
+                failed += 1
+                error = _safe_error("RH_RAG_INVALID_INPUT", "catalog file is unavailable")
+                errors.append({"document_id": document_id, **error})
+                documents.append({"document_id": document_id, "parse_status": "failed"})
+                continue
+            try:
+                digest = hashlib.sha256(source.read_bytes()).hexdigest()
+                blocks, pages, coverage, parse_errors, cache_reused = self._parse_with_cache(source, digest)
+                if not blocks:
+                    raise RagError("RH_RAG_PARSE_FAILED", "Docling returned no usable evidence")
+                status = "reused" if cache_reused else "prepared"
+                reused += int(cache_reused)
+                prepared += int(not cache_reused)
+                documents.append({"document_id": document_id, "parse_status": status, "page_count": pages, "coverage": coverage, "errors": parse_errors})
+            except RagError as exc:
+                failed += 1
+                errors.append({"document_id": document_id, **exc.to_dict()})
+                documents.append({"document_id": document_id, "parse_status": "failed"})
+            except Exception:
+                failed += 1
+                error = _safe_error("RH_RAG_FAILED", "document preparation failed")
+                errors.append({"document_id": document_id, **error})
+                documents.append({"document_id": document_id, "parse_status": "failed"})
+        outcome = "completed" if not failed else "partial" if prepared or reused else "failed"
+        return {"outcome": outcome, "prepared": prepared, "reused": reused, "failed": failed, "documents": documents, "errors": errors}
 
     def _version_is_indexed(self, version_id: str) -> bool:
         count = self._db.execute("SELECT COUNT(*) FROM rag_evidence WHERE version_id=?", (version_id,)).fetchone()[0]
@@ -442,6 +536,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--embedding-model")
     commands = parser.add_subparsers(dest="command", required=True)
     imported = commands.add_parser("import"); imported.add_argument("catalog"); imported.add_argument("--limit", type=int)
+    prepared = commands.add_parser("prepare"); prepared.add_argument("catalog"); prepared.add_argument("--limit", type=int)
     searched = commands.add_parser("search"); searched.add_argument("query"); searched.add_argument("--top-k", type=int, default=8); searched.add_argument("--filters")
     context = commands.add_parser("context"); context.add_argument("evidence_id"); context.add_argument("--before", type=int, default=1); context.add_argument("--after", type=int, default=1)
     document = commands.add_parser("document"); document.add_argument("document_id")
@@ -450,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with RagLibrary(args.workspace, embedding_model=args.embedding_model) as library:
             if args.command == "import": result = library.import_library(args.catalog, limit=args.limit)
+            elif args.command == "prepare": result = library.prepare_library(args.catalog, limit=args.limit)
             elif args.command == "search": result = library.search_evidence(args.query, top_k=args.top_k, filters=json.loads(args.filters) if args.filters else None)
             elif args.command == "context": result = library.get_evidence_context(args.evidence_id, before=args.before, after=args.after)
             elif args.command == "document": result = library.get_document(args.document_id)
