@@ -19,11 +19,13 @@ $env:RAG_MODEL_CACHE = $modelCache
 $env:HF_HOME = $hfHome
 & $py -m pip install ".[rag-mcp]"
 & $py -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
-& $py -m research_harness.rag --workspace C:\data\rag-workspace search "架橋 膨潤"
+& $py -m research_harness.rag --workspace C:\data\rag-workspace search "crosslinking methods reduce membrane swelling"
 codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF_HOME=$hfHome" -- $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
 範囲は [RAG_STAGE.md](RAG_STAGE.md) を参照してください。生成モデル API はこの段階では契約のみで、実23文献の受入は進行中です。
+
+`prepare` は parse-cache の作成または再利用だけを行い、evidence や vector を作りません。`rebuild` は原資料を再解析せず既存 evidence から vector だけを移行します：`& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`。これらの長時間操作中は、同じ workspace を MCP で開かないでください。Codex では中国語・日本語で質問でき、ホストはローカル検索の前に英語の検索式を計画できます。
 
 書き込み可能な workspace と catalog を用意してください。catalog の `records[].file` は catalog ディレクトリからの相対 PDF/TXT パスです。ディレクトリ外へのパスは拒否され、原資料ディレクトリは読み取り専用です。workspace と catalog は起動時に固定され、ツールから変更できません。
 
