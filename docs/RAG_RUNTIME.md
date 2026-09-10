@@ -1,6 +1,6 @@
 # Local RAG runtime
 
-The D18 runtime is local: Docling 2.126.0, FastEmbed 0.8.0, Qdrant client 1.19.0, and LlamaIndex core 0.14.24. The tested embedding is `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, using FastEmbed 0.8 mean pooling and 384 dimensions. Its Hugging Face model card declares Apache-2.0: <https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2>.
+The D18 runtime is local: Docling 2.126.0, FastEmbed 0.8.0, Qdrant client 1.19.0, and LlamaIndex core 0.14.24. The default embedding is `intfloat/multilingual-e5-small`, registered through FastEmbed 0.8 with mean pooling, normalization, 384 dimensions, and `query:`/`passage:` prefixes. The tested artifact is Hugging Face revision `614241f622f53c4eeff9890bdc4f31cfecc418b3`; its `onnx/model.onnx` SHA-256 is `ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665` and its model card declares MIT: <https://huggingface.co/intfloat/multilingual-e5-small>. A same-named future artifact is not covered by this verification.
 
 The tested local execution settings are `threads=2` and `batch_size=16`. They affect batching and CPU parallelism only; they do not change the model, dimension, or embedding preprocessing.
 

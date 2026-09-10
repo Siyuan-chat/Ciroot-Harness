@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
+_LEGACY_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 _ALLOWED_FILTERS = {"document_ids", "version_ids", "doi", "year_min", "year_max", "types"}
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]")
 _WORD_RE = re.compile(r"[\w-]+", re.UNICODE)
@@ -110,10 +111,12 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             self._qdrant = None
         self._db.close()
 
-    def _components(self) -> tuple[Any, Any, Any]:
-        self._ensure_index_config()
+    def _components(self, *, enforce_config: bool = True) -> tuple[Any, Any, Any]:
+        if enforce_config:
+            self._ensure_index_config()
         try:
             from fastembed import TextEmbedding
+            from fastembed.common.model_description import ModelSource, PoolingType
             from llama_index.core.node_parser import SentenceSplitter
             from qdrant_client import QdrantClient
         except ImportError as exc:
@@ -121,6 +124,16 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         if self._embedder is None:
             cache_dir = Path(os.environ.get("RAG_MODEL_CACHE", self.root.parent / "rag-runtime" / "models"))
             cache_dir.mkdir(parents=True, exist_ok=True)
+            if self.embedding_model == DEFAULT_EMBEDDING_MODEL and not any(model.get("model", "").casefold() == DEFAULT_EMBEDDING_MODEL.casefold() for model in TextEmbedding.list_supported_models()):
+                TextEmbedding.add_custom_model(
+                    model=DEFAULT_EMBEDDING_MODEL,
+                    pooling=PoolingType.MEAN,
+                    normalization=True,
+                    sources=ModelSource(hf=DEFAULT_EMBEDDING_MODEL),
+                    dim=_EMBEDDING_DIMENSION,
+                    model_file="onnx/model.onnx",
+                    license="mit",
+                )
             self._embedder = TextEmbedding(model_name=self.embedding_model, cache_dir=str(cache_dir), threads=_EMBEDDING_THREADS)
         if self._qdrant is None:
             try:
@@ -129,14 +142,33 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 raise RagError("RH_RAG_BUSY", "RAG workspace index is in use") from exc
         return self._embedder, self._qdrant, SentenceSplitter
 
+    def _index_fingerprint(self) -> str:
+        preprocessing = "fastembed-0.8-mean-pooling-normalized-e5-query-passage" if self.embedding_model == DEFAULT_EMBEDDING_MODEL else "fastembed-0.8-mean-pooling"
+        return json.dumps({"embedding_model": self.embedding_model, "embedding_dimension": _EMBEDDING_DIMENSION, "embedding_preprocessing": preprocessing, "fastembed": package_version("fastembed"), "docling": package_version("docling"), "llama_index_core": package_version("llama-index-core"), "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
+
+    def _active_collection(self) -> str:
+        row = self._db.execute("SELECT value FROM rag_config WHERE key='active_collection'").fetchone()
+        return row["value"] if row else "evidence"
+
+    def _stored_embedding_model(self) -> str:
+        row = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
+        if not row:
+            return self.embedding_model
+        try:
+            return str(json.loads(row["value"])["embedding_model"])
+        except (KeyError, TypeError, ValueError):
+            return self.embedding_model
+
     def _ensure_index_config(self) -> None:
-        fingerprint = json.dumps({"embedding_model": self.embedding_model, "embedding_dimension": _EMBEDDING_DIMENSION, "embedding_preprocessing": "fastembed-0.8-mean-pooling", "fastembed": package_version("fastembed"), "docling": package_version("docling"), "llama_index_core": package_version("llama-index-core"), "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
+        fingerprint = self._index_fingerprint()
         saved = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
         if saved and saved["value"] != fingerprint and self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0]:
             raise RagError("RH_RAG_CONFIG_MISMATCH", "index configuration differs from the existing evidence")
         if not saved:
             self._db.execute("INSERT INTO rag_config VALUES ('index_fingerprint', ?)", (fingerprint,))
-            self._db.commit()
+        if not self._db.execute("SELECT 1 FROM rag_config WHERE key='active_collection'").fetchone():
+            self._db.execute("INSERT INTO rag_config VALUES ('active_collection', 'evidence')")
+        self._db.commit()
 
     @staticmethod
     def _catalog(catalog_path: str | Path) -> tuple[Path, list[dict[str, Any]]]:
@@ -392,10 +424,10 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             from qdrant_client import QdrantClient, models
             if self._qdrant is None:
                 self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
-            if not self._qdrant.collection_exists("evidence"):
+            if not self._qdrant.collection_exists(self._active_collection()):
                 return False
             query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchValue(value=version_id))])
-            return self._qdrant.count("evidence", count_filter=query_filter, exact=True).count == count
+            return self._qdrant.count(self._active_collection(), count_filter=query_filter, exact=True).count == count
         except RagError:
             raise
         except RuntimeError as exc:
@@ -421,17 +453,62 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         self._db.executemany("INSERT INTO rag_evidence VALUES (?,?,?,?,?,?,?,?,?)", [(value["evidence_id"], document_id, version_id, value["ordinal"], value["text"], json.dumps(value["locator"]), value["section"], value["role"], value["quality"]) for value in evidence])
         self._db.commit()
 
-    def _index(self, evidence: list[dict[str, Any]], qdrant: Any, embedder: Any) -> None:
+    def _embed_inputs(self, texts: list[str], *, query: bool) -> list[str]:
+        if self.embedding_model != DEFAULT_EMBEDDING_MODEL:
+            return texts
+        prefix = "query: " if query else "passage: "
+        return [prefix + text for text in texts]
+
+    def _index(self, evidence: list[dict[str, Any]], qdrant: Any, embedder: Any, *, collection: str | None = None) -> None:
         from qdrant_client import models
+        collection = collection or self._active_collection()
         ordered = sorted(enumerate(evidence), key=lambda value: len(value[1]["text"]))
-        vectors = list(embedder.embed([item["text"] for _, item in ordered], batch_size=_EMBEDDING_BATCH_SIZE))
+        vectors = list(embedder.embed(self._embed_inputs([item["text"] for _, item in ordered], query=False), batch_size=_EMBEDDING_BATCH_SIZE))
         if not vectors:
             raise RagError("RH_RAG_INDEX_FAILED", "embedding returned no vectors")
         by_position = {position: vector for (position, _), vector in zip(ordered, vectors)}
-        if not qdrant.collection_exists("evidence"):
-            qdrant.create_collection("evidence", vectors_config=models.VectorParams(size=len(vectors[0]), distance=models.Distance.COSINE))
+        if not qdrant.collection_exists(collection):
+            qdrant.create_collection(collection, vectors_config=models.VectorParams(size=len(vectors[0]), distance=models.Distance.COSINE))
         points = [models.PointStruct(id=str(uuid.UUID(hashlib.sha256(item["evidence_id"].encode()).hexdigest()[:32])), vector=by_position[position].tolist(), payload={"evidence_id": item["evidence_id"], "version_id": item["version_id"] if "version_id" in item else None}) for position, item in enumerate(evidence)]
-        qdrant.upsert("evidence", points=points, wait=True)
+        qdrant.upsert(collection, points=points, wait=True)
+
+    def rebuild_index(self) -> dict[str, Any]:
+        """Build a complete temporary vector collection, then make it active."""
+        evidence = [dict(row) for row in self._db.execute("SELECT evidence_id,version_id,text FROM rag_evidence ORDER BY evidence_id")]
+        if not evidence:
+            return {"outcome": "completed", "indexed": 0, "collection": self._active_collection(), "embedding_model": self._stored_embedding_model()}
+        try:
+            embedder, qdrant, _splitter = self._components(enforce_config=False)
+        except RagError:
+            raise
+        except Exception as exc:
+            raise RagError("RH_RAG_REBUILD_FAILED", "could not initialize the vector rebuild") from exc
+        temporary = f"evidence-rebuild-{uuid.uuid4().hex}"
+
+        def discard_temporary() -> None:
+            try:
+                if qdrant.collection_exists(temporary):
+                    qdrant.delete_collection(temporary)
+            except Exception:
+                pass
+
+        try:
+            self._index(evidence, qdrant, embedder, collection=temporary)
+            if qdrant.count(temporary, exact=True).count != len(evidence):
+                raise RagError("RH_RAG_REBUILD_FAILED", "rebuilt vector count did not match evidence")
+            self._db.execute("BEGIN")
+            self._db.execute("INSERT OR REPLACE INTO rag_config VALUES ('active_collection', ?)", (temporary,))
+            self._db.execute("INSERT OR REPLACE INTO rag_config VALUES ('index_fingerprint', ?)", (self._index_fingerprint(),))
+            self._db.commit()
+        except RagError:
+            self._db.rollback()
+            discard_temporary()
+            raise
+        except Exception as exc:
+            self._db.rollback()
+            discard_temporary()
+            raise RagError("RH_RAG_REBUILD_FAILED", "could not rebuild the vector index") from exc
+        return {"outcome": "completed", "indexed": len(evidence), "collection": temporary, "embedding_model": self.embedding_model}
 
     def _valid_filters(self, filters: dict[str, Any] | None) -> dict[str, Any]:
         if filters is None: return {}
@@ -466,17 +543,18 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         if not isinstance(query, str) or not query.strip() or not isinstance(top_k, int) or not 1 <= top_k <= 30:
             raise RagError("RH_RAG_INVALID_INPUT", "query and top_k are invalid")
         filters = self._valid_filters(filters); candidates = self._candidates(filters)
-        if not candidates: return {"query": query, "items": [], "snapshot_version_ids": [], "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": 0, "vector_hits": 0, "coverage_limits": ["no evidence in selected scope"]}}
+        if not candidates: return {"query": query, "items": [], "snapshot_version_ids": [], "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": 0, "vector_hits": 0, "coverage_limits": ["no evidence in selected scope"]}}
         embedder, qdrant, _splitter = self._components()
         candidate_versions = sorted({item["version_id"] for item in candidates})
-        if not qdrant.collection_exists("evidence") or not all(self._version_is_indexed(version_id) for version_id in candidate_versions):
+        collection = self._active_collection()
+        if not qdrant.collection_exists(collection) or not all(self._version_is_indexed(version_id) for version_id in candidate_versions):
             raise RagError("RH_RAG_INDEX_INCOMPLETE", "selected evidence is not fully indexed")
-        query_vector = list(embedder.embed([query], batch_size=_EMBEDDING_BATCH_SIZE))[0].tolist()
+        query_vector = list(embedder.embed(self._embed_inputs([query], query=True), batch_size=_EMBEDDING_BATCH_SIZE))[0].tolist()
         allowed = {item["evidence_id"] for item in candidates}
         vector_scores: dict[str, float] = {}
         from qdrant_client import models
         query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchAny(any=candidate_versions))])
-        hits = qdrant.query_points("evidence", query=query_vector, query_filter=query_filter, limit=len(candidates)).points
+        hits = qdrant.query_points(collection, query=query_vector, query_filter=query_filter, limit=len(candidates)).points
         vector_scores = {hit.payload["evidence_id"]: float(hit.score) for hit in hits if hit.payload and hit.payload.get("evidence_id") in allowed}
         query_tokens = _tokens(query)
         lexical_scores: dict[str, int] = {}
@@ -487,7 +565,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             )
         scores = {item["evidence_id"]: vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]] / max(1, sum(query_tokens.values())) for item in candidates}
         ranked = sorted(candidates, key=lambda item: (scores[item["evidence_id"]], item["evidence_id"]), reverse=True)[:top_k]
-        return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["PDF layout tables retain Docling extraction quality notes"]}}
+        return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["PDF layout tables retain Docling extraction quality notes"]}}
 
     @staticmethod
     def _item(row: dict[str, Any], score: float | None = None) -> dict[str, Any]:
@@ -523,7 +601,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         indexed = sum(bool(item["current_version_id"]) and self._version_is_indexed(item["current_version_id"]) for item in documents)
         completed = sum(item["parse_status"] == "completed" for item in documents)
         index_status = "empty" if not documents else "ready" if indexed == completed and completed else "partial"
-        return {"document_count": len(documents), "version_count": self._db.execute("SELECT COUNT(*) FROM rag_versions").fetchone()[0], "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0], "indexed_document_count": indexed, "failed_document_count": sum(item["parse_status"] == "failed" for item in documents), "embedding_model": self.embedding_model, "index_status": index_status, "documents": documents}
+        return {"document_count": len(documents), "version_count": self._db.execute("SELECT COUNT(*) FROM rag_versions").fetchone()[0], "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0], "indexed_document_count": indexed, "failed_document_count": sum(item["parse_status"] == "failed" for item in documents), "embedding_model": self._stored_embedding_model(), "index_status": index_status, "documents": documents}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -537,6 +615,7 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     imported = commands.add_parser("import"); imported.add_argument("catalog"); imported.add_argument("--limit", type=int)
     prepared = commands.add_parser("prepare"); prepared.add_argument("catalog"); prepared.add_argument("--limit", type=int)
+    commands.add_parser("rebuild")
     searched = commands.add_parser("search"); searched.add_argument("query"); searched.add_argument("--top-k", type=int, default=8); searched.add_argument("--filters")
     context = commands.add_parser("context"); context.add_argument("evidence_id"); context.add_argument("--before", type=int, default=1); context.add_argument("--after", type=int, default=1)
     document = commands.add_parser("document"); document.add_argument("document_id")
@@ -546,6 +625,7 @@ def main(argv: list[str] | None = None) -> int:
         with RagLibrary(args.workspace, embedding_model=args.embedding_model) as library:
             if args.command == "import": result = library.import_library(args.catalog, limit=args.limit)
             elif args.command == "prepare": result = library.prepare_library(args.catalog, limit=args.limit)
+            elif args.command == "rebuild": result = library.rebuild_index()
             elif args.command == "search": result = library.search_evidence(args.query, top_k=args.top_k, filters=json.loads(args.filters) if args.filters else None)
             elif args.command == "context": result = library.get_evidence_context(args.evidence_id, before=args.before, after=args.after)
             elif args.command == "document": result = library.get_document(args.document_id)
