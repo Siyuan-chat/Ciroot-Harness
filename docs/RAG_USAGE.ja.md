@@ -20,4 +20,6 @@ python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C
 
 対応する解析器、Embedding、索引、coverage は RagLibrary の実装に依存します。プロトコルテストは明示的な fake service を使うため、実 PDF、多言語検索、Codex ホスト接続の合格を意味しません。
 
+MCP は単一プロセスの逐次サービスです。初回のモデル読み込みや導入処理中はプロセスがブロックされます。長時間の導入は CLI を使い、同じ workspace を MCP が開いている間に CLI 導入を並行実行しないでください。
+
 コアサービスで資料を導入済みの場合は `real_service_probe(python_executable, workspace, catalog)` で実 STDIO 検査を実行できます。導入処理は行いません。fake プロトコルテストとは別の証拠として記録してください。

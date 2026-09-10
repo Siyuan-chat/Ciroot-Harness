@@ -20,4 +20,6 @@ python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C
 
 支持边界由 RagLibrary 的实际解析器、Embedding、索引和 coverage 状态决定。协议测试使用 fake service；它不代表真实 PDF、三语检索或 Codex 宿主验收已经通过。
 
+MCP 是单进程串行服务；首次加载模型或导入资料会阻塞该进程。长时间导入建议使用 CLI，CLI 导入与 MCP 打开同一 workspace 时不要并行运行。
+
 核心服务已导入资料后，可用 `real_service_probe(python_executable, workspace, catalog)` 运行真实 STDIO 检查；它不会执行导入。该探针与 fake 协议测试的证据必须分开记录。

@@ -20,4 +20,6 @@ The five tools are `import_library(limit?)`, `search_evidence(query, top_k?, fil
 
 Actual parser, embedding, index, and coverage support comes from RagLibrary. The protocol tests use an explicit fake service; they do not establish real PDF, multilingual retrieval, or Codex-host acceptance.
 
+MCP is a single-process serial service; initial model loading and imports block that process. Use the CLI for long imports, and do not run a CLI import while MCP has the same workspace open.
+
 After the core service has imported documents, run `real_service_probe(python_executable, workspace, catalog)` for a real STDIO check; it does not import. Record this evidence separately from the fake protocol test.

@@ -106,23 +106,23 @@ def create_mcp_server(rag: RagMCPServer) -> Any:
     )
 
     @mcp.tool(name="import_library", description="Import the configured local catalog into the RAG library.", annotations=ToolAnnotations(readOnlyHint=False))
-    def import_library(limit: int | None = None) -> dict[str, Any]:
+    async def import_library(limit: int | None = None) -> dict[str, Any]:
         return rag.import_library(limit=limit)
 
     @mcp.tool(name="search_evidence", description="Search local evidence with hybrid retrieval.", annotations=ToolAnnotations(readOnlyHint=True))
-    def search_evidence(query: str, top_k: int = 8, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def search_evidence(query: str, top_k: int = 8, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         return rag.search_evidence(query, top_k=top_k, filters=filters)
 
     @mcp.tool(name="get_evidence_context", description="Read neighboring evidence from the same document version.", annotations=ToolAnnotations(readOnlyHint=True))
-    def get_evidence_context(evidence_id: str, before: int = 1, after: int = 1) -> dict[str, Any]:
+    async def get_evidence_context(evidence_id: str, before: int = 1, after: int = 1) -> dict[str, Any]:
         return rag.get_evidence_context(evidence_id, before=before, after=after)
 
     @mcp.tool(name="get_document", description="Read metadata and versions for one local document.", annotations=ToolAnnotations(readOnlyHint=True))
-    def get_document(document_id: str) -> dict[str, Any]:
+    async def get_document(document_id: str) -> dict[str, Any]:
         return rag.get_document(document_id)
 
     @mcp.tool(name="get_library_status", description="Inspect local RAG library status and document discovery metadata.", annotations=ToolAnnotations(readOnlyHint=True))
-    def get_library_status() -> dict[str, Any]:
+    async def get_library_status() -> dict[str, Any]:
         return rag.get_library_status()
 
     return mcp
