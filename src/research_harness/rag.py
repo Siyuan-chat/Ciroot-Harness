@@ -12,6 +12,7 @@ from importlib.metadata import version as package_version
 import uuid
 from collections import Counter
 from contextlib import AbstractContextManager
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -28,6 +29,14 @@ _EMBEDDING_DIMENSION = 384
 _EMBEDDING_THREADS = 2
 _EMBEDDING_BATCH_SIZE = 16
 _RRF_K = 60
+
+
+@lru_cache(maxsize=8192)
+def _english_stem(token: str) -> str:
+    if not token.isascii() or not token.isalpha():
+        return token
+    from nltk.stem.snowball import SnowballStemmer
+    return SnowballStemmer("english", ignore_stopwords=False).stem(token)
 
 
 class RagError(Exception):
@@ -51,7 +60,7 @@ def _tokens(text: str) -> Counter[str]:
     tokens = _WORD_RE.findall(normalized)
     cjk = "".join(_CJK_RE.findall(normalized))
     tokens.extend(cjk[index : index + 2] for index in range(max(0, len(cjk) - 1)))
-    return Counter(token for token in tokens if len(token) > 1)
+    return Counter(_english_stem(token) for token in tokens if len(token) > 1)
 
 
 class RagLibrary(AbstractContextManager["RagLibrary"]):
@@ -567,10 +576,10 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         cached = self._bm25_cache.get(cache_key)
         if cached is None:
             tokenized = [list(_tokens(item["text"]).elements()) for item in candidates]
-            cached = (BM25Okapi(tokenized), tokenized)
+            cached = (BM25Okapi(tokenized) if any(tokenized) else None, tokenized)
             self._bm25_cache = {cache_key: cached}
         bm25, _tokenized = cached
-        raw_bm25 = bm25.get_scores(query_tokens) if query_tokens else [0.0] * len(candidates)
+        raw_bm25 = bm25.get_scores(query_tokens) if bm25 is not None and query_tokens else [0.0] * len(candidates)
         lexical_scores = {item["evidence_id"]: float(value) for item, value in zip(candidates, raw_bm25)}
         scores = {item["evidence_id"]: 0.0 for item in candidates}
         for rank, evidence_id in enumerate(sorted(vector_scores, key=lambda value: (vector_scores[value], value), reverse=True), 1):
