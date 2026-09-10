@@ -19,3 +19,7 @@ python -m pip install ".[rag-mcp]"
 The runtime does not read Codex credentials and does not call a generation model. Acceptance status is maintained in the [independent RAG acceptance record](RAG_ACCEPTANCE.md).
 
 The default E5 model and the explicit legacy MiniLM model have been tested in this stage. A different `embedding_model` is rejected against an existing index when its fingerprint differs; arbitrary embedding models have not been validated, and dynamic dimension and preprocessing discovery is not implemented.
+
+## Local regression record
+
+On the bundled Python runtime, `python -m pytest -q tests/test_rag_cli.py tests/test_rag_prepare.py tests/test_rag_mcp.py` passed 7 tests on 2026-09-10. Pytest reported one non-product warning because the worktree denied creation of `.pytest_cache`. BM25Okapi has an expected two-document IDF edge case: a token present in one of two documents can receive zero IDF under the library's epsilon rule. A three-document synthetic corpus distinguished a rare token, and an 8,820-document synthetic corpus built and queried in 0.039 seconds; an all-empty token corpus uses the vector-only branch.
