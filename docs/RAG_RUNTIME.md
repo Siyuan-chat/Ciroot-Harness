@@ -4,7 +4,7 @@ The D18 runtime is local: Docling 2.126.0, FastEmbed 0.8.0, Qdrant client 1.19.0
 
 The tested local execution settings are `threads=2` and `batch_size=16`. They affect batching and CPU parallelism only; they do not change the model, dimension, or embedding preprocessing.
 
-The cached tokenizer configuration reports `max_length=128` and `model_max_length=512`; FastEmbed uses their minimum, so embeddings are effectively limited to 128 tokens. Body chunks are 200 LlamaIndex tokens and tables remain whole evidence blocks, so long inputs can be truncated for vector retrieval while returned evidence and context remain complete. This recorded retrieval-quality limitation will be evaluated on the frozen set before changing chunking or table indexing.
+The tested default E5 tokenizer accepts 512 tokens. The explicit legacy `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` model instead reports `max_length=128` and `model_max_length=512`; FastEmbed uses their minimum, so its vectors are effectively limited to 128 tokens. Body chunks are 200 LlamaIndex tokens and tables remain whole evidence blocks, so long inputs can still be truncated for vector retrieval while returned evidence and context remain complete. This retrieval-quality limitation will be evaluated on the frozen set before changing chunking or table indexing.
 
 `full_text` records that each converted page has text coverage; it does not certify that every figure caption or figure-derived reading is scientifically accurate. The Clemens import showed repeated and garbled figure-caption extraction, an extraction limitation rather than a statement about the source paper. Check the rendered original PDF before using quantitative conclusions from figures.
 
