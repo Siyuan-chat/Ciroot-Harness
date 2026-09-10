@@ -27,6 +27,8 @@ codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF
 
 `prepare` 只创建或复用解析缓存，不创建证据或向量；`rebuild` 只从既有证据迁移向量，不重新解析原文：`& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`。这两项长操作执行时，MCP 不得打开同一 workspace。用户可在 Codex 中用中文或日文提问；宿主可先规划英文检索式，再调用本地检索。
 
+检索以固定倒数排名融合组合稠密 cosine 与 BM25 词法候选。BM25 使用与过滤相同的 token 流，包括 CJK n-gram 和英文词干；没有按题目配置停用词表或排序参数。
+
 准备一个可写的 workspace 和 catalog。catalog 的 `records[].file` 是相对 catalog 目录的 PDF/TXT 路径，适配器会拒绝越出 catalog 目录的路径；原目录保持只读。启动参数固定 workspace 与 catalog，工具不能改路径。
 
 首次启动模型可能超过普通工具超时。注册后，在 `~/.codex/config.toml` 已有的 `[mcp_servers.research-harness-rag]` 段内加入原生 Codex 配置（不要新建第二个同名段）：

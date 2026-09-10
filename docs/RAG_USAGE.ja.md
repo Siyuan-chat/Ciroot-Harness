@@ -27,6 +27,8 @@ codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF
 
 `prepare` は parse-cache の作成または再利用だけを行い、evidence や vector を作りません。`rebuild` は原資料を再解析せず既存 evidence から vector だけを移行します：`& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`。これらの長時間操作中は、同じ workspace を MCP で開かないでください。Codex では中国語・日本語で質問でき、ホストはローカル検索の前に英語の検索式を計画できます。
 
+検索は dense cosine と BM25 の語彙候補を固定の reciprocal-rank fusion で結合します。BM25 は CJK n-gram と英語の語幹化を含む、filter と同じ token 流を使用します。質問ごとの stopword 表や順位パラメータは設定しません。
+
 書き込み可能な workspace と catalog を用意してください。catalog の `records[].file` は catalog ディレクトリからの相対 PDF/TXT パスです。ディレクトリ外へのパスは拒否され、原資料ディレクトリは読み取り専用です。workspace と catalog は起動時に固定され、ツールから変更できません。
 
 初回のモデル起動は通常のツール timeout を超えることがあります。登録後、`~/.codex/config.toml` の既存 `[mcp_servers.research-harness-rag]` セクション内にこのネイティブ Codex 設定を追加してください（同名の第二セクションは作成しません）。

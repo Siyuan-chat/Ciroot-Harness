@@ -27,6 +27,8 @@ See [RAG_STAGE.md](RAG_STAGE.md) and the [independent acceptance record](RAG_ACC
 
 `prepare` only creates or reuses parse-cache entries; it does not create evidence or vectors. `rebuild` migrates vectors from already stored evidence without parsing sources: `& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`. Run either long operation while MCP is closed for that workspace. Ask in Chinese or Japanese through Codex; the host may plan an English retrieval expression before calling the local search.
 
+Search ranks dense cosine and BM25 lexical candidates with fixed reciprocal-rank fusion. BM25 uses the same token stream as filtering, including CJK n-grams and English stemming; no per-question stopword list or ranking parameter is configured.
+
 Prepare a writable workspace and a catalog whose `records[].file` entries are PDF/TXT paths relative to the catalog directory. Paths escaping that directory are rejected; the source directory remains read-only. Workspace and catalog are fixed at startup and cannot be supplied by tools.
 
 First model startup can exceed ordinary tool timeouts. After registration, add these native Codex settings inside the existing `[mcp_servers.research-harness-rag]` section in `~/.codex/config.toml` (do not create a second section):
