@@ -116,9 +116,12 @@ def real_service_probe(python_executable, workspace, catalog):
     from mcp.client.stdio import stdio_client
 
     async def run():
+        env_keys = ("RAG_MODEL_CACHE", "HF_HOME", "HF_HUB_OFFLINE", "HF_HUB_DISABLE_IMPLICIT_TOKEN", "PYTHONIOENCODING")
+        child_env = {key: os.environ[key] for key in env_keys if key in os.environ}
         params = StdioServerParameters(
             command=str(python_executable),
             args=["-m", "research_harness.rag_mcp", "--workspace", str(workspace), "--catalog", str(catalog)],
+            env=child_env,
         )
         async with stdio_client(params) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
@@ -132,6 +135,10 @@ def real_service_probe(python_executable, workspace, catalog):
                 search = await session.call_tool("search_evidence", {"query": "交联阴离子交换膜", "top_k": 2})
                 status_data = status.structured_content or {}
                 search_data = search.structured_content or {}
+                assert "error" not in status_data, status_data
+                assert "error" not in search_data, search_data
+                items = search_data.get("items", [])
+                assert items, "real service returned no evidence items"
                 result = {
                     "tools": names,
                     "status": {key: status_data.get(key) for key in ("document_count", "version_count", "evidence_count", "indexed_document_count")},
@@ -140,14 +147,21 @@ def real_service_probe(python_executable, workspace, catalog):
                     "document": None,
                     "invalid_filter_error": None,
                 }
-                items = search_data.get("items", [])
-                if items:
-                    evidence_id = items[0]["evidence_id"]
-                    document_id = items[0]["document_id"]
-                    context = await session.call_tool("get_evidence_context", {"evidence_id": evidence_id})
-                    document = await session.call_tool("get_document", {"document_id": document_id})
-                    result["context"] = {"ok": not context.is_error, "item_count": len((context.structured_content or {}).get("items", []))}
-                    result["document"] = {"ok": not document.is_error, "document_id": document_id}
+                evidence_id = items[0]["evidence_id"]
+                document_id = items[0]["document_id"]
+                version_id = items[0]["version_id"]
+                context = await session.call_tool("get_evidence_context", {"evidence_id": evidence_id})
+                document = await session.call_tool("get_document", {"document_id": document_id})
+                context_data = context.structured_content or {}
+                document_data = document.structured_content or {}
+                assert "error" not in context_data, context_data
+                assert "error" not in document_data, document_data
+                assert context_data.get("evidence_id") == evidence_id
+                context_items = context_data.get("items", [])
+                assert context_items and all(item.get("document_id") == document_id and item.get("version_id") == version_id for item in context_items)
+                assert document_data.get("document_id") == document_id
+                result["context"] = {"ok": True, "item_count": len(context_items)}
+                result["document"] = {"ok": True, "document_id": document_id}
                 invalid = await session.call_tool("search_evidence", {"query": "test", "filters": {"unknown": True}})
                 result["invalid_filter_error"] = (invalid.structured_content or {}).get("error")
                 assert result["invalid_filter_error"] and result["invalid_filter_error"]["code"] == "RH_RAG_INVALID_INPUT"
