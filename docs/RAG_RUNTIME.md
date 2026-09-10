@@ -16,6 +16,6 @@ $env:HF_HOME = "$PWD\.local\rag-runtime\huggingface"
 python -m pip install ".[rag-mcp]"
 ```
 
-The runtime does not read Codex credentials and does not call a generation model. Real FastEmbed/Qdrant TXT import and search, Docling single-page PDF conversion, and MCP STDIO protocol have been checked locally. Full 23-document import, multilingual retrieval scoring, and host-session acceptance remain pending.
+The runtime does not read Codex credentials and does not call a generation model. Acceptance status is maintained in the [independent RAG acceptance record](RAG_ACCEPTANCE.md).
 
-Only the default embedding is tested. A different `embedding_model` is rejected against an existing index when its fingerprint differs; dynamic dimension and preprocessing discovery for arbitrary models is not implemented or validated in this stage.
+The default E5 model and the explicit legacy MiniLM model have been tested in this stage. A different `embedding_model` is rejected against an existing index when its fingerprint differs; arbitrary embedding models have not been validated, and dynamic dimension and preprocessing discovery is not implemented.

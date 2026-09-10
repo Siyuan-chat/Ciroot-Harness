@@ -23,7 +23,7 @@ $env:HF_HOME = $hfHome
 codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF_HOME=$hfHome" -- $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
-範囲は [RAG_STAGE.md](RAG_STAGE.md) を参照してください。生成モデル API はこの段階では契約のみで、実23文献の受入は進行中です。
+範囲は [RAG_STAGE.md](RAG_STAGE.md) と[独立受入記録](RAG_ACCEPTANCE.md)を参照してください。生成モデル API はこの段階では契約のみです。
 
 `prepare` は parse-cache の作成または再利用だけを行い、evidence や vector を作りません。`rebuild` は原資料を再解析せず既存 evidence から vector だけを移行します：`& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`。これらの長時間操作中は、同じ workspace を MCP で開かないでください。Codex では中国語・日本語で質問でき、ホストはローカル検索の前に英語の検索式を計画できます。
 

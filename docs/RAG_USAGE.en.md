@@ -23,7 +23,7 @@ $env:HF_HOME = $hfHome
 codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF_HOME=$hfHome" -- $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
-See [RAG_STAGE.md](RAG_STAGE.md). Generation-model API mode is contract-only; real 23-document acceptance remains pending.
+See [RAG_STAGE.md](RAG_STAGE.md) and the [independent acceptance record](RAG_ACCEPTANCE.md). Generation-model API mode is contract-only.
 
 `prepare` only creates or reuses parse-cache entries; it does not create evidence or vectors. `rebuild` migrates vectors from already stored evidence without parsing sources: `& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`. Run either long operation while MCP is closed for that workspace. Ask in Chinese or Japanese through Codex; the host may plan an English retrieval expression before calling the local search.
 

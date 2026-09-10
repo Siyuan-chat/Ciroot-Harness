@@ -23,7 +23,7 @@ $env:HF_HOME = $hfHome
 codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF_HOME=$hfHome" -- $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
-范围见 [RAG_STAGE.md](RAG_STAGE.md)。生成模型 API 本阶段仅有契约；真实23篇验收仍在进行。
+范围见 [RAG_STAGE.md](RAG_STAGE.md) 和[独立验收记录](RAG_ACCEPTANCE.md)。生成模型 API 本阶段仅有契约。
 
 `prepare` 只创建或复用解析缓存，不创建证据或向量；`rebuild` 只从既有证据迁移向量，不重新解析原文：`& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`。这两项长操作执行时，MCP 不得打开同一 workspace。用户可在 Codex 中用中文或日文提问；宿主可先规划英文检索式，再调用本地检索。
 

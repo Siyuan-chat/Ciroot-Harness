@@ -37,14 +37,14 @@ python -m venv .venv
 
 キー、非公開原文、実行ワークスペースは Git に保存しないでください。同梱デモは合成資料のみです。調査は手動で開始し、標準の定期実行はありません。
 
-## ローカル RAG（D18、進行中）
+## ローカル RAG（D18）
 
 ```powershell
 .venv\Scripts\python -m pip install ".[rag-mcp]"
 .venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
 ```
 
-ローカル RAG は設定済み catalog だけを読み、Codex 資格情報の読取りや生成モデル呼出しを行いません。CLI 操作は `prepare`、`import`、`search`、`context`、`document`、`status`、`rebuild` です。`prepare` は解析だけをキャッシュし、`rebuild` は既存 evidence からベクトルだけを移行します。[ローカル利用ガイド](docs/RAG_USAGE.ja.md)、[実行時の説明](docs/RAG_RUNTIME.md)、[ステージ境界](docs/RAG_STAGE.md) を参照してください。実 PDF の受入は進行中です。
+ローカル RAG は設定済み catalog だけを読み、Codex 資格情報の読取りや生成モデル呼出しを行いません。CLI 操作は `prepare`、`import`、`search`、`context`、`document`、`status`、`rebuild` です。`prepare` は解析だけをキャッシュし、`rebuild` は既存 evidence からベクトルだけを移行します。[ローカル利用ガイド](docs/RAG_USAGE.ja.md)、[実行時の説明](docs/RAG_RUNTIME.md)、[ステージ境界](docs/RAG_STAGE.md)、[独立受入記録](docs/RAG_ACCEPTANCE.md) を参照してください。
 
 ## OA 文献収集
 
