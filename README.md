@@ -39,6 +39,15 @@ Keep credentials, private originals and runtime workspaces outside Git. Packaged
 
 ## OA literature collection
 
+## Local RAG (D18, in progress)
+
+```powershell
+.venv\Scripts\python -m pip install ".[rag-mcp]"
+.venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
+```
+
+The local RAG reads only the configured catalog, does not read Codex credentials, and does not call a generation model. Its JSON operations are `import`, `search`, `context`, `document`, and `status`. Real-PDF acceptance remains in progress.
+
 `literature` is a separate OpenAlex search and OA-PDF collection module, not RAG or scientific screening. Install its validator, then use the verified 23-item manifest when supplied:
 
 ```powershell

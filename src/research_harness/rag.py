@@ -6,6 +6,8 @@ import json
 import os
 import re
 import sqlite3
+import argparse
+import sys
 import uuid
 from collections import Counter
 from contextlib import AbstractContextManager
@@ -105,6 +107,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         self._db.close()
 
     def _components(self) -> tuple[Any, Any, Any]:
+        self._ensure_index_config()
         try:
             from fastembed import TextEmbedding
             from llama_index.core.node_parser import SentenceSplitter
@@ -117,6 +120,9 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             self._embedder = TextEmbedding(model_name=self.embedding_model, cache_dir=str(cache_dir))
         if self._qdrant is None:
             self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
+        return self._embedder, self._qdrant, SentenceSplitter
+
+    def _ensure_index_config(self) -> None:
         fingerprint = json.dumps({"embedding_model": self.embedding_model, "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
         saved = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
         if saved and saved["value"] != fingerprint and self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0]:
@@ -124,7 +130,6 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         if not saved:
             self._db.execute("INSERT INTO rag_config VALUES ('index_fingerprint', ?)", (fingerprint,))
             self._db.commit()
-        return self._embedder, self._qdrant, SentenceSplitter
 
     @staticmethod
     def _catalog(catalog_path: str | Path) -> tuple[Path, list[dict[str, Any]]]:
@@ -229,6 +234,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 failed += 1; errors.append({"document_id": document_id, **_safe_error("RH_RAG_INVALID_INPUT", "catalog file is unavailable")}); continue
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
             old = self._db.execute("SELECT version_id FROM rag_versions WHERE document_id=? AND content_sha256=?", (document_id, digest)).fetchone()
+            self._ensure_index_config()
             if old and self._version_is_indexed(old["version_id"]):
                 reused += 1; documents.append({"document_id": document_id, "version_id": old["version_id"], "parse_status": "reused"}); continue
             try:
@@ -247,9 +253,11 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 self._store_document(record, raw_path, document_id, version_id, digest, pages, parse_errors, evidence)
                 imported += 1; documents.append({"document_id": document_id, "version_id": version_id, "parse_status": "completed", "evidence_count": len(evidence)})
             except RagError as exc:
+                self._db.rollback()
                 self._record_failure(record, source, document_id, exc)
                 failed += 1; errors.append({"document_id": document_id, **exc.to_dict()})
             except Exception:
+                self._db.rollback()
                 self._record_failure(record, source, document_id, RagError("RH_RAG_FAILED", "document import failed"))
                 failed += 1; errors.append({"document_id": document_id, **_safe_error("RH_RAG_FAILED", "document import failed")})
         outcome = "completed" if not failed else "partial" if imported or reused else "failed"
@@ -278,7 +286,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
     def _record_failure(self, record: dict[str, Any], source: Path, document_id: str, error: RagError) -> None:
         self._db.execute("INSERT OR IGNORE INTO rag_documents VALUES (?,?,?,?,?,?,?,?,?,?)", (document_id, str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), None, "failed", "unknown", json.dumps([error.to_dict()])))
-        self._db.execute("UPDATE rag_documents SET parse_status='failed',coverage='unknown',errors=? WHERE document_id=?", (json.dumps([error.to_dict()]), document_id))
+        self._db.execute("UPDATE rag_documents SET parse_status='failed',coverage='unknown',errors=? WHERE document_id=? AND current_version_id IS NULL", (json.dumps([error.to_dict()]), document_id))
         self._db.commit()
 
     def _store_document(self, record: dict[str, Any], source: Path, document_id: str, version_id: str, digest: str, pages: int | None, errors: list[str], evidence: list[dict[str, Any]]) -> None:
@@ -302,6 +310,15 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         if filters is None: return {}
         if not isinstance(filters, dict) or set(filters) - _ALLOWED_FILTERS:
             raise RagError("RH_RAG_INVALID_INPUT", "unsupported search filter")
+        list_fields = {"document_ids", "version_ids", "doi", "types"}
+        for field in list_fields - {"doi"}:
+            if field in filters and (not isinstance(filters[field], list) or not all(isinstance(value, str) and value for value in filters[field])):
+                raise RagError("RH_RAG_INVALID_INPUT", "filter values are invalid")
+        if "doi" in filters and not (isinstance(filters["doi"], str) and filters["doi"] or isinstance(filters["doi"], list) and filters["doi"] and all(isinstance(value, str) and value for value in filters["doi"])):
+            raise RagError("RH_RAG_INVALID_INPUT", "filter values are invalid")
+        for field in ("year_min", "year_max"):
+            if field in filters and (not isinstance(filters[field], int) or isinstance(filters[field], bool) or not 1000 <= filters[field] <= 3000):
+                raise RagError("RH_RAG_INVALID_INPUT", "year filter is invalid")
         return filters
 
     def _candidates(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
@@ -361,4 +378,37 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
     def get_library_status(self) -> dict[str, Any]:
         documents = [dict(row) for row in self._db.execute("SELECT document_id,title,doi,document_type,year,current_version_id,parse_status FROM rag_documents ORDER BY title")]
-        return {"document_count": len(documents), "version_count": self._db.execute("SELECT COUNT(*) FROM rag_versions").fetchone()[0], "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0], "indexed_document_count": sum(item["parse_status"] == "completed" for item in documents), "failed_document_count": sum(item["parse_status"] == "failed" for item in documents), "embedding_model": self.embedding_model, "index_status": "ready" if documents else "empty", "documents": documents}
+        indexed = sum(bool(item["current_version_id"]) and self._version_is_indexed(item["current_version_id"]) for item in documents)
+        completed = sum(item["parse_status"] == "completed" for item in documents)
+        index_status = "empty" if not documents else "ready" if indexed == completed and completed else "partial"
+        return {"document_count": len(documents), "version_count": self._db.execute("SELECT COUNT(*) FROM rag_versions").fetchone()[0], "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0], "indexed_document_count": indexed, "failed_document_count": sum(item["parse_status"] == "failed" for item in documents), "embedding_model": self.embedding_model, "index_status": index_status, "documents": documents}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m research_harness.rag")
+    parser.add_argument("--workspace", required=True)
+    parser.add_argument("--embedding-model")
+    commands = parser.add_subparsers(dest="command", required=True)
+    imported = commands.add_parser("import"); imported.add_argument("catalog"); imported.add_argument("--limit", type=int)
+    searched = commands.add_parser("search"); searched.add_argument("query"); searched.add_argument("--top-k", type=int, default=8); searched.add_argument("--filters")
+    context = commands.add_parser("context"); context.add_argument("evidence_id"); context.add_argument("--before", type=int, default=1); context.add_argument("--after", type=int, default=1)
+    document = commands.add_parser("document"); document.add_argument("document_id")
+    commands.add_parser("status")
+    args = parser.parse_args(argv)
+    try:
+        with RagLibrary(args.workspace, embedding_model=args.embedding_model) as library:
+            if args.command == "import": result = library.import_library(args.catalog, limit=args.limit)
+            elif args.command == "search": result = library.search_evidence(args.query, top_k=args.top_k, filters=json.loads(args.filters) if args.filters else None)
+            elif args.command == "context": result = library.get_evidence_context(args.evidence_id, before=args.before, after=args.after)
+            elif args.command == "document": result = library.get_document(args.document_id)
+            else: result = library.get_library_status()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 4 if result.get("outcome") == "partial" else 3 if result.get("outcome") == "failed" else 0
+    except RagError as error:
+        print(json.dumps(error.to_dict(), ensure_ascii=False), file=sys.stderr); return 2
+    except (json.JSONDecodeError, ValueError):
+        print(json.dumps(RagError("RH_RAG_INVALID_INPUT", "invalid RAG command input").to_dict()), file=sys.stderr); return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

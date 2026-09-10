@@ -39,6 +39,15 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 
 ## 开放文献采集
 
+## 本地 RAG（D18，进行中）
+
+```powershell
+.venv\Scripts\python -m pip install ".[rag-mcp]"
+.venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
+```
+
+本地 RAG 只读取配置的 catalog，不读取 Codex 凭据，也不调用生成模型。JSON 操作为 `import`、`search`、`context`、`document`、`status`。真实 PDF 验收仍在进行。
+
 `literature` 是独立的 OpenAlex 检索和 OA PDF 采集模块，不是 RAG 或科学筛选。安装校验器后，可在提供时使用已核验的 23 项清单：
 
 ```powershell
