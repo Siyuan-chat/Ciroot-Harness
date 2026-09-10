@@ -36,3 +36,15 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 后续首个案例为聚合物设计。[案例草案](examples/polymer-design.draft.json) 仍有待定需求，不是可运行的科学案例。真实 API 接入及案例／demo 验收后再发布 GitHub；当前没有科学案例或公开发布验收结论。
 
 密钥、私有原文和运行工作区不要提交 Git。包内演示仅含合成材料。产品调查由用户手动启动，没有默认后台定时任务。
+
+## 开放文献采集
+
+`literature` 是独立的 OpenAlex 检索和 OA PDF 采集模块，不是 RAG 或科学筛选。安装校验器后，可在提供时使用已核验的 23 项清单：
+
+```powershell
+.venv\Scripts\python -m pip install ".[literature]"
+.venv\Scripts\python -m research_harness.literature search --config examples\aem_oa_reviews.json --output .local\aem-candidates.json
+.venv\Scripts\python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\aem-pdfs --limit 23
+```
+
+`anonymous: true` 明确执行无密钥查询；否则设置 `OPENALEX_API_KEY`。AEM 检索示例使用 `review_only: false`，因为 OpenAlex type 标签会遗漏综述，调用者须筛选记录。下载器校验可读性、身份和记录可选的 `expected_min_pages`；不足时返回 `partial` 和退出码 4。

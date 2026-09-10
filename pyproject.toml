@@ -11,6 +11,7 @@ dependencies = ["jsonschema>=4.23", "requests>=2.32", "langgraph>=1.2"]
 
 [project.optional-dependencies]
 full = ["langgraph>=0.2", "docling>=2", "fastembed>=0.4", "qdrant-client>=1.12", "llama-index-core>=0.11"]
+literature = ["pypdf>=5"]
 test = []
 
 [project.scripts]

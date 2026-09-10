@@ -36,3 +36,15 @@ Real model/source APIs, OpenAlex/EPO, production vector RAG, PDF/OCR, standalone
 The first later case is polymer design. [Its draft](examples/polymer-design.draft.json) has unresolved requirements and is not runnable scientific evidence. Real API integration and case/demo validation precede GitHub publication. No scientific case or public release has been accepted yet.
 
 Keep credentials, private originals and runtime workspaces outside Git. Packaged demo material is synthetic. Product investigations are manually triggered, with no default background schedule.
+
+## OA literature collection
+
+`literature` is a separate OpenAlex search and OA-PDF collection module, not RAG or scientific screening. Install its validator, then use the verified 23-item manifest when supplied:
+
+```powershell
+.venv\Scripts\python -m pip install ".[literature]"
+.venv\Scripts\python -m research_harness.literature search --config examples\aem_oa_reviews.json --output .local\aem-candidates.json
+.venv\Scripts\python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\aem-pdfs --limit 23
+```
+
+`anonymous: true` explicitly performs a no-key search; otherwise set `OPENALEX_API_KEY`. The AEM search example uses `review_only: false`: OpenAlex type labels miss reviews, so callers screen records. The downloader verifies readability, identity and optional record-specific `expected_min_pages`; incomplete results return `partial` and exit code 4.

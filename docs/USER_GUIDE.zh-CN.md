@@ -84,3 +84,7 @@ finally:
 CLI demo 退出码：completed=0、partial=4、failed=3、非法输入=2。超过 max_candidates 保存部分结果；来源失败和导出失败明确记录。RH_INVALID_INPUT、RH_PRECONDITION、RH_NOT_FOUND、RH_EXPORT_FAILED、RH_UNSUPPORTED 是机器可读错误码。错误对象不含原始外部异常。
 
 仅验证代表性预算/失败路径，不承诺崩溃恢复或全部预算维度。chat/live 未支持；旧 lexical_test_only 只用于历史测试。原始资料、凭据、SQLite 和报告留在被忽略的工作区。后续顺序是实际 API/资料库接入、聚合物案例验收、带 demo 的 GitHub 发布。
+
+## OA 检索与 PDF 采集
+
+安装 `.[literature]` 后，运行 `python -m research_harness.literature search --config examples\aem_oa_reviews.json --output .local\candidates.json`；提供已核验清单时，再运行 `python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\pdfs --limit 23`。`anonymous: true` 是明确的无密钥请求，否则需要 `OPENALEX_API_KEY`。`review_only: false` 是有意设置，因为 OpenAlex type 标签不完整。模块只访问公开 OA 地址、校验 PDF；有效全文不足时保留部分 catalog 并以退出码 4 返回。

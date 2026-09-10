@@ -84,3 +84,7 @@ Inject `source_adapter(candidates)` or `model_adapter(spec,candidate,candidate_e
 Demo exit codes: completed=0, partial=4, failed=3, invalid input=2. Exceeding max_candidates saves partial results. Source and export failures remain explicit. Stable codes include RH_INVALID_INPUT, RH_PRECONDITION, RH_NOT_FOUND, RH_EXPORT_FAILED and RH_UNSUPPORTED; public errors exclude raw external exceptions.
 
 D2 covers representative budget/failure paths, not crash recovery or every budget dimension. chat/live are unsupported; lexical_test_only is a legacy test path. Keep originals, credentials, SQLite and reports in ignored workspaces. Real API/library integration, polymer case acceptance and GitHub publication follow this framework phase.
+
+## OA search and PDF collection
+
+Install `.[literature]`; run `python -m research_harness.literature search --config examples\aem_oa_reviews.json --output .local\candidates.json`, then `python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\pdfs --limit 23` when the verified manifest is available. `anonymous: true` is an explicit no-key request; otherwise `OPENALEX_API_KEY` is required. `review_only: false` is intentional because OpenAlex type labels are incomplete. The module follows only public OA URLs, validates PDFs and retains a partial catalog with exit code 4 when valid full texts are insufficient.

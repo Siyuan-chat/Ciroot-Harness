@@ -36,3 +36,15 @@ python -m venv .venv
 最初の実例はポリマー設計を予定しています。[草案](examples/polymer-design.draft.json) には未確定要件があり、実行可能な科学的事例ではありません。実際の API 接続と事例／デモ検証後に GitHub で公開します。科学的事例や公開リリースの受入はまだ行っていません。
 
 キー、非公開原文、実行ワークスペースは Git に保存しないでください。同梱デモは合成資料のみです。調査は手動で開始し、標準の定期実行はありません。
+
+## OA 文献収集
+
+`literature` は独立した OpenAlex 検索・OA PDF 収集モジュールであり、RAG や科学的選別ではありません。検証機能を導入し、提供済みなら検証済み23件の manifest を使います。
+
+```powershell
+.venv\Scripts\python -m pip install ".[literature]"
+.venv\Scripts\python -m research_harness.literature search --config examples\aem_oa_reviews.json --output .local\aem-candidates.json
+.venv\Scripts\python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\aem-pdfs --limit 23
+```
+
+`anonymous: true` はキーなし検索を明示し、それ以外では `OPENALEX_API_KEY` が必要です。AEM 検索例は OpenAlex type ラベルがレビューを取りこぼすため `review_only: false` とします。ダウンローダーは可読性、同一性、任意の `expected_min_pages` を検証し、不足時は `partial` と終了コード 4 を返します。

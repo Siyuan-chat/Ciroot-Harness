@@ -84,3 +84,7 @@ finally:
 demo の終了コードは completed=0、partial=4、failed=3、不正入力=2 です。max_candidates 超過時は部分結果を保存し、情報源や出力の失敗も明示します。RH_INVALID_INPUT、RH_PRECONDITION、RH_NOT_FOUND、RH_EXPORT_FAILED、RH_UNSUPPORTED は安定したエラーコードです。公開エラーに外部例外の生テキストは含めません。
 
 代表的な予算／失敗経路を対象とし、クラッシュ復旧や全予算項目は保証しません。chat/live は未対応、lexical_test_only は旧テスト互換用です。原文、キー、SQLite、レポートは Git 対象外のワークスペースに保存します。実 API／資料庫の接続、ポリマー事例の受入、GitHub 公開は後続段階です。
+
+## OA 検索と PDF 収集
+
+`.[literature]` を導入後、`python -m research_harness.literature search --config examples\aem_oa_reviews.json --output .local\candidates.json` を実行します。検証済み manifest が提供された場合は、続いて `python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\pdfs --limit 23` を実行します。`anonymous: true` はキーなし要求を明示し、それ以外は `OPENALEX_API_KEY` が必要です。OpenAlex type ラベルは不完全なため、`review_only: false` は意図的な設定です。モジュールは公開 OA URL のみを扱い PDF を検証し、有効全文が不足した場合は partial catalog を残して終了コード 4 を返します。

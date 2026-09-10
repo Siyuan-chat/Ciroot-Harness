@@ -1,0 +1,666 @@
+{
+  "description": "AEM OA collection curated 2026-09-10; 23 complete papers. Reviews preferred; one perspective and one original study explicitly labelled. Public source metadata only.",
+  "execution_mode": "live_public_http",
+  "synthetic": false,
+  "records": [
+    {
+      "title": "Recent Progress in Anion Exchange Membrane Water Electrolysis: From Membrane Materials to System Components",
+      "doi": "10.3390/membranes16060185",
+      "year": 2026,
+      "authors": [
+        "Adil Emin",
+        "Jiarui Liu",
+        "Xian Sun",
+        "Hao Jiang"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W7162637244",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/membranes/membranes-16-00185/article_deploy/membranes-16-00185.pdf",
+          "landing_page_url": "https://doi.org/10.3390/membranes16060185",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水与分子设计",
+      "selection_reason": "2026 年综述，从膜材料延伸至系统组件。",
+      "expected_min_pages": 35,
+      "verified_sha256": "b268633b400732731658c9c0e4f310af4d31ed07ee1ce3ee2fe53aee4688ac59",
+      "journal": "Membranes"
+    },
+    {
+      "title": "Recent advances in Anion Exchange Membrane Water Electrolysis: catalysts, membranes, and MEA engineering",
+      "doi": "10.1007/s42791-026-00122-x",
+      "year": 2026,
+      "authors": [
+        "Paul Godel",
+        "Donggeun Eom",
+        "Sangwook Park"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W7147554651",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://link.springer.com/content/pdf/10.1007/s42791-026-00122-x.pdf",
+          "landing_page_url": "https://doi.org/10.1007/s42791-026-00122-x",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水组件",
+      "selection_reason": "2026 年 mini-review，覆盖膜、催化剂和 MEA 工程。",
+      "expected_min_pages": 11,
+      "verified_sha256": "f640446615b5927cc4b745980ac2681682404bfec2aeba76ed92f2423d73c1cb",
+      "journal": "JMST Advances"
+    },
+    {
+      "title": "Cellulose-Based Ion Exchange Membranes for Electrochemical Energy Systems: A Review",
+      "doi": "10.3390/membranes15100304",
+      "year": 2025,
+      "authors": [
+        "Nur Syahirah Faiha Shawalludin",
+        "Saidatul Sophia Sha’rani",
+        "Mohamed Azlan Suhot",
+        "Shamsul Sarip",
+        "Mohamed Mahmoud Nasef"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4414872962",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/membranes/membranes-15-00304/article_deploy/membranes-15-00304.pdf",
+          "landing_page_url": "https://doi.org/10.3390/membranes15100304",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "聚合物骨架",
+      "selection_reason": "2025 年纤维素基离子交换膜综述，包含 AEM 等体系。",
+      "expected_min_pages": 60,
+      "verified_sha256": "7b88df2e541fd473315b87a5c1fca8cda6605cf38d3a7b507d3b7da47248be5f",
+      "journal": "Membranes"
+    },
+    {
+      "title": "Styrene and Its Derivatives Used in Proton Exchange Membranes and Anion Exchange Membranes for Fuel Cell Applications: A Review",
+      "doi": "10.3390/batteries11040134",
+      "year": 2025,
+      "authors": [
+        "Muhammad Rehman Asghar",
+        "Ayesha Zahid",
+        "Huaneng Su",
+        "Kumar Divya",
+        "Muhammad Tuoqeer Anwar",
+        "Qian Xu"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4408997230",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/batteries/batteries-11-00134/article_deploy/batteries-11-00134.pdf",
+          "landing_page_url": "https://doi.org/10.3390/batteries11040134",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "聚合物骨架",
+      "selection_reason": "综述苯乙烯及衍生物的膜设计；同时覆盖 PEM 与 AEM。",
+      "expected_min_pages": 27,
+      "verified_sha256": "e71bde3bb9fc70549f48003113bb245006bdab08bfbf32cee924fbe34f23f2ba",
+      "journal": "Batteries"
+    },
+    {
+      "title": "Recent Advances and Challenges in Anion Exchange Membranes Development/Application for Water Electrolysis: A Review",
+      "doi": "10.3390/membranes14040085",
+      "year": 2024,
+      "authors": [
+        "Lu Liu",
+        "Hongyang Ma",
+        "Madani Khan",
+        "Benjamin S. Hsiao"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4393993562",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/membranes/membranes-14-00085/article_deploy/membranes-14-00085.pdf",
+          "landing_page_url": "https://doi.org/10.3390/membranes14040085",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水与稳定性",
+      "selection_reason": "综述电解水用 AEM 的结构、传导及耐碱稳定性。",
+      "expected_min_pages": 24,
+      "verified_sha256": "fd3f8d46a4035f2cf3409096b892d694cf78b5fc78563068853f37444035e347",
+      "journal": "Membranes"
+    },
+    {
+      "title": "Separators and Membranes for Advanced Alkaline Water Electrolysis",
+      "doi": "10.1021/acs.chemrev.3c00694",
+      "year": 2024,
+      "authors": [
+        "Dirk Henkensmeier",
+        "Won Chul Cho",
+        "Patric Jannasch",
+        "Jelena Stojadinović",
+        "Qingfeng Li",
+        "David Aili",
+        "Jens Oluf Jensen"
+      ],
+      "type": "review",
+      "source_type": "review",
+      "openalex_id": "https://openalex.org/W4395660633",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://backend.orbit.dtu.dk/ws/files/362712382/henkensmeier-et-al-2024-separators-and-membranes-for-advanced-alkaline-water-electrolysis_1_.pdf",
+          "landing_page_url": "https://orbit.dtu.dk/en/publications/2fd2feb5-76cc-42ec-98c5-80ff2baff87e",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水与膜比较",
+      "selection_reason": "系统比较先进碱性电解水中的隔膜、AEM 与离子溶剂化膜。",
+      "expected_min_pages": 52,
+      "verified_sha256": "6ec779e33d5c71da1a1f4dfc7329cdf729e76ec50e25590637a3ba9a2aa9924c",
+      "journal": "Chemical Reviews"
+    },
+    {
+      "title": "Green Hydrogen Production by Anion Exchange Membrane Water Electrolysis: Status and Future Perspectives",
+      "doi": "10.3390/en16020943",
+      "year": 2023,
+      "authors": [
+        "D.S. Falcão"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4316664261",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/energies/energies-16-00943/article_deploy/energies-16-00943.pdf",
+          "landing_page_url": "https://doi.org/10.3390/en16020943",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水综合",
+      "selection_reason": "用较短篇幅介绍 AEM 电解水制氢的现状与研究方向。",
+      "expected_min_pages": 8,
+      "verified_sha256": "3435f2519d0ae04ecec052353a46b8dc9f000be80d0b63161ea9b8dfcd1cac0e",
+      "journal": "Energies"
+    },
+    {
+      "title": "Recent Advancements of Polymeric Membranes in Anion Exchange Membrane Water Electrolyzer (AEMWE): A Critical Review",
+      "doi": "10.3390/polym15092144",
+      "year": 2023,
+      "authors": [
+        "Rajangam Vinodh",
+        "Shankara S. Kalanur",
+        "Sadesh Kumar Natarajan",
+        "Bruno G. Pollet"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4367598948",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/polymers/polymers-15-02144/article_deploy/polymers-15-02144.pdf",
+          "landing_page_url": "https://doi.org/10.3390/polym15092144",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水与聚合物",
+      "selection_reason": "梳理聚合物膜在 AEM 电解水中的研究进展。",
+      "expected_min_pages": 20,
+      "verified_sha256": "78b82826b78306e6930b48538158870759de1c846a85f5abe54c94dbded8da8c",
+      "journal": "Polymers"
+    },
+    {
+      "title": "Tuning Alkaline Anion Exchange Membranes through Crosslinking: A Review of Synthetic Strategies and Property Relationships",
+      "doi": "10.3390/polym15061534",
+      "year": 2023,
+      "authors": [
+        "Auston L. Clemens",
+        "Buddhinie Srimali Jayathilake",
+        "John J. Karnes",
+        "Johanna J. Schwartz",
+        "Sarah E. Baker",
+        "Eric B. Duoss",
+        "James S. Oakdale"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4327952718",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/polymers/polymers-15-01534/article_deploy/polymers-15-01534.pdf",
+          "landing_page_url": "https://doi.org/10.3390/polym15061534",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "交联与耐碱性",
+      "selection_reason": "比较交联合成策略及结构与性能之间的关系。",
+      "expected_min_pages": 33,
+      "verified_sha256": "d9d8e2f90fbb45ffe72c2d9630b3e8cf7dfb265bd17a7b1e413d85c277c9eeff",
+      "journal": "Polymers"
+    },
+    {
+      "title": "A Brief Review of Poly(Vinyl Alcohol)-Based Anion Exchange Membranes for Alkaline Fuel Cells",
+      "doi": "10.3390/polym14173565",
+      "year": 2022,
+      "authors": [
+        "Asep Muhamad Samsudin",
+        "Merit Bodner",
+        "Viktor Hacker"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4293661541",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/polymers/polymers-14-03565/article_deploy/polymers-14-03565.pdf",
+          "landing_page_url": "https://doi.org/10.3390/polym14173565",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "聚合物骨架",
+      "selection_reason": "聚焦 PVA 基 AEM 的制备和碱性燃料电池应用。",
+      "expected_min_pages": 31,
+      "verified_sha256": "95a161503056bc12fedeab82869307aa6bd107f7bba01080f1e6a40ea33d0e6e",
+      "journal": "Polymers"
+    },
+    {
+      "title": "A Review of Recent Chitosan Anion Exchange Membranes for Polymer Electrolyte Membrane Fuel Cells",
+      "doi": "10.3390/membranes12121265",
+      "year": 2022,
+      "authors": [
+        "Vijayalekshmi Vijayakumar",
+        "Sang Yong Nam"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4311793637",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/membranes/membranes-12-01265/article_deploy/membranes-12-01265.pdf",
+          "landing_page_url": "https://doi.org/10.3390/membranes12121265",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "聚合物骨架",
+      "selection_reason": "聚焦壳聚糖基 AEM 的近期研究。",
+      "expected_min_pages": 12,
+      "verified_sha256": "4183cc47e85c8691b8484392f645b3d4d92210f9d7b078166f936ee3f822dd8f",
+      "journal": "Membranes"
+    },
+    {
+      "title": "Anion Exchange Membranes for Alkaline Polymer Electrolyte Fuel Cells—A Concise Review",
+      "doi": "10.3390/ma15165601",
+      "year": 2022,
+      "authors": [
+        "Hari Gopi Kuppusamy",
+        "Prabhakaran Dhanasekaran",
+        "Nagaraju Niluroutu",
+        "Maniprakundil Neeshma",
+        "Baskaran Mohan Dass",
+        "Vishal M. Dhavale",
+        "Sreekuttan M. Unni",
+        "Santoshkumar D. Bhat"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4291915180",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/materials/materials-15-05601/article_deploy/materials-15-05601.pdf",
+          "landing_page_url": "https://doi.org/10.3390/ma15165601",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "综合与分子设计",
+      "selection_reason": "介绍 AEM 骨架、阳离子基团、合成路线及燃料电池用途。",
+      "expected_min_pages": 23,
+      "verified_sha256": "14ed3f64ad06b7b4aacc82a899905137e9fc2fd99f23c809a2b5e3ddb74e1a96",
+      "journal": "Materials"
+    },
+    {
+      "title": "Anion Exchange Membranes for Fuel Cell Application: A Review",
+      "doi": "10.3390/polym14061197",
+      "year": 2022,
+      "authors": [
+        "Gautam Das",
+        "Ji‐Hyeok Choi",
+        "Phan Khanh Thinh Nguyen",
+        "Dong‐Joo Kim",
+        "Young Soo Yoon"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4221007615",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/polymers/polymers-14-01197/article_deploy/polymers-14-01197.pdf",
+          "landing_page_url": "https://doi.org/10.3390/polym14061197",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "综合与分子设计",
+      "selection_reason": "按聚合物骨架和功能基团梳理 AEM，可作为材料设计入口。",
+      "expected_min_pages": 36,
+      "verified_sha256": "793aceb3183dd343a0652b30d171ee6aa1894e71bd9498b78bed8e13dcf31999",
+      "journal": "Polymers"
+    },
+    {
+      "title": "Molecular Modeling in Anion Exchange Membrane Research: A Brief Review of Recent Applications",
+      "doi": "10.3390/molecules27113574",
+      "year": 2022,
+      "authors": [
+        "Mirat Karibayev",
+        "Sandugash Kalybekkyzy",
+        "Yanwei Wang",
+        "Almаgul Mentbayeva"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4281957952",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/molecules/molecules-27-03574/article_deploy/molecules-27-03574.pdf",
+          "landing_page_url": "https://doi.org/10.3390/molecules27113574",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "传导与分子模拟",
+      "selection_reason": "综述分子模拟在 AEM 结构和传输研究中的应用。",
+      "expected_min_pages": 30,
+      "verified_sha256": "c54a57b2f32d1b7ba4f3a082800d6f21cd56a6e24e0e53c9d6de24733109c2c8",
+      "journal": "Molecules"
+    },
+    {
+      "title": "Properties of Anion Exchange Membranes with a Focus on Water Electrolysis",
+      "doi": "10.3390/membranes12100989",
+      "year": 2022,
+      "authors": [
+        "Hamza Khalid",
+        "Malikah Najibah",
+        "Hyun Park",
+        "Chulsung Bae",
+        "Dirk Henkensmeier"
+      ],
+      "type": "research-article",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4304806456",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/membranes/membranes-12-00989/article_deploy/membranes-12-00989.pdf",
+          "landing_page_url": "https://doi.org/10.3390/membranes12100989",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "表征与性能",
+      "selection_reason": "研究论文：比较商业 AEM 的理化性能，补充表征和数据阅读案例。",
+      "expected_min_pages": 17,
+      "verified_sha256": "92a22cc1a3a1ca0b594e561acf6dc9c07cb8d4fce6e8f1c3b2e5924a2250aa99",
+      "journal": "Membranes"
+    },
+    {
+      "title": "Recent Developments on Bioinspired Cellulose Containing Polymer Nanocomposite Cation and Anion Exchange Membranes for Fuel Cells (PEMFC and AFC)",
+      "doi": "10.3390/polym14235248",
+      "year": 2022,
+      "authors": [
+        "Sadhasivam Thangarasu",
+        "Tae-Hwan Oh"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W4311105712",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/polymers/polymers-14-05248/article_deploy/polymers-14-05248.pdf",
+          "landing_page_url": "https://doi.org/10.3390/polym14235248",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "聚合物骨架",
+      "selection_reason": "介绍含纤维素的离子交换膜；同时覆盖 PEM 与 AEM。",
+      "expected_min_pages": 33,
+      "verified_sha256": "384fa20b3f2c711d84114e2da45c151670c423244465a6954086c419817780d8",
+      "journal": "Polymers"
+    },
+    {
+      "title": "Anion Exchange Membranes with 1D, 2D and 3D Fillers: A Review",
+      "doi": "10.3390/polym13223887",
+      "year": 2021,
+      "authors": [
+        "Riccardo Narducci",
+        "Emanuela Sgreccia",
+        "Philippe Knauth",
+        "Maria Luisa Di Vona"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W3214069799",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/polymers/polymers-13-03887/article_deploy/polymers-13-03887.pdf",
+          "landing_page_url": "https://doi.org/10.3390/polym13223887",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "复合与增强",
+      "selection_reason": "比较不同维度填料在 AEM 中的作用。",
+      "expected_min_pages": 33,
+      "verified_sha256": "b49fddf1f58b72730778f10ac8ef3730f50eea0759f1479fc090f4907f843727",
+      "journal": "Polymers"
+    },
+    {
+      "title": "Novel components in anion exchange membrane water electrolyzers (AEMWE’s): Status, challenges and future needs. A mini review",
+      "doi": "10.1016/j.elecom.2021.107140",
+      "year": 2021,
+      "authors": [
+        "Paige Shirvanian",
+        "Adeline Loh",
+        "Soraya Sluijter",
+        "Xiaohong Li"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W3009063192",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://ndownloader.figshare.com/files/56819555",
+          "landing_page_url": "https://figshare.com/articles/journal_contribution/Novel_components_in_anion_exchange_membrane_water_electrolyzers_AEMWE_s_Status_challenges_and_future_needs_A_mini_review/29783816",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水组件",
+      "selection_reason": "简短综述电解水组件性能、耐久性和技术缺口。",
+      "expected_min_pages": 4,
+      "verified_sha256": "98d3ab6bc0e529b94b9659e979fff5a851de7ddb6b01959826483f6c2ee94240",
+      "journal": "Electrochemistry Communications"
+    },
+    {
+      "title": "Radiation-Grafted Anion-Exchange Membrane for Fuel Cell and Electrolyzer Applications: A Mini Review",
+      "doi": "10.3390/membranes11060397",
+      "year": 2021,
+      "authors": [
+        "Kean Long Lim",
+        "Chun Yik Wong",
+        "Wai Yin Wong",
+        "Kee Shyuan Loh",
+        "Sarala Selambakkannu",
+        "Nor Azillah Fatimah Othman",
+        "Hsiharng Yang"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W3165820484",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/membranes/membranes-11-00397/article_deploy/membranes-11-00397.pdf",
+          "landing_page_url": "https://doi.org/10.3390/membranes11060397",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "接枝与合成",
+      "selection_reason": "介绍辐射接枝 AEM 及其燃料电池、电解水应用。",
+      "expected_min_pages": 21,
+      "verified_sha256": "6644d680dd77e0bb8acc220dc6b3f17fe34f449728a172ea4cf9040636681417",
+      "journal": "Membranes"
+    },
+    {
+      "title": "Silica Containing Composite Anion Exchange Membranes by Sol–Gel Synthesis: A Short Review",
+      "doi": "10.3390/polym13111874",
+      "year": 2021,
+      "authors": [
+        "Emanuela Sgreccia",
+        "Riccardo Narducci",
+        "Philippe Knauth",
+        "Maria Luisa Di Vona"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W3170409406",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://mdpi-res.com/d_attachment/polymers/polymers-13-01874/article_deploy/polymers-13-01874.pdf",
+          "landing_page_url": "https://doi.org/10.3390/polym13111874",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "复合与增强",
+      "selection_reason": "聚焦溶胶凝胶法制备含二氧化硅复合 AEM。",
+      "expected_min_pages": 24,
+      "verified_sha256": "0230b810007620350fb709b947bf541eb5e5e8614130b6e3dfde1b195f99aa51",
+      "journal": "Polymers"
+    },
+    {
+      "title": "A review of the synthesis and characterization of anion exchange membranes",
+      "doi": "10.1007/s10853-018-2409-y",
+      "year": 2018,
+      "authors": [
+        "Kimberly F. L. Hagesteijn",
+        "Shanxue Jiang",
+        "Bradley P. Ladewig"
+      ],
+      "type": "review",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W2803765856",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://link.springer.com/content/pdf/10.1007/s10853-018-2409-y.pdf",
+          "landing_page_url": "https://doi.org/10.1007/s10853-018-2409-y",
+          "license": "cc-by",
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "合成与表征",
+      "selection_reason": "较早的 AEM 合成和表征方法综述，补充基础概念。",
+      "expected_min_pages": 20,
+      "verified_sha256": "2e541556281b269be583aea8d9da82e7eb37534f061b974b66810732515f9805",
+      "journal": "Journal of Materials Science"
+    },
+    {
+      "title": "A Review on Membranes and Catalysts for Anion Exchange Membrane Water Electrolysis Single Cells",
+      "doi": "10.5229/jecst.2017.8.3.183",
+      "year": 2017,
+      "authors": [
+        "Min Kyung Cho",
+        "Ahyoun Lim",
+        "So Young Lee",
+        "Hyoung‐Juhn Kim",
+        "Sung Jong Yoo",
+        "Yung‐Eun Sung",
+        "Hyun S. Park",
+        "Jong Hyun Jang"
+      ],
+      "type": "review",
+      "source_type": "review",
+      "openalex_id": "https://openalex.org/W2770794145",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://www.jecst.org/upload/pdf/E1JTC5_2017_v8n3_183.pdf",
+          "landing_page_url": "https://www.jecst.org/upload/pdf/E1JTC5_2017_v8n3_183.pdf",
+          "license": null,
+          "version": "publishedVersion"
+        }
+      ],
+      "topic": "电解水组件",
+      "selection_reason": "较早的电解水单电池膜与催化剂综述，补充技术背景。",
+      "expected_min_pages": 14,
+      "verified_sha256": "c3e9835a994d0a8e8a38b5575c13c961ed947e5b0b82e19d404c857ee74a8c53",
+      "journal": "Seoul National University Open Repository (Seoul National University)"
+    },
+    {
+      "title": "Anion exchange membrane fuel cells: Current status and remaining challenges",
+      "doi": "10.1016/j.jpowsour.2017.08.010",
+      "year": 2017,
+      "authors": [
+        "S. Gottesfeld",
+        "Dario R. Dekel",
+        "Miles Page",
+        "Chulsung Bae",
+        "Yushan Yan",
+        "Piotr Zelenay",
+        "Yu Seung Kim"
+      ],
+      "type": "perspective",
+      "source_type": "article",
+      "openalex_id": "https://openalex.org/W2757951566",
+      "locations": [
+        {
+          "is_oa": true,
+          "pdf_url": "https://www.osti.gov/servlets/purl/1400127",
+          "landing_page_url": "https://www.osti.gov/biblio/1400127",
+          "license": null,
+          "version": "acceptedVersion"
+        }
+      ],
+      "topic": "燃料电池与稳定性",
+      "selection_reason": "评述 AEM 燃料电池的性能、耐久性与技术问题；接受稿。",
+      "expected_min_pages": 16,
+      "verified_sha256": "17179f6a051487d5e8871877f80194e358054181b4f9a69af7b2995d68663188",
+      "journal": "Journal of Power Sources"
+    }
+  ]
+}
