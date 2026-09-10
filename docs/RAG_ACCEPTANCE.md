@@ -74,3 +74,37 @@ v3 的表格后紧邻一条重复标题，默认 after=1 因而未带出真正�
 `fdde388` 修正 CLI 默认 Windows 输出编码，防止中文 JSON 在没有 PYTHONIOENCODING 时被误报为非法输入。`0f17bfa` 仅按文本长度安排嵌入批次、恢复原 evidence 映射；实现者实际向量对照 max_abs_diff=0。Luna 的独立合成基准 32 条文本原顺序 24.177 秒、按长度排序 14.282 秒，不据此声称真实整库加速比例。parser/chunk/model 指纹均未改变；既有三篇处理结果可复用。
 
 固定应用检查点 `ed83faca4df1d243d8ab934dee076b191670549c` 从 git archive 构建，wheel SHA256 为 ccef6727df9993687733f7254552261c76f0c63f0adcb3199e7c2338909ba03d。项目内 `.local/rag-runtime/venv` 正在安装该非 editable 包；安装后检查与真实文献宿主验收尚未完成。
+
+该长期 venv 安装完成，pip check 通过；21/21 生命周期检查、10/10 真实表格检查和默认 Windows UTF-8 CLI 检查通过，安装模块哈希与 ed83fac 归档一致。三篇样本总计 2936.94 秒，102 页、2240 条证据、3/3 indexed、failed=0。安装包真实 MCP initialize/list/status/search/context/document/安全错误通过；中文宽泛查询命中英文交联综述。
+
+## 首轮真实宿主与检索失败记录
+
+Codex CLI / gpt-5.6-luna 使用现有 ChatGPT 登录运行真实样本库，共六次实际只读 MCP 调用。宿主任务 `01a08999-d23c-7191-b814-e92e6a082909`。两问得到回答，但独立逐字引用检查为 6/7：一条 Markdown 表格引文压缩了空格，不是原样子串；缺失值回答开头的“是”与“未提供数据”矛盾。因此 RG05 尚未通过。完整首次 trace/answer/verification 保存于忽略目录 `.local/rag-acceptance/host-run-01`。Luna 已加强不含具体论文答案的通用 MCP 引用、缺失值和直接证据指导，待复验。
+
+首次冻结 v2 诊断在三篇样本上执行：3/18，英语 3/6、中文 0/6、日文 0/6；过滤与上下文边界通过。原定 23 篇数量检查当然未通过，该样本分数不能代替全库评分；在较小语料上已明显未达到检索质量门槛，先诊断后续改进。结果在 `.local/rag-acceptance/retrieval-sample-v2-first.json`。对两个目标段落重新嵌入与原存储向量的 cosine 均约 0.9999999，排除 evidence ID/向量错配；中文纯向量目标排名分别为 55 和 797。短标题、参考文献、长段截断及现用句子模型的检索效果仍须处理。不得宣称多语 RAG 已通过。
+
+## 查询规划与未见问题（进行中）
+
+新候选为官方 intfloat/multilingual-e5-small ONNX，MIT、384 维、512 token，FastEmbed 的公开 custom model 注册方式，query:/passage: 双前缀。已下载官方 snapshot 614241f622f53c4eeff9890bdc4f31cfecc418b3。同一 2240 条真实证据的独立候选编码为 367.5 秒（约 6.1 分钟），原配置三篇向量化合计约 21.5 分钟；模型和批次排序均有变化，不能将全部加速归因于模型。
+
+候选直接原问纯向量诊断仍失败：5/18，仅英语 5/6；中文和日文均 0/6。这不是可接受的直接跨语言检索能力。进一步按用户实际 Codex 路径测试宿主查询规划：由 gpt-5.6-luna 接收原问和文献目录，生成英文检索式及仅在明确点名论文时使用的 DOI 过滤，没有给参考答案或目标页。实际规划任务 01a089b3-3831-7eb0-8d90-2666d52176eb；规划输入、输出、完整 trace 在忽略目录的 query-planning*/query-plans-luna-v1*。
+
+三篇样本、这些规划后的查询：候选 E5 + 未改参数的原混合规则 18/18；候选纯向量 15/18，原 MiniLM 实际服务 12/18。这里只是选择实现方案的旧题回归诊断：三语同义问题在同一规划批次中出现，不能据此声称独立的跨语言泛化。正式验证将按语言分开生成查询，原问与生成式共同归档，并在23篇语料上保留同样的已知证据组命中门槛。直接跨语言分数单独记录，不能混作宿主规划路径的成绩。调用模型负责查询规划，本地 RAG 不新增生成模型调用器、API key 依赖或硬编码翻译字典。
+
+已从另外两篇原PDF渲染核对并冻结6个未见问题：Molecular Modeling 综述物理页4的相分离形态及控制因素；Radiation-Grafted 综述物理页11的预辐照活性物种及有氧路线加热。每组中英日三问，top_k=8，至少5/6命中且每种语言至少1/2。问题、支持词和页码在 evaluation-holdout-v1.json，SHA256=37bde4433269e2945449faa7c52e69b435a7c19acd684e2e20d0eec91265e1fb。原页PNG在 holdout-images；实现者未接触该集合，尚未执行候选检索。
+
+## 并行解析检查点
+
+b972ac43ea3720cc2384628feec4f27c1b0e3f52 安装包 SHA256=7e8462e32bbec0a311c8f75938255819ef5e0f9ec6904f04eef428215c213f2d。设计者安装后独立检查 prepare 计数/重复复用、无evidence、无Qdrant、跨workspace复制缓存后真实嵌入入库，四项通过。剩余20篇按页数分为242页和240页的两组，各10篇；两个独立workspace的真实prepare正在运行，不争用同一Qdrant。完成解析不等于完成索引。
+
+### 模型适配与正式查询输入检查
+
+Luna 用同一官方 E5 small 缓存的 AutoTokenizer + ONNX Runtime、attention-mask mean pooling 与 L2 normalize，对照 FastEmbed 的六个合成中/英/日 query/passage。token 数为16/17/17/28/28/25，UNK比例全部为0，向量最大绝对差≤2.4e-08，cosine约1。该结果排除本探针覆盖的分词、pooling与ONNX适配错误；不能把它当作真实语料召回验收。
+
+正式查询规划分别由三个 Codex/Luna 宿主实例执行，每次只提供一种语言的8个问题和文献题名/DOI等元数据，不提供答案、支持词或页码；trace均无工具调用，输出8个唯一问题ID。中文任务01a089bc-943f-72a0-a909-3d3e52f9b8e8、英文01a089bc-9490-73a0-9082-84bf663c3c64、日文01a089bc-96d6-7843-8fcc-67b37fe3b9d1。输出SHA256依次为7d6ab436c2dd2f714eaed8c34d0bbbc36dc03279446587ae011dc7b158e6449a、b7ba6bf65823a28408d1d473cf799fb52a2d11432766182887e41b9863346878、50236474cb271b9654bd45bb9d8a7523cbff8dfaf33440168aed29e6d3db6b30。合并文件query-plans-formal-v1.json仅用于按已冻结输入执行检索，尚无正式全库分数。
+
+两条原解析队列启动后，又使用两个独立workspace提前解析各队列后五篇，并在完成后原子复制有效缓存给原队列。原队列到达这些文件时直接复用。四进程只处理解析缓存，不同时写同一Qdrant；先前完成的解析不作废。
+
+### E5 安装包与迁移检查点
+
+不可变实现 d6ff98a184fcefa12858c28fc9ba0d84aa55bd3e 的 wheel SHA256 为 4f34e3e56a7198e7f549af6142283b77769002f2d39b7c45507099085c86fc46，在独立应用 venv 非 editable 安装。设计者生命周期21/21与新增迁移21/21通过；后者使用已有合成两版本库，覆盖初始化安全错误、写入后故障回滚、旧索引仍可检索、临时集合清理、query/passage前缀、全部旧版本迁移、原数据/文件/ID不变、活动模型状态及重开读取。结果分别在 lifecycle-d6ff98a/results.json 和 migration-d6ff98a/result.json。真实三篇向量重建正在进行，尚无该步骤成功声明。
