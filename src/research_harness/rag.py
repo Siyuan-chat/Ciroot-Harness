@@ -8,6 +8,7 @@ import re
 import sqlite3
 import argparse
 import sys
+from importlib.metadata import version as package_version
 import uuid
 from collections import Counter
 from contextlib import AbstractContextManager
@@ -22,6 +23,7 @@ _WORD_RE = re.compile(r"[\w-]+", re.UNICODE)
 _CHUNK_SIZE = 200
 _CHUNK_OVERLAP = 30
 _PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-no-cell-match-v2"
+_EMBEDDING_DIMENSION = 384
 
 
 class RagError(Exception):
@@ -123,7 +125,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         return self._embedder, self._qdrant, SentenceSplitter
 
     def _ensure_index_config(self) -> None:
-        fingerprint = json.dumps({"embedding_model": self.embedding_model, "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
+        fingerprint = json.dumps({"embedding_model": self.embedding_model, "embedding_dimension": _EMBEDDING_DIMENSION, "embedding_preprocessing": "fastembed-0.8-mean-pooling", "fastembed": package_version("fastembed"), "docling": package_version("docling"), "llama_index_core": package_version("llama-index-core"), "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
         saved = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
         if saved and saved["value"] != fingerprint and self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0]:
             raise RagError("RH_RAG_CONFIG_MISMATCH", "index configuration differs from the existing evidence")
@@ -162,13 +164,14 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
     @staticmethod
     def _locator(item: Any) -> dict[str, Any]:
         provenance = getattr(item, "prov", None) or []
-        first = provenance[0] if provenance else None
-        page = getattr(first, "page_no", None)
-        bbox = getattr(first, "bbox", None)
-        coordinates = None
-        if bbox is not None:
-            coordinates = {key: getattr(bbox, key, None) for key in ("l", "t", "r", "b", "coord_origin")}
-        return {"page": page if isinstance(page, int) and page > 0 else None, "bbox": coordinates, "printed_page": None}
+        locations = []
+        for value in provenance:
+            page = getattr(value, "page_no", None)
+            bbox = getattr(value, "bbox", None)
+            locations.append({"page": page if isinstance(page, int) and page > 0 else None, "bbox": {key: getattr(bbox, key, None) for key in ("l", "t", "r", "b", "coord_origin")} if bbox is not None else None})
+        pages = sorted({value["page"] for value in locations if value["page"]})
+        first = locations[0] if locations else {"page": None, "bbox": None}
+        return {"page": first["page"], "bbox": first["bbox"], "printed_page": None, "pages": pages, "provenance": locations}
 
     def _parse_pdf(self, path: Path) -> tuple[list[dict[str, Any]], int | None, str, list[str]]:
         try:
@@ -194,10 +197,12 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                     blocks.append({"text": text.strip(), "locator": self._locator(item), "section": section, "role": role})
             pages = getattr(document, "pages", {})
             page_numbers = set(pages) if isinstance(pages, dict) else set()
-            observed = {block["locator"]["page"] for block in blocks if block["locator"]["page"]}
+            observed = {page for block in blocks for page in block["locator"].get("pages", [])}
             missing = sorted(page_numbers - observed)
+            partial = "PARTIAL" in str(getattr(converted, "status", "")).upper()
             errors = [f"no extracted text on physical page {page}" for page in missing]
-            return blocks, len(pages) if hasattr(pages, "__len__") else None, "partial" if missing else "full_text", errors
+            if partial: errors.append("Docling conversion reported partial coverage")
+            return blocks, len(pages) if hasattr(pages, "__len__") else None, "partial" if missing or partial else "full_text", errors
         except RagError:
             raise
         except Exception as exc:
