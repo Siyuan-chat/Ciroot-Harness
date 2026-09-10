@@ -10,7 +10,10 @@ requires-python = ">=3.11"
 dependencies = ["jsonschema>=4.23", "requests>=2.32", "langgraph>=1.2"]
 
 [project.optional-dependencies]
-full = ["langgraph>=0.2", "docling>=2", "fastembed>=0.4", "qdrant-client>=1.12", "llama-index-core>=0.11"]
+full = ["langgraph>=0.2", "docling==2.126.0", "fastembed==0.8.0", "qdrant-client==1.19.0", "llama-index-core==0.14.24"]
+rag = ["docling==2.126.0", "fastembed==0.8.0", "qdrant-client==1.19.0", "llama-index-core==0.14.24"]
+mcp = ["mcp==2.2.0"]
+rag-mcp = ["docling==2.126.0", "fastembed==0.8.0", "qdrant-client==1.19.0", "llama-index-core==0.14.24", "mcp==2.2.0"]
 literature = ["pypdf>=5"]
 test = []
 

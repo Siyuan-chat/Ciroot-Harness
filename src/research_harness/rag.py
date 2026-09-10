@@ -1,0 +1,359 @@
+"""Local, provenance-preserving library for the D18 evidence RAG boundary."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import sqlite3
+import uuid
+from collections import Counter
+from contextlib import AbstractContextManager
+from pathlib import Path
+from typing import Any, Iterable, Iterator
+
+
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+_ALLOWED_FILTERS = {"document_ids", "version_ids", "doi", "year_min", "year_max", "types"}
+_CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]")
+_WORD_RE = re.compile(r"[\w-]+", re.UNICODE)
+_CHUNK_SIZE = 200
+_CHUNK_OVERLAP = 30
+_PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-v1"
+
+
+class RagError(Exception):
+    """A safe RAG application-boundary error."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+    def to_dict(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.message}
+
+
+def _safe_error(code: str, message: str) -> dict[str, str]:
+    return {"code": code, "message": message}
+
+
+def _tokens(text: str) -> Counter[str]:
+    normalized = text.casefold()
+    tokens = _WORD_RE.findall(normalized)
+    cjk = "".join(_CJK_RE.findall(normalized))
+    tokens.extend(cjk[index : index + 2] for index in range(max(0, len(cjk) - 1)))
+    return Counter(token for token in tokens if len(token) > 1)
+
+
+class RagLibrary(AbstractContextManager["RagLibrary"]):
+    """A workspace-scoped, local evidence library.
+
+    Imports deliberately retain the original source location and extracted
+    provenance. The index contains only derived vectors and metadata.
+    """
+
+    def __init__(self, workspace: str | Path, *, embedding_model: str | None = None):
+        self.root = Path(workspace).resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+        (self.root / "raw").mkdir(exist_ok=True)
+        self.embedding_model = embedding_model or DEFAULT_EMBEDDING_MODEL
+        self._db = sqlite3.connect(self.root / "rag.sqlite")
+        self._db.row_factory = sqlite3.Row
+        self._db.execute("PRAGMA foreign_keys=ON")
+        self._db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS rag_documents (
+              document_id TEXT PRIMARY KEY, title TEXT NOT NULL, doi TEXT,
+              year INTEGER, document_type TEXT, source_path TEXT NOT NULL,
+              current_version_id TEXT, parse_status TEXT NOT NULL,
+              coverage TEXT NOT NULL, errors TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS rag_versions (
+              version_id TEXT PRIMARY KEY, document_id TEXT NOT NULL,
+              content_sha256 TEXT NOT NULL, parser TEXT NOT NULL, page_count INTEGER,
+              coverage TEXT NOT NULL, errors TEXT NOT NULL, source_path TEXT NOT NULL, created REAL NOT NULL,
+              UNIQUE(document_id, content_sha256),
+              FOREIGN KEY(document_id) REFERENCES rag_documents(document_id)
+            );
+            CREATE TABLE IF NOT EXISTS rag_evidence (
+              evidence_id TEXT PRIMARY KEY, document_id TEXT NOT NULL,
+              version_id TEXT NOT NULL, ordinal INTEGER NOT NULL, text TEXT NOT NULL,
+              locator TEXT NOT NULL, section TEXT, role TEXT NOT NULL, quality TEXT NOT NULL,
+              FOREIGN KEY(document_id) REFERENCES rag_documents(document_id),
+              FOREIGN KEY(version_id) REFERENCES rag_versions(version_id)
+            );
+            CREATE INDEX IF NOT EXISTS rag_evidence_version ON rag_evidence(version_id, ordinal);
+            CREATE TABLE IF NOT EXISTS rag_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            """
+        )
+        version_columns = {row[1] for row in self._db.execute("PRAGMA table_info(rag_versions)")}
+        if "source_path" not in version_columns:
+            self._db.execute("ALTER TABLE rag_versions ADD COLUMN source_path TEXT")
+        self._db.commit()
+        self._embedder: Any | None = None
+        self._qdrant: Any | None = None
+        self._converter: Any | None = None
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._qdrant is not None:
+            self._qdrant.close()
+            self._qdrant = None
+        self._db.close()
+
+    def _components(self) -> tuple[Any, Any, Any]:
+        try:
+            from fastembed import TextEmbedding
+            from llama_index.core.node_parser import SentenceSplitter
+            from qdrant_client import QdrantClient
+        except ImportError as exc:
+            raise RagError("RH_RAG_DEPENDENCY", "RAG dependencies are not installed") from exc
+        if self._embedder is None:
+            cache_dir = Path(os.environ.get("RAG_MODEL_CACHE", self.root.parent / "rag-runtime" / "models"))
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            self._embedder = TextEmbedding(model_name=self.embedding_model, cache_dir=str(cache_dir))
+        if self._qdrant is None:
+            self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
+        fingerprint = json.dumps({"embedding_model": self.embedding_model, "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
+        saved = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
+        if saved and saved["value"] != fingerprint and self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0]:
+            raise RagError("RH_RAG_CONFIG_MISMATCH", "index configuration differs from the existing evidence")
+        if not saved:
+            self._db.execute("INSERT INTO rag_config VALUES ('index_fingerprint', ?)", (fingerprint,))
+            self._db.commit()
+        return self._embedder, self._qdrant, SentenceSplitter
+
+    @staticmethod
+    def _catalog(catalog_path: str | Path) -> tuple[Path, list[dict[str, Any]]]:
+        path = Path(catalog_path).resolve()
+        try:
+            content = json.loads(path.read_text(encoding="utf-8"))
+            records = content["records"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise RagError("RH_RAG_INVALID_INPUT", "catalog could not be read") from exc
+        if not isinstance(records, list):
+            raise RagError("RH_RAG_INVALID_INPUT", "catalog records must be a list")
+        return path.parent, [record for record in records if isinstance(record, dict)]
+
+    @staticmethod
+    def _document_id(record: dict[str, Any], path: Path) -> str:
+        doi = record.get("doi")
+        identity = doi.strip().casefold() if isinstance(doi, str) and doi.strip() else str(path.resolve()).casefold()
+        return "doc-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+    @staticmethod
+    def _item_text(document: Any, item: Any) -> tuple[str, str, str | None]:
+        label = str(getattr(item, "label", "text"))
+        if "table" in label.casefold():
+            caption = getattr(item, "caption_text", lambda _doc: "")(document)
+            table = getattr(item, "export_to_markdown", lambda _doc: "")(document)
+            return "\n".join(part for part in (caption, table) if isinstance(part, str) and part.strip()), "table", caption or None
+        text = getattr(item, "text", "")
+        return (text if isinstance(text, str) else ""), "text", None
+
+    @staticmethod
+    def _locator(item: Any) -> dict[str, Any]:
+        provenance = getattr(item, "prov", None) or []
+        first = provenance[0] if provenance else None
+        page = getattr(first, "page_no", None)
+        bbox = getattr(first, "bbox", None)
+        coordinates = None
+        if bbox is not None:
+            coordinates = {key: getattr(bbox, key, None) for key in ("l", "t", "r", "b", "coord_origin")}
+        return {"page": page if isinstance(page, int) and page > 0 else None, "bbox": coordinates, "printed_page": None}
+
+    def _parse_pdf(self, path: Path) -> tuple[list[dict[str, Any]], int | None, list[str]]:
+        try:
+            from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.document_converter import DocumentConverter, PdfFormatOption
+        except ImportError as exc:
+            raise RagError("RH_RAG_DEPENDENCY", "Docling is not installed") from exc
+        try:
+            if self._converter is None:
+                options = PdfPipelineOptions()
+                options.do_ocr = False
+                options.do_table_structure = True
+                self._converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options, backend=PyPdfiumDocumentBackend)})
+            converted = self._converter.convert(path)
+            document = converted.document
+            blocks: list[dict[str, Any]] = []
+            for item, _level in document.iterate_items():
+                text, role, section = self._item_text(document, item)
+                if text.strip():
+                    blocks.append({"text": text.strip(), "locator": self._locator(item), "section": section, "role": role})
+            pages = getattr(document, "pages", {})
+            return blocks, len(pages) if hasattr(pages, "__len__") else None, []
+        except RagError:
+            raise
+        except Exception as exc:
+            raise RagError("RH_RAG_PARSE_FAILED", "Docling could not parse this PDF") from exc
+
+    def _parse(self, path: Path) -> tuple[list[dict[str, Any]], int | None, list[str]]:
+        if path.suffix.casefold() == ".pdf":
+            return self._parse_pdf(path)
+        if path.suffix.casefold() != ".txt":
+            raise RagError("RH_RAG_UNSUPPORTED", "only PDF and TXT files are supported")
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return ([{"text": text, "locator": {"line_start": 1, "line_end": text.count("\n") + 1}, "section": None, "role": "text"}], None, [])
+
+    @staticmethod
+    def _chunks(blocks: list[dict[str, Any]], splitter_cls: Any) -> Iterator[dict[str, Any]]:
+        splitter = splitter_cls(chunk_size=_CHUNK_SIZE, chunk_overlap=_CHUNK_OVERLAP)
+        for block in blocks:
+            if block["role"] == "table":
+                yield {**block, "quality": "Docling table extraction; verify merged headers and footnotes in source"}
+                continue
+            for text in splitter.split_text(block["text"]):
+                yield {**block, "text": text, "quality": "Docling layout/provenance extraction; reading order may need source check"}
+
+    def import_library(self, catalog_path: str | Path, *, limit: int | None = None) -> dict[str, Any]:
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            raise RagError("RH_RAG_INVALID_INPUT", "limit must be a positive integer")
+        root, records = self._catalog(catalog_path)
+        processed = records[:limit] if limit else records
+        imported = reused = failed = 0
+        documents: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for record in processed:
+            file_value = record.get("file")
+            if not isinstance(file_value, str):
+                failed += 1; errors.append(_safe_error("RH_RAG_INVALID_INPUT", "catalog record has no file")); continue
+            source = (root / file_value).resolve()
+            document_id = self._document_id(record, source)
+            if root not in source.parents or not source.is_file():
+                failed += 1; errors.append({"document_id": document_id, **_safe_error("RH_RAG_INVALID_INPUT", "catalog file is unavailable")}); continue
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            old = self._db.execute("SELECT version_id FROM rag_versions WHERE document_id=? AND content_sha256=?", (document_id, digest)).fetchone()
+            if old and self._version_is_indexed(old["version_id"]):
+                reused += 1; documents.append({"document_id": document_id, "version_id": old["version_id"], "parse_status": "reused"}); continue
+            try:
+                blocks, pages, parse_errors = self._parse(source)
+                _embedder, qdrant, splitter = self._components()
+                chunks = list(self._chunks(blocks, splitter))
+                if not chunks:
+                    raise RagError("RH_RAG_PARSE_FAILED", "Docling returned no usable evidence")
+                version_id = "ver-" + hashlib.sha256(f"{document_id}:{digest}".encode()).hexdigest()[:24]
+                evidence = []
+                for ordinal, chunk in enumerate(chunks, 1):
+                    evidence_id = "ev-" + hashlib.sha256(f"{version_id}:{ordinal}".encode()).hexdigest()[:24]
+                    evidence.append({"evidence_id": evidence_id, "ordinal": ordinal, "version_id": version_id, **chunk})
+                self._index(evidence, qdrant, _embedder)
+                raw_path = self._copy_source(source, version_id)
+                self._store_document(record, raw_path, document_id, version_id, digest, pages, parse_errors, evidence)
+                imported += 1; documents.append({"document_id": document_id, "version_id": version_id, "parse_status": "completed", "evidence_count": len(evidence)})
+            except RagError as exc:
+                self._record_failure(record, source, document_id, exc)
+                failed += 1; errors.append({"document_id": document_id, **exc.to_dict()})
+            except Exception:
+                self._record_failure(record, source, document_id, RagError("RH_RAG_FAILED", "document import failed"))
+                failed += 1; errors.append({"document_id": document_id, **_safe_error("RH_RAG_FAILED", "document import failed")})
+        outcome = "completed" if not failed else "partial" if imported or reused else "failed"
+        return {"outcome": outcome, "imported": imported, "reused": reused, "failed": failed, "documents": documents, "errors": errors}
+
+    def _version_is_indexed(self, version_id: str) -> bool:
+        count = self._db.execute("SELECT COUNT(*) FROM rag_evidence WHERE version_id=?", (version_id,)).fetchone()[0]
+        if not count:
+            return False
+        try:
+            from qdrant_client import QdrantClient
+            return QdrantClient(path=str(self.root / "qdrant")).collection_exists("evidence")
+        except Exception:
+            return False
+
+    def _copy_source(self, source: Path, version_id: str) -> Path:
+        destination = self.root / "raw" / f"{version_id}{source.suffix.casefold()}"
+        if not destination.exists():
+            destination.write_bytes(source.read_bytes())
+        return destination
+
+    def _record_failure(self, record: dict[str, Any], source: Path, document_id: str, error: RagError) -> None:
+        self._db.execute("INSERT OR IGNORE INTO rag_documents VALUES (?,?,?,?,?,?,?,?,?,?)", (document_id, str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), None, "failed", "unknown", json.dumps([error.to_dict()])))
+        self._db.execute("UPDATE rag_documents SET parse_status='failed',coverage='unknown',errors=? WHERE document_id=?", (json.dumps([error.to_dict()]), document_id))
+        self._db.commit()
+
+    def _store_document(self, record: dict[str, Any], source: Path, document_id: str, version_id: str, digest: str, pages: int | None, errors: list[str], evidence: list[dict[str, Any]]) -> None:
+        self._db.execute("INSERT OR IGNORE INTO rag_documents VALUES (?,?,?,?,?,?,?,?,?,?)", (document_id, str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, "completed", "full_text", json.dumps(errors)))
+        self._db.execute("UPDATE rag_documents SET title=?,doi=?,year=?,document_type=?,source_path=?,current_version_id=?,parse_status='completed',coverage='full_text',errors=? WHERE document_id=?", (str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, json.dumps(errors), document_id))
+        self._db.execute("INSERT INTO rag_versions (version_id,document_id,content_sha256,parser,page_count,coverage,errors,source_path,created) VALUES (?,?,?,?,?,?,?,?,strftime('%s','now'))", (version_id, document_id, digest, _PARSER_FINGERPRINT, pages, "full_text", json.dumps(errors), str(source)))
+        self._db.executemany("INSERT INTO rag_evidence VALUES (?,?,?,?,?,?,?,?,?)", [(value["evidence_id"], document_id, version_id, value["ordinal"], value["text"], json.dumps(value["locator"]), value["section"], value["role"], value["quality"]) for value in evidence])
+        self._db.commit()
+
+    def _index(self, evidence: list[dict[str, Any]], qdrant: Any, embedder: Any) -> None:
+        from qdrant_client import models
+        vectors = list(embedder.embed([item["text"] for item in evidence]))
+        if not vectors:
+            raise RagError("RH_RAG_INDEX_FAILED", "embedding returned no vectors")
+        if not qdrant.collection_exists("evidence"):
+            qdrant.create_collection("evidence", vectors_config=models.VectorParams(size=len(vectors[0]), distance=models.Distance.COSINE))
+        points = [models.PointStruct(id=str(uuid.UUID(hashlib.sha256(item["evidence_id"].encode()).hexdigest()[:32])), vector=vector.tolist(), payload={"evidence_id": item["evidence_id"], "version_id": item["version_id"] if "version_id" in item else None}) for item, vector in zip(evidence, vectors)]
+        qdrant.upsert("evidence", points=points, wait=True)
+
+    def _valid_filters(self, filters: dict[str, Any] | None) -> dict[str, Any]:
+        if filters is None: return {}
+        if not isinstance(filters, dict) or set(filters) - _ALLOWED_FILTERS:
+            raise RagError("RH_RAG_INVALID_INPUT", "unsupported search filter")
+        return filters
+
+    def _candidates(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
+        clauses = ["e.version_id=d.current_version_id"] if "version_ids" not in filters else ["1=1"]
+        values: list[Any] = []
+        mapping = {"document_ids": "e.document_id", "version_ids": "e.version_id", "doi": "d.doi", "types": "d.document_type"}
+        for key, column in mapping.items():
+            if key in filters:
+                item_values = filters[key] if isinstance(filters[key], list) else [filters[key]]
+                if not item_values: return []
+                clauses.append(f"{column} IN ({','.join('?' for _ in item_values)})"); values.extend(item_values)
+        for key, op in (("year_min", ">="), ("year_max", "<=")):
+            if key in filters: clauses.append(f"d.year {op} ?"); values.append(filters[key])
+        rows = self._db.execute("SELECT e.*,d.title,d.doi,d.year,d.document_type,v.source_path FROM rag_evidence e JOIN rag_documents d ON d.document_id=e.document_id JOIN rag_versions v ON v.version_id=e.version_id WHERE " + " AND ".join(clauses), values).fetchall()
+        return [dict(row) for row in rows]
+
+    def search_evidence(self, query: str, *, top_k: int = 8, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+        if not isinstance(query, str) or not query.strip() or not isinstance(top_k, int) or not 1 <= top_k <= 30:
+            raise RagError("RH_RAG_INVALID_INPUT", "query and top_k are invalid")
+        filters = self._valid_filters(filters); candidates = self._candidates(filters)
+        if not candidates: return {"query": query, "items": [], "snapshot_version_ids": [], "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": 0, "vector_hits": 0, "coverage_limits": ["no evidence in selected scope"]}}
+        embedder, qdrant, _splitter = self._components()
+        query_vector = list(embedder.embed(["query: " + query]))[0].tolist()
+        allowed = {item["evidence_id"] for item in candidates}
+        vector_scores: dict[str, float] = {}
+        if qdrant.collection_exists("evidence"):
+            from qdrant_client import models
+            query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchAny(any=sorted({item["version_id"] for item in candidates})))])
+            hits = qdrant.query_points("evidence", query=query_vector, query_filter=query_filter, limit=len(candidates)).points
+            vector_scores = {hit.payload["evidence_id"]: float(hit.score) for hit in hits if hit.payload and hit.payload.get("evidence_id") in allowed}
+        query_tokens = _tokens(query)
+        lexical_scores = {item["evidence_id"]: sum(min(count, _tokens(item["text"])[token]) for token, count in query_tokens.items()) for item in candidates}
+        ranked = sorted(candidates, key=lambda item: (vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]] / max(1, sum(query_tokens.values())), item["evidence_id"]), reverse=True)[:top_k]
+        return {"query": query, "items": [self._item(item, vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["PDF layout tables retain Docling extraction quality notes"]}}
+
+    @staticmethod
+    def _item(row: dict[str, Any], score: float | None = None) -> dict[str, Any]:
+        item = {key: row[key] for key in ("evidence_id", "document_id", "version_id", "text", "title", "doi", "year", "document_type", "source_path", "section", "role", "quality")}
+        item["locator"] = json.loads(row["locator"])
+        if score is not None: item["score"] = score
+        return item
+
+    def get_evidence_context(self, evidence_id: str, *, before: int = 1, after: int = 1) -> dict[str, Any]:
+        if not isinstance(before, int) or not isinstance(after, int) or not 0 <= before <= 3 or not 0 <= after <= 3:
+            raise RagError("RH_RAG_INVALID_INPUT", "context window must be between zero and three")
+        hit = self._db.execute("SELECT * FROM rag_evidence WHERE evidence_id=?", (evidence_id,)).fetchone()
+        if not hit: raise RagError("RH_RAG_NOT_FOUND", "evidence was not found")
+        rows = self._db.execute("SELECT e.*,d.title,d.doi,d.year,d.document_type,v.source_path FROM rag_evidence e JOIN rag_documents d ON d.document_id=e.document_id JOIN rag_versions v ON v.version_id=e.version_id WHERE e.document_id=? AND e.version_id=? AND e.ordinal BETWEEN ? AND ? ORDER BY e.ordinal", (hit["document_id"], hit["version_id"], hit["ordinal"] - before, hit["ordinal"] + after)).fetchall()
+        return {"evidence_id": evidence_id, "items": [self._item(dict(row)) for row in rows]}
+
+    def get_document(self, document_id: str) -> dict[str, Any]:
+        row = self._db.execute("SELECT * FROM rag_documents WHERE document_id=?", (document_id,)).fetchone()
+        if not row: raise RagError("RH_RAG_NOT_FOUND", "document was not found")
+        result = dict(row); result["errors"] = json.loads(result["errors"]); result["versions"] = [dict(version) for version in self._db.execute("SELECT * FROM rag_versions WHERE document_id=? ORDER BY created", (document_id,))]
+        for version in result["versions"]: version["errors"] = json.loads(version["errors"])
+        return result
+
+    def get_library_status(self) -> dict[str, Any]:
+        documents = [dict(row) for row in self._db.execute("SELECT document_id,title,doi,document_type,year,current_version_id,parse_status FROM rag_documents ORDER BY title")]
+        return {"document_count": len(documents), "version_count": self._db.execute("SELECT COUNT(*) FROM rag_versions").fetchone()[0], "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0], "indexed_document_count": sum(item["parse_status"] == "completed" for item in documents), "failed_document_count": sum(item["parse_status"] == "failed" for item in documents), "embedding_model": self.embedding_model, "index_status": "ready" if documents else "empty", "documents": documents}
