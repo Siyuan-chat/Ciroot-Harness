@@ -4,31 +4,40 @@
 
 ## 最短のローカル手順
 
-[RAG_RUNTIME.md](RAG_RUNTIME.md) に従ってキャッシュを設定し `.[rag-mcp]` を導入します。長時間の CLI 導入を終えてから、同じ workspace に MCP を登録してください。
+[RAG_RUNTIME.md](RAG_RUNTIME.md) に従ってキャッシュを設定し、同じ仮想環境に `.[rag-mcp]` を導入します。長時間の CLI 導入を終えてから、同じ workspace に MCP を登録してください。`--env` は Codex が起動するサービスにもキャッシュ場所を永続化します。shell 変数だけでは不十分です。
 
 ```powershell
-$env:RAG_MODEL_CACHE = "$PWD\.local\rag-runtime\models"
-$env:HF_HOME = "$PWD\.local\rag-runtime\huggingface"
-python -m pip install ".[rag-mcp]"
-python -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
-python -m research_harness.rag --workspace C:\data\rag-workspace search "架橋 膨潤"
-codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+python -m venv .venv
+$py = (Resolve-Path .venv\Scripts\python.exe)
+$repo = (Get-Location).Path
+$modelCache = Join-Path $repo ".local\rag-runtime\models"
+$hfHome = Join-Path $repo ".local\rag-runtime\huggingface"
+New-Item -ItemType Directory -Force -Path $modelCache, $hfHome | Out-Null
+$modelCache = (Resolve-Path $modelCache).Path
+$hfHome = (Resolve-Path $hfHome).Path
+$env:RAG_MODEL_CACHE = $modelCache
+$env:HF_HOME = $hfHome
+& $py -m pip install ".[rag-mcp]"
+& $py -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
+& $py -m research_harness.rag --workspace C:\data\rag-workspace search "架橋 膨潤"
+codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF_HOME=$hfHome" -- $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
 範囲は [RAG_STAGE.md](RAG_STAGE.md) を参照してください。生成モデル API はこの段階では契約のみで、実23文献の受入は進行中です。
 
-プロジェクトと MCP Python SDK（利用可能なら `.[rag,mcp]` オプション依存）をインストールし、書き込み可能な workspace と catalog を用意してください。catalog の `records[].file` は catalog ディレクトリからの相対 PDF/TXT パスです。ディレクトリ外へのパスは拒否され、原資料ディレクトリは読み取り専用です。workspace と catalog は起動時に固定され、ツールから変更できません。
+書き込み可能な workspace と catalog を用意してください。catalog の `records[].file` は catalog ディレクトリからの相対 PDF/TXT パスです。ディレクトリ外へのパスは拒否され、原資料ディレクトリは読み取り専用です。workspace と catalog は起動時に固定され、ツールから変更できません。
 
-Codex CLI への登録（パスを置き換えてください）：
+初回のモデル起動は通常のツール timeout を超えることがあります。登録後、`~/.codex/config.toml` の既存 `[mcp_servers.research-harness-rag]` セクション内にこのネイティブ Codex 設定を追加してください（同名の第二セクションは作成しません）。
 
-```powershell
-codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+```toml
+startup_timeout_sec = 120
+tool_timeout_sec = 600
 ```
 
 `examples/rag-mcp.windows.json` は同形式の JSON を受け付ける他の MCP ホスト向けです。直接起動する場合：
 
 ```powershell
-python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+& $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
 ツールは `import_library(limit?)`、`search_evidence(query, top_k?, filters?)`、`get_evidence_context(evidence_id, before?, after?)`、`get_document(document_id)`、`get_library_status()` の5つです。書き込みは import のみです。失敗時は低レベル例外や秘密を含まない `{ "error": { "code", "message" } }` を返します。

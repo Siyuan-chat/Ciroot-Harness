@@ -44,7 +44,7 @@ python -m venv .venv
 .venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
 ```
 
-ローカル RAG は設定済み catalog だけを読み、Codex 資格情報の読取りや生成モデル呼出しを行いません。JSON 操作は `import`、`search`、`context`、`document`、`status` です。実 PDF の受入は進行中です。
+ローカル RAG は設定済み catalog だけを読み、Codex 資格情報の読取りや生成モデル呼出しを行いません。JSON 操作は `import`、`search`、`context`、`document`、`status` です。[ローカル利用ガイド](docs/RAG_USAGE.ja.md)、[実行時の説明](docs/RAG_RUNTIME.md)、[ステージ境界](docs/RAG_STAGE.md) を参照してください。実 PDF の受入は進行中です。
 
 ## OA 文献収集
 

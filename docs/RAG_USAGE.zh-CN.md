@@ -4,31 +4,40 @@
 
 ## 最短本地顺序
 
-按 [RAG_RUNTIME.md](RAG_RUNTIME.md) 设置缓存并安装 `.[rag-mcp]`；先完成长时间 CLI 导入，再为同一 workspace 注册 MCP：
+按 [RAG_RUNTIME.md](RAG_RUNTIME.md) 设置缓存并安装到同一个虚拟环境；先完成长时间 CLI 导入，再为同一 workspace 注册 MCP。`--env` 会为 Codex 启动的服务持久保存缓存位置，仅设置当前 shell 变量并不够：
 
 ```powershell
-$env:RAG_MODEL_CACHE = "$PWD\.local\rag-runtime\models"
-$env:HF_HOME = "$PWD\.local\rag-runtime\huggingface"
-python -m pip install ".[rag-mcp]"
-python -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
-python -m research_harness.rag --workspace C:\data\rag-workspace search "交联 溶胀"
-codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+python -m venv .venv
+$py = (Resolve-Path .venv\Scripts\python.exe)
+$repo = (Get-Location).Path
+$modelCache = Join-Path $repo ".local\rag-runtime\models"
+$hfHome = Join-Path $repo ".local\rag-runtime\huggingface"
+New-Item -ItemType Directory -Force -Path $modelCache, $hfHome | Out-Null
+$modelCache = (Resolve-Path $modelCache).Path
+$hfHome = (Resolve-Path $hfHome).Path
+$env:RAG_MODEL_CACHE = $modelCache
+$env:HF_HOME = $hfHome
+& $py -m pip install ".[rag-mcp]"
+& $py -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
+& $py -m research_harness.rag --workspace C:\data\rag-workspace search "交联 溶胀"
+codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF_HOME=$hfHome" -- $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
 范围见 [RAG_STAGE.md](RAG_STAGE.md)。生成模型 API 本阶段仅有契约；真实23篇验收仍在进行。
 
-先安装项目及 MCP Python SDK（例如项目提供的 `.[rag,mcp]` 可选依赖），然后准备一个可写的 workspace 和 catalog。catalog 的 `records[].file` 是相对 catalog 目录的 PDF/TXT 路径，适配器会拒绝越出 catalog 目录的路径；原目录保持只读。启动参数固定 workspace 与 catalog，工具不能改路径。
+准备一个可写的 workspace 和 catalog。catalog 的 `records[].file` 是相对 catalog 目录的 PDF/TXT 路径，适配器会拒绝越出 catalog 目录的路径；原目录保持只读。启动参数固定 workspace 与 catalog，工具不能改路径。
 
-在 Codex 中使用 CLI 注册（替换实际路径）：
+首次启动模型可能超过普通工具超时。注册后，在 `~/.codex/config.toml` 已有的 `[mcp_servers.research-harness-rag]` 段内加入原生 Codex 配置（不要新建第二个同名段）：
 
-```powershell
-codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+```toml
+startup_timeout_sec = 120
+tool_timeout_sec = 600
 ```
 
 `examples/rag-mcp.windows.json` 是接受该 JSON 格式的其它 MCP 宿主的配置示例；也可以直接运行：
 
 ```powershell
-python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+& $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
 提供五个工具：`import_library(limit?)`、`search_evidence(query, top_k?, filters?)`、`get_evidence_context(evidence_id, before?, after?)`、`get_document(document_id)`、`get_library_status()`。导入是唯一写工具；其它四项为只读。失败返回 `{ "error": { "code", "message" } }`，不会返回底层异常或秘密。
