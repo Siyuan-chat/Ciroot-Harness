@@ -1,3 +1,5 @@
+> 当前阶段更新（2026-09-10）：D2 已验收结束。用户现已授权 D18 本地 RAG 与 Codex/Luna 接入，范围、公共契约、分工和 RG01–RG07 验收以 [RAG_STAGE.md](RAG_STAGE.md) 为准；下文历史阶段要求保留。
+
 # 架构设计 D1
 
 > D2 当前只落地框架主干：LangGraph 最小流程、现有 SQLite、可替换 fixture 适配器及报告；Docling/向量库/真实来源集成后移。CLI 和未来 GUI 作为薄入口调用同一应用服务，不重复业务逻辑。GUI 不读取 CLI stdout、不直接操作数据库，也不直接依赖 LangGraph 状态对象；本轮不增加 HTTP/WebSocket 或 UI 技术栈。

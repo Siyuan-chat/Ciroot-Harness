@@ -1,3 +1,5 @@
+> 当前阶段更新（2026-09-10）：D2 已验收结束。用户现已授权 D18 本地 RAG 与 Codex/Luna 接入，范围、公共契约、分工和 RG01–RG07 验收以 [RAG_STAGE.md](RAG_STAGE.md) 为准；下文历史阶段要求保留。
+
 # Data and application contracts — D1
 
 > D2 current scope: the executable fixture framework is accepted against K01–K07. Full provider, parsing, retrieval and recovery requirements below remain the later product contract. The following application boundary is required now for a future GUI wrapper.
