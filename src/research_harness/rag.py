@@ -400,8 +400,15 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             raise RagError("RH_RAG_INVALID_INPUT", "context window must be between zero and three")
         hit = self._db.execute("SELECT * FROM rag_evidence WHERE evidence_id=?", (evidence_id,)).fetchone()
         if not hit: raise RagError("RH_RAG_NOT_FOUND", "evidence was not found")
-        rows = self._db.execute("SELECT e.*,d.title,d.doi,d.year,d.document_type,v.source_path FROM rag_evidence e JOIN rag_documents d ON d.document_id=e.document_id JOIN rag_versions v ON v.version_id=e.version_id WHERE e.document_id=? AND e.version_id=? AND e.ordinal BETWEEN ? AND ? ORDER BY e.ordinal", (hit["document_id"], hit["version_id"], hit["ordinal"] - before, hit["ordinal"] + after)).fetchall()
-        return {"evidence_id": evidence_id, "items": [self._item(dict(row)) for row in rows]}
+        rows = [dict(row) for row in self._db.execute("SELECT e.*,d.title,d.doi,d.year,d.document_type,v.source_path FROM rag_evidence e JOIN rag_documents d ON d.document_id=e.document_id JOIN rag_versions v ON v.version_id=e.version_id WHERE e.document_id=? AND e.version_id=? ORDER BY e.ordinal", (hit["document_id"], hit["version_id"]))]
+        position = next(index for index, row in enumerate(rows) if row["evidence_id"] == evidence_id)
+        hit_row = rows[position]
+        def duplicate_caption(row: dict[str, Any]) -> bool:
+            return hit_row["role"] == "table" and row.get("section") == hit_row.get("section") and bool(hit_row.get("section"))
+        left = [row for row in reversed(rows[:position]) if not duplicate_caption(row)][:before]
+        right = [row for row in rows[position + 1:] if not duplicate_caption(row)][:after]
+        selected = list(reversed(left)) + [hit_row] + right
+        return {"evidence_id": evidence_id, "items": [self._item(row) for row in selected]}
 
     def get_document(self, document_id: str) -> dict[str, Any]:
         row = self._db.execute("SELECT * FROM rag_documents WHERE document_id=?", (document_id,)).fetchone()
