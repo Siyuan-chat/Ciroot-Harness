@@ -44,7 +44,7 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 .venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
 ```
 
-本地 RAG 只读取配置的 catalog，不读取 Codex 凭据，也不调用生成模型。JSON 操作为 `import`、`search`、`context`、`document`、`status`。参见[本地使用指南](docs/RAG_USAGE.zh-CN.md)、[运行时说明](docs/RAG_RUNTIME.md)和[阶段边界](docs/RAG_STAGE.md)。真实 PDF 验收仍在进行。
+本地 RAG 只读取配置的 catalog，不读取 Codex 凭据，也不调用生成模型。CLI 操作为 `prepare`、`import`、`search`、`context`、`document`、`status`、`rebuild`；`prepare` 只缓存解析，`rebuild` 只从既有证据迁移向量。参见[本地使用指南](docs/RAG_USAGE.zh-CN.md)、[运行时说明](docs/RAG_RUNTIME.md)和[阶段边界](docs/RAG_STAGE.md)。真实 PDF 验收仍在进行。
 
 ## 开放文献采集
 

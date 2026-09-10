@@ -44,7 +44,7 @@ Keep credentials, private originals and runtime workspaces outside Git. Packaged
 .venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
 ```
 
-The local RAG reads only the configured catalog, does not read Codex credentials, and does not call a generation model. Its JSON operations are `import`, `search`, `context`, `document`, and `status`. See the [local usage guide](docs/RAG_USAGE.en.md), [runtime notes](docs/RAG_RUNTIME.md), and [stage boundary](docs/RAG_STAGE.md). Real-PDF acceptance remains in progress.
+The local RAG reads only the configured catalog, does not read Codex credentials, and does not call a generation model. Its CLI operations are `prepare`, `import`, `search`, `context`, `document`, `status`, and `rebuild`; `prepare` only caches parsing, while `rebuild` migrates vectors from existing evidence. See the [local usage guide](docs/RAG_USAGE.en.md), [runtime notes](docs/RAG_RUNTIME.md), and [stage boundary](docs/RAG_STAGE.md). Real-PDF acceptance remains in progress.
 
 ## OA literature collection
 

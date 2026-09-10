@@ -19,11 +19,13 @@ $env:RAG_MODEL_CACHE = $modelCache
 $env:HF_HOME = $hfHome
 & $py -m pip install ".[rag-mcp]"
 & $py -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
-& $py -m research_harness.rag --workspace C:\data\rag-workspace search "交联 溶胀"
+& $py -m research_harness.rag --workspace C:\data\rag-workspace search "crosslinking methods reduce membrane swelling"
 codex mcp add research-harness-rag --env "RAG_MODEL_CACHE=$modelCache" --env "HF_HOME=$hfHome" -- $py -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
 ```
 
 范围见 [RAG_STAGE.md](RAG_STAGE.md)。生成模型 API 本阶段仅有契约；真实23篇验收仍在进行。
+
+`prepare` 只创建或复用解析缓存，不创建证据或向量；`rebuild` 只从既有证据迁移向量，不重新解析原文：`& $py -m research_harness.rag --workspace C:\data\rag-workspace rebuild`。这两项长操作执行时，MCP 不得打开同一 workspace。用户可在 Codex 中用中文或日文提问；宿主可先规划英文检索式，再调用本地检索。
 
 准备一个可写的 workspace 和 catalog。catalog 的 `records[].file` 是相对 catalog 目录的 PDF/TXT 路径，适配器会拒绝越出 catalog 目录的路径；原目录保持只读。启动参数固定 workspace 与 catalog，工具不能改路径。
 
