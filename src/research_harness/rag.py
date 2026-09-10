@@ -419,6 +419,10 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(prog="python -m research_harness.rag")
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--embedding-model")
