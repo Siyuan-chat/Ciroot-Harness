@@ -121,7 +121,10 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             cache_dir.mkdir(parents=True, exist_ok=True)
             self._embedder = TextEmbedding(model_name=self.embedding_model, cache_dir=str(cache_dir))
         if self._qdrant is None:
-            self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
+            try:
+                self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
+            except RuntimeError as exc:
+                raise RagError("RH_RAG_BUSY", "RAG workspace index is in use") from exc
         return self._embedder, self._qdrant, SentenceSplitter
 
     def _ensure_index_config(self) -> None:
@@ -285,6 +288,10 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 return False
             query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchValue(value=version_id))])
             return self._qdrant.count("evidence", count_filter=query_filter, exact=True).count == count
+        except RagError:
+            raise
+        except RuntimeError as exc:
+            raise RagError("RH_RAG_BUSY", "RAG workspace index is in use") from exc
         except Exception:
             return False
 
@@ -351,18 +358,21 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         filters = self._valid_filters(filters); candidates = self._candidates(filters)
         if not candidates: return {"query": query, "items": [], "snapshot_version_ids": [], "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": 0, "vector_hits": 0, "coverage_limits": ["no evidence in selected scope"]}}
         embedder, qdrant, _splitter = self._components()
+        candidate_versions = sorted({item["version_id"] for item in candidates})
+        if not qdrant.collection_exists("evidence") or not all(self._version_is_indexed(version_id) for version_id in candidate_versions):
+            raise RagError("RH_RAG_INDEX_INCOMPLETE", "selected evidence is not fully indexed")
         query_vector = list(embedder.embed([query]))[0].tolist()
         allowed = {item["evidence_id"] for item in candidates}
         vector_scores: dict[str, float] = {}
-        if qdrant.collection_exists("evidence"):
-            from qdrant_client import models
-            query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchAny(any=sorted({item["version_id"] for item in candidates})))])
-            hits = qdrant.query_points("evidence", query=query_vector, query_filter=query_filter, limit=len(candidates)).points
-            vector_scores = {hit.payload["evidence_id"]: float(hit.score) for hit in hits if hit.payload and hit.payload.get("evidence_id") in allowed}
+        from qdrant_client import models
+        query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchAny(any=candidate_versions))])
+        hits = qdrant.query_points("evidence", query=query_vector, query_filter=query_filter, limit=len(candidates)).points
+        vector_scores = {hit.payload["evidence_id"]: float(hit.score) for hit in hits if hit.payload and hit.payload.get("evidence_id") in allowed}
         query_tokens = _tokens(query)
         lexical_scores = {item["evidence_id"]: sum(min(count, _tokens(item["text"])[token]) for token, count in query_tokens.items()) for item in candidates}
-        ranked = sorted(candidates, key=lambda item: (vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]] / max(1, sum(query_tokens.values())), item["evidence_id"]), reverse=True)[:top_k]
-        return {"query": query, "items": [self._item(item, vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["PDF layout tables retain Docling extraction quality notes"]}}
+        scores = {item["evidence_id"]: vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]] / max(1, sum(query_tokens.values())) for item in candidates}
+        ranked = sorted(candidates, key=lambda item: (scores[item["evidence_id"]], item["evidence_id"]), reverse=True)[:top_k]
+        return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["PDF layout tables retain Docling extraction quality notes"]}}
 
     @staticmethod
     def _item(row: dict[str, Any], score: float | None = None) -> dict[str, Any]:
