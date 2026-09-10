@@ -37,6 +37,15 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 
 密钥、私有原文和运行工作区不要提交 Git。包内演示仅含合成材料。产品调查由用户手动启动，没有默认后台定时任务。
 
+## 本地 RAG（D18）
+
+```powershell
+.venv\Scripts\python -m pip install ".[rag-mcp]"
+.venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
+```
+
+本地 RAG 只读取配置的 catalog，不读取 Codex 凭据，也不调用生成模型。CLI 操作为 `prepare`、`import`、`search`、`context`、`document`、`status`、`rebuild`；`prepare` 只缓存解析，`rebuild` 只从既有证据迁移向量。参见[本地使用指南](docs/RAG_USAGE.zh-CN.md)、[运行时说明](docs/RAG_RUNTIME.md)、[阶段边界](docs/RAG_STAGE.md)和[独立验收记录](docs/RAG_ACCEPTANCE.md)。
+
 ## 开放文献采集
 
 `literature` 是独立的 OpenAlex 检索和 OA PDF 采集模块，不是 RAG 或科学筛选。安装校验器后，可在提供时使用已核验的 23 项清单：

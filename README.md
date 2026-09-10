@@ -37,6 +37,15 @@ The first later case is polymer design. [Its draft](examples/polymer-design.draf
 
 Keep credentials, private originals and runtime workspaces outside Git. Packaged demo material is synthetic. Product investigations are manually triggered, with no default background schedule.
 
+## Local RAG (D18)
+
+```powershell
+.venv\Scripts\python -m pip install ".[rag-mcp]"
+.venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
+```
+
+The local RAG reads only the configured catalog, does not read Codex credentials, and does not call a generation model. Its CLI operations are `prepare`, `import`, `search`, `context`, `document`, `status`, and `rebuild`; `prepare` only caches parsing, while `rebuild` migrates vectors from existing evidence. See the [local usage guide](docs/RAG_USAGE.en.md), [runtime notes](docs/RAG_RUNTIME.md), [stage boundary](docs/RAG_STAGE.md), and [independent acceptance record](docs/RAG_ACCEPTANCE.md).
+
 ## OA literature collection
 
 `literature` is a separate OpenAlex search and OA-PDF collection module, not RAG or scientific screening. Install its validator, then use the verified 23-item manifest when supplied:

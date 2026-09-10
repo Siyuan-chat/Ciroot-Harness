@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "research-harness-rag": {
+      "command": "C:/path/to/.venv/Scripts/python.exe",
+      "args": ["-m", "research_harness.rag_mcp", "--workspace", "C:/data/rag-workspace", "--catalog", "C:/data/catalog.json"]
+    }
+  }
+}
