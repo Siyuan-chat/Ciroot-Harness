@@ -8,6 +8,25 @@ from time import perf_counter
 from research_harness.rag import RagLibrary
 
 
+def supporting_ids(items, case):
+    """Every support group must match a source-located item in the returned set."""
+    groups=case.get('support_groups', [case.get('required_anchors', [case['anchor']])])
+    matched=[]
+    for anchors in groups:
+        ids=[]
+        for item in items:
+            locator=item['locator']
+            if isinstance(locator, str): locator=json.loads(locator)
+            pages=set(locator.get('pages', [])); pages.add(locator.get('page'))
+            if (item.get('doi')==case['doi'] and case['page'] in pages
+                    and ('role' not in case or item['role']==case['role'])
+                    and all(anchor.casefold() in item['text'].casefold() for anchor in anchors)):
+                ids.append(item['evidence_id'])
+        if not ids: return []
+        matched.extend(ids)
+    return sorted(set(matched))
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--workspace',required=True)
@@ -28,6 +47,10 @@ def main():
     with RagLibrary(args.workspace) as lib:
         status=lib.get_library_status()
         checks['23_indexed_documents']=status['document_count']==23 and status['indexed_document_count']==23
+        corpus=lib._candidates({})
+        missing=[case['id'] for case in evaluation['cases'] if not supporting_ids(corpus,case)]
+        if missing:
+            raise ValueError('Gold support absent from indexed evidence; cannot score: '+', '.join(missing))
         for case in evaluation['cases']:
             for lang,query in case['queries'].items():
                 started=perf_counter()
@@ -35,16 +58,7 @@ def main():
                 actual_query=plan['search_query'] if plan else query
                 filters={'doi':plan['doi']} if plan and plan.get('doi') else None
                 reply=lib.search_evidence(actual_query,top_k=evaluation['top_k'],filters=filters)
-                hits=[]
-                for item in reply['items']:
-                    locator=item['locator']
-                    pages=set(locator.get('pages',[])) if all(isinstance(v,int) for v in locator.get('pages',[])) else set()
-                    pages.add(locator.get('page'))
-                    anchors=case.get('required_anchors',[case['anchor']])
-                    support=all(anchor.casefold() in item['text'].casefold() for anchor in anchors)
-                    role_matches='role' not in case or item['role']==case['role']
-                    if item.get('doi')==case['doi'] and case['page'] in pages and support and role_matches:
-                        hits.append(item['evidence_id'])
+                hits=supporting_ids(reply['items'],case)
                 results.append({'id':case['id'],'language':lang,'query':query,'search_query':actual_query,'filters':filters,'hit':bool(hits),'hit_ids':hits,'seconds':round(perf_counter()-started,3),'response':reply})
                 print(json.dumps({'case':case['id'],'language':lang,'hit':bool(hits),'seconds':results[-1]['seconds']},ensure_ascii=False),flush=True)
         sample=next((r['response']['items'][0] for r in results if r['response']['items']),None)

@@ -57,6 +57,8 @@ API 用户预留边界：其模型调用器接收 question + evidence items + �
 
 ### D18 索引迁移与查询规划边界
 
-默认检索模型调整为官方 `intfloat/multilingual-e5-small`，文档使用 `passage: `、查询使用 `query: ` 前缀；原 MiniLM 索引在显式选择原模型时保留可读。新增 Python `rebuild_index()` / CLI `rebuild`：只使用已保存证据重新嵌入，不重解析 PDF、不更改 evidence/document/version ID 或来源。新向量写入独立集合，数量核验后以 SQLite 事务切换活动集合与配置；失败保留原活动索引。本轮不向 MCP 增加重建工具。模型不匹配的普通 import/search 仍须拒绝混用。
+默认检索模型调整为官方 `intfloat/multilingual-e5-small`，文档使用 `passage: `、查询使用 `query: ` 前缀；尚未迁移的 MiniLM 库可在显式选择原模型时读取。新增 Python `rebuild_index()` / CLI `rebuild`：只使用已保存证据重新嵌入，不重解析 PDF、不更改 evidence/document/version ID 或来源。新向量写入独立集合，数量核验后以 SQLite 事务切换活动集合与配置；失败保留原活动索引。本轮不向 MCP 增加重建工具。模型不匹配的普通 import/search 仍须拒绝混用。
 
 RG03 的宿主路径明确为原问→宿主模型查询规划→本地混合检索；英文语料采用英文检索式，点名论文时可使用已知元数据过滤。模型负责规划，不由本地服务调用生成 API。原文查询直接检索的限制须单独报告。中、英、日三组分别规划，不将平行英文问题提供给中日规划实例；原问和实际检索式均归档，不能在查看命中结果后反复选取最高分查询而不披露。
+
+2026-09-10 排序修正：词法分支采用BM25Okapi默认参数和固定RRF k=60融合向量排名，使用相同的query/corpus token规范化。仅ASCII纯字母做标准Snowball英文词干；保留数字、连字符及CJK token。不改原文、切块、向量或evidence ID；当前候选快照词法缓存有界且版本变更失效。词法全零时只采用有效向量排名，不把任意零分候选当作词法命中。依赖缺失仍返回安全错误。质量阈值及首次失败记录保持可追溯。

@@ -1,10 +1,10 @@
 # D18 独立验收记录
 
-2026-09-10。状态：实现与独立验收进行中；未宣称 RAG 通过。
+2026-09-10。状态：D18 本地 RAG 与 Codex 接入通过有界独立验收。最终实现 ede70928db75ab4f2f30ed1370a14e53b3a1e8f3；本阶段结束，不追加 API 编排、GUI 或发布。
 
 ## 输入与评价冻结
 
-真实输入为 `literature/aem_oa_reviews/catalog.json` 中的 23 篇英文全文。复用 D17 下载完整性证据，本轮不重新下载或重复全量哈希核查。
+真实输入为 `literature/aem_oa_reviews/catalog.json` 中的 23 篇英文全文。复用 D17 下载完整性证据，本轮不重新下载；最终比对源文件与入库副本哈希，以验证导入没有改动原文。
 
 独立参考采用三篇不同版式论文：Khalid et al. 2022（10.3390/membranes12100989）、Clemens et al. 2023（10.3390/polym15061534）、Henkensmeier et al. 2024（10.1021/acs.chemrev.3c00694）。设计者先阅读原文并渲染核对物理页码，再冻结 6 组相关证据及每组中文/英文/日文查询，共 18 问。查询与对应证据保存在忽略目录 `.local/rag-acceptance/evaluation-v1.json`，实现者未据此调参。
 
@@ -23,7 +23,19 @@
 
 ## 检查点结果
 
-C1、C2、C3 与 RG01–RG07：pending。结果待对应不可变提交和实际产物产生后补充。
+C1、C2、C3 通过。以下按用户可见行为列出最终证据；后文失败及处理中记录保留为历史，不能单独当作当前状态。
+
+| 条件 | 最终证据 |
+|---|---|
+| RG01 | 23/23篇、584页、8820条证据，failed=0；源文件与副本哈希一致，重复导入全部复用。 |
+| RG02 | 三篇版式与真实表格单位/脚注抽查、10项上下文探针通过。6篇因排除不可见文字标为partial；不保证所有表格/图注都可靠。 |
+| RG03 | 23篇全库，独立分语言宿主规划，原冻结18问15/18（三语各5/6）；更正分段参考的6问6/6；新增独立6问6/6。过滤及安全错误通过。 |
+| RG04 | 最终核心生命周期21/21；索引迁移21/21（迁移实现未再改变）；原版本、ID与原文件保持。 |
+| RG05 | 最终非editable安装包+持久原生aem_rag配置；实际Codex/Luna完成6次MCP调用、3问7条逐字引用，DOI/物理页与科学脚注人工核对通过。一次超限context请求得到安全错误，模型随后成功纠正。 |
+| RG06 | 本地PDF/模型/索引，无生成模型key依赖；宿主使用ChatGPT订阅身份，RAG未读取凭据。回答区分未知值、综述与实验。 |
+| RG07 | 中英日指南、依赖与原生配置齐备；实现者7项CLI/prepare/MCP测试通过，最终包pip check通过。与D17基线相比既有D2源码未修改，先前独立D2安装包15项检查仍有效。 |
+
+已知限制：E03的方法细节问题在三种语言的单次top8均未命中，不能承诺每问都找全。直接中文/日文向量检索未通过；本次通过的是宿主先规划英文检索式的路径。模型权重与重依赖使用本机已有/下载缓存，最终应用包为非editable安装；运行环境复用了bundled依赖，并非完全独立的全新电脑安装验收。OCR、任意图表科学可靠性、生成模型API与文献API编排均不在通过范围。
 
 ## C1 环境诊断与明确实现调整
 
@@ -108,3 +120,48 @@ Luna 用同一官方 E5 small 缓存的 AutoTokenizer + ONNX Runtime、attention
 ### E5 安装包与迁移检查点
 
 不可变实现 d6ff98a184fcefa12858c28fc9ba0d84aa55bd3e 的 wheel SHA256 为 4f34e3e56a7198e7f549af6142283b77769002f2d39b7c45507099085c86fc46，在独立应用 venv 非 editable 安装。设计者生命周期21/21与新增迁移21/21通过；后者使用已有合成两版本库，覆盖初始化安全错误、写入后故障回滚、旧索引仍可检索、临时集合清理、query/passage前缀、全部旧版本迁移、原数据/文件/ID不变、活动模型状态及重开读取。结果分别在 lifecycle-d6ff98a/results.json 和 migration-d6ff98a/result.json。真实三篇向量重建正在进行，尚无该步骤成功声明。
+
+### 真实迁移与第二次宿主验收
+
+三篇真实库迁移至 E5 完成，共2240条证据，向量计算576.9秒、包含加载和核验的总耗时710.17秒。SQLite文档/版本/证据快照与原始文件哈希不变，3篇均可检索。随后复制已关闭的三篇库供只读宿主验收，主库另行增量导入已完成的解析缓存；不同时打开同一Qdrant。
+
+第二次宿主任务01a089d8-cfe2-7330-938e-d159cd956981共5次只读MCP调用，逐字引用/DOI/物理页全部通过，Clemens结论引用到直接支持段落。但模型把PI-20单元格的脚注a错配为脚注b，科学语义验收失败，不能用引用校验通过替代回答正确。原答复、trace与人工失败记录保存在host-run-02。通用的行列归属及同标记脚注核对指导已修正，并在下一次宿主回归加入未问过的邻列TM1(mTPN)脚注问题；不把具体答案写入产品提示词。
+
+性能调度期间，第二条原解析队列完成自己的前5篇后追上辅助队列，已核对本轮进程身份并停止这条重复队列，保留全部已完成缓存；余下5篇由原已启动辅助队列完成。另一辅助进程提前处理第一队列最后一篇主任务，完成后原子共享缓存。该调度只影响忽略目录中的验收运行，不增加产品调度框架或MCP工具。
+
+### 第三次宿主验收通过（有界样本）
+
+固定源码检查点6309b048a5e512e9bdfd813cbfcb38469a74e966由实际Codex/Luna订阅运行，宿主任务01a089e3-cf6e-7a03-a20c-f69b68e3d1cd。该归档的rag.py与已独立安装的d6ff98a字节一致；本次仅MCP通用指导与文档有变化，最终长期安装配置尚待全库完成。三题包含前两题回归和新加的相邻单元格脚注题；五条引用均逐字匹配且DOI/物理页正确。人工核对确认PI-15缺失值不补零、PI-20脚注a与TM1脚注b不混用、综述结论有直接段落且不冒充原始实验。实际trace为1次status、4次search、2次context，共7次只读调用。产物保存在host-run-03；此小样本结果不等同于任意科学问题都可靠。
+
+### 全库导入完成与正式检索失败
+
+23篇/584物理页已全部导入，23个当前版本、8820条证据、failed=0；重复导入23篇均复用且数量不变。原文件与入库副本哈希一致，4/4独立全库检查通过。脚本acceptance/probe_rag_corpus.py，产物corpus-final.json与stream-import-result.json。
+
+固定fc1d183应用非editable安装与pip check通过，rag.py等于已验收d6ff98a，rag_mcp.py等于实际宿主已通过的6309b04。随后正式分语言规划在23篇上运行：原18问仅10/18（中4、英4、日2），未达到15/18且每种语言4/6的冻结门槛；结果retrieval-full-regression.json。尚不能宣称RG03通过。
+
+旧词法规则将无IDF、无长度归一的普通词命中比例直接加到cosine，通用词和长句/长表的覆盖会影响排序。设计者批准通用BM25Okapi+RRF修正，不改变查询、原18问参考、门槛、切块或向量。根因诊断与新排名比较使用已有向量的只读导出，避免重复嵌入。
+
+### H02 参考分段错误更正（评分后，保留旧分数）
+
+holdout-v1原评分2/6，但H02的两支持词被错误要求在单个块同现；核对实际证据发现inert/free radicals在相邻正文段，而hydroperoxides/higher temperature在下一段，零个块满足旧参考。这是验收脚本/金标准分段假设错误，不能将原2/6全部归因于检索。v1和原输出保留不覆盖。
+
+修订holdout-v2要求top8返回集合在同一DOI及物理页内同时含两组事实支持（inert+free radicals；hydroperoxides+higher temperature），不增加上下文或查询调用、不改问题/页码/阈值；SHA256=5f5c0bb97ec6a81bb52edef647086e3789e14c261f3fa0679412858454fa596c。原始返回重评分5/6（中2、英2、日1），结果holdout-v2-baseline-rescore.json。原18问单块约束保持。独立探针增加评分前参考可达性检查；未见集在此次诊断后作为回归集，后续新增独立问题验证泛化，不将更正隐瞒为模型改进。
+
+### BM25/RRF 修正与新增独立题冻结
+
+通用排序检查点f6cb327保留所有已存向量及证据，采用rank-bm25 0.2.2 BM25Okapi默认参数与固定RRF k=60，仅英语纯字母token用NLTK 3.9.2 Snowball词干；不改变科学文本、不加按题翻译/答案/停用词。设计者先比较未规范化BM25、通用词形规范化；保留formal-ranking-mode-diagnosis.json、formal-ranking-stemming-diagnosis.json和formal-ranking-stemming-only-diagnosis.json。最终最小规范化的旧题诊断15/18，三语各5/6；E03三语仍未入top8，不能称全题正确。非editable wheel SHA256=13ed701bf12580c44bded8cac3ca07329e9eaf614b114dd5d0592cda18f76bfd，实际服务复验进行中。
+
+在该修正确定后，另两篇Silica sol–gel综述物理页3与Chitosan综述物理页5已渲染核对并冻结新的6问：含离子基团硅网络/孔隙率，以及完整互穿网络组成比例/电导率/耐碱条件。evaluation-holdout-new-v1.json SHA256=f1e75784bd72572000396919a80af9b02501ba2ecd92561d173115efa76db677；top8至少5/6且每种语言至少1/2。原文支持在已索引证据内逐项预检，首次评分前固定；实现者未获得题目/答案。
+
+新题按中英日分别由真实Luna宿主规划，无工具调用且未给答案/页码。任务ID分别01a08a00-72e1-7622-baf5-12bdecd9656f、01a08a00-3a57-71e1-ac5b-6d3d22de1d4c、01a08a00-27b0-7663-b523-25dcb2a113f5；输出SHA256分别5b9e85e5b693ddb6410c8a74debb2663ef9ea99832dcf86ac57cbed6b1399400、6fcb2c4d49af6d837dae45e9d929697070e76ad48a612bb2944405bca0990976、f9ef2b5dbddd1ce82ddb659d85098182f6ae90d4d4b95421ab2361a5d8406206。合并query-plans-new-formal-v1.json，尚不以规划成功代替检索通过。
+
+
+### 最终实际安装、宿主与停止记录
+
+最终wheel来自不可变ede70928db75ab4f2f30ed1370a14e53b3a1e8f3，SHA256=9cc4ba1b57bb81f918793afc170909e47233403ab1fa4c75f2b08d499b6e954e。项目.local/rag-runtime/venv非editable安装、pip check通过；installed rag.py/rag_mcp.py与该归档字节一致。rag.py等于独立真实检索及21项生命周期通过的f6cb327，rag_mcp.py等于6309b04；后续仅文档与依赖extra一致性更新。
+
+正式查询服务产物为retrieval-f6cb327-regression.json（15/18）、retrieval-f6cb327-holdout-corrected.json（6/6）和retrieval-f6cb327-holdout-new.json（6/6），三个运行的全部结构/过滤检查均通过。新增集第一次评分6/6；旧题回归、评分脚本更正与新增证据不混为同一种泛化指标。
+
+持久Codex原生配置aem_rag已通过官方CLI注册，环境指向本地E5缓存，startup_timeout_sec=120/tool_timeout_sec=600已写入自身配置节，保留其他配置。最终实际宿主没有使用--ignore-user-config、临时command/args或PYTHONPATH。gpt-5.6-luna任务01a08a05-ef6c-7531-a90c-bbaa4567c572实际status返回23篇/8820证据，再执行2次search与3次context；其中一次context after超限返回RH_RAG_INVALID_INPUT，随后纠正成功。3问7条引文全部逐字匹配、DOI/物理页正确；独立人工核对PI-15缺失、PI-20脚注a、TM1脚注b和Clemens直接综述证据均通过。完整不可覆盖归档在.local/rag-acceptance/host-run-04。
+
+原始PDF、运行库、权重、真实问答与私有评价集均保持Git忽略；公开提交只包含代码、指南与无秘密验收记录。Terra/Luna已通知停止D18，本轮未创建自动跟进，不启动后续文献API或发布。
