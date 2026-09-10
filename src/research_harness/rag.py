@@ -404,7 +404,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         position = next(index for index, row in enumerate(rows) if row["evidence_id"] == evidence_id)
         hit_row = rows[position]
         def duplicate_caption(row: dict[str, Any]) -> bool:
-            return hit_row["role"] == "table" and row.get("section") == hit_row.get("section") and bool(hit_row.get("section"))
+            return hit_row["role"] == "table" and row.get("role") != "table" and bool(hit_row.get("section")) and row["text"].strip() == hit_row["section"].strip()
         left = [row for row in reversed(rows[:position]) if not duplicate_caption(row)][:before]
         right = [row for row in rows[position + 1:] if not duplicate_caption(row)][:after]
         selected = list(reversed(left)) + [hit_row] + right
