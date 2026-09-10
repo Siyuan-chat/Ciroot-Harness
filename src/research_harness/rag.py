@@ -22,7 +22,7 @@ _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]")
 _WORD_RE = re.compile(r"[\w-]+", re.UNICODE)
 _CHUNK_SIZE = 200
 _CHUNK_OVERLAP = 30
-_PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-no-cell-match-v2"
+_PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-no-cell-match-visible-provenance-v3"
 _EMBEDDING_DIMENSION = 384
 
 
@@ -165,13 +165,16 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         return (text if isinstance(text, str) else ""), "text", None
 
     @staticmethod
-    def _locator(item: Any) -> dict[str, Any]:
+    def _locator(item: Any, valid_pages: set[int]) -> dict[str, Any]:
         provenance = getattr(item, "prov", None) or []
         locations = []
         for value in provenance:
             page = getattr(value, "page_no", None)
             bbox = getattr(value, "bbox", None)
-            locations.append({"page": page if isinstance(page, int) and page > 0 else None, "bbox": {key: getattr(bbox, key, None) for key in ("l", "t", "r", "b", "coord_origin")} if bbox is not None else None})
+            coordinates = {key: getattr(bbox, key, None) for key in ("l", "t", "r", "b", "coord_origin")} if bbox is not None else None
+            visible = isinstance(page, int) and page in valid_pages and coordinates is not None and all(isinstance(coordinates[key], (int, float)) for key in ("l", "t", "r", "b")) and abs(coordinates["r"] - coordinates["l"]) > 0 and abs(coordinates["b"] - coordinates["t"]) > 0
+            if visible:
+                locations.append({"page": page, "bbox": coordinates})
         pages = sorted({value["page"] for value in locations if value["page"]})
         first = locations[0] if locations else {"page": None, "bbox": None}
         return {"page": first["page"], "bbox": first["bbox"], "printed_page": None, "pages": pages, "provenance": locations}
@@ -193,19 +196,25 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 self._converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options, backend=PyPdfiumDocumentBackend)})
             converted = self._converter.convert(path)
             document = converted.document
+            pages = getattr(document, "pages", {})
+            page_numbers = set(pages) if isinstance(pages, dict) else set()
             blocks: list[dict[str, Any]] = []
+            dropped = 0
             for item, _level in document.iterate_items():
                 text, role, section = self._item_text(document, item)
                 if text.strip():
-                    blocks.append({"text": text.strip(), "locator": self._locator(item), "section": section, "role": role})
-            pages = getattr(document, "pages", {})
-            page_numbers = set(pages) if isinstance(pages, dict) else set()
+                    locator = self._locator(item, page_numbers)
+                    if not locator["provenance"]:
+                        dropped += 1
+                        continue
+                    blocks.append({"text": text.strip(), "locator": locator, "section": section, "role": role})
             observed = {page for block in blocks for page in block["locator"].get("pages", [])}
             missing = sorted(page_numbers - observed)
             partial = "PARTIAL" in str(getattr(converted, "status", "")).upper()
             errors = [f"no extracted text on physical page {page}" for page in missing]
+            if dropped: errors.append(f"{dropped} non-visible extracted blocks were excluded")
             if partial: errors.append("Docling conversion reported partial coverage")
-            return blocks, len(pages) if hasattr(pages, "__len__") else None, "partial" if missing or partial else "full_text", errors
+            return blocks, len(pages) if hasattr(pages, "__len__") else None, "partial" if missing or partial or dropped else "full_text", errors
         except RagError:
             raise
         except Exception as exc:
