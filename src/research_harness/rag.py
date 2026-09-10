@@ -385,7 +385,12 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         hits = qdrant.query_points("evidence", query=query_vector, query_filter=query_filter, limit=len(candidates)).points
         vector_scores = {hit.payload["evidence_id"]: float(hit.score) for hit in hits if hit.payload and hit.payload.get("evidence_id") in allowed}
         query_tokens = _tokens(query)
-        lexical_scores = {item["evidence_id"]: sum(min(count, _tokens(item["text"])[token]) for token, count in query_tokens.items()) for item in candidates}
+        lexical_scores: dict[str, int] = {}
+        for item in candidates:
+            item_tokens = _tokens(item["text"])
+            lexical_scores[item["evidence_id"]] = sum(
+                min(count, item_tokens[token]) for token, count in query_tokens.items()
+            )
         scores = {item["evidence_id"]: vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]] / max(1, sum(query_tokens.values())) for item in candidates}
         ranked = sorted(candidates, key=lambda item: (scores[item["evidence_id"]], item["evidence_id"]), reverse=True)[:top_k]
         return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self.embedding_model, "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["PDF layout tables retain Docling extraction quality notes"]}}
