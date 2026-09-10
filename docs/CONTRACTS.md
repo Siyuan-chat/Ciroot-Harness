@@ -210,3 +210,7 @@ A configuration-only example is not a data demo. A fixture replay is not live AP
 max_queries_per_source is cumulative across all search rounds in a run, including follow-up queries. max_search_rounds is an additional depth limit, not a multiplier for query allowance. Download limits count received bytes, including incomplete and retried downloads. Model limits include analysis, verification, translation and repair attempts for that run. Intake calls are recorded against the dialogue session with bounded attempts per user turn.
 
 max_estimated_cost_usd applies to generation-model cost estimates using configured prices. Data-source charges and the provider invoice remain separate and may be unknown. The interface must not call this a guaranteed total-spend cap. Active execution time is cumulative across resumes and excludes idle time between user-triggered resumptions; timeout and crash-accounting precision must be documented.
+
+## D17 开放采集契约（2026-09-10）
+
+`search(config)` 返回 records、search_status、queries（请求范围、分页状态、失败和截断）。`download(manifest, output, limit=...)` 返回 outcome、valid_pdf_count、received_bytes、逐文献记录和产物。CLI 和未来 AI 工具复用函数。数据源 key 从环境读取，与 LLM key 分离；日志和配置不保存秘密。record 保留 title、doi、year、authors、type、locations 以及宿主筛选理由，案例可指定 expected_min_pages。许可和版本按实际下载位置记录；身份匹配/可解析不等于正文完整，发现预览或页数不足进入 review。具体字段见 [OA_COLLECTION](OA_COLLECTION.md)，本契约不改变旧 ReportData。

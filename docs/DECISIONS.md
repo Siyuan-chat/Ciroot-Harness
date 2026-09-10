@@ -25,6 +25,11 @@
 
 ## 架构基线与可调整的工程默认值
 
+### D17 · 2026-09-10：开放文献采集
+
+用户批准通过命令行批量下载 20–30 篇 AEM（阴离子交换膜）开放获取论文，优先综述；并要求将检索、开放版本定位、下载和校验脚本保存在 harness，使其他 AI 可凭文档和数据源 API key 复现。详细范围和验收见 [开放文献采集](OA_COLLECTION.md)。这是独立于已验收 D2 fixture 的真实采集扩展；不启动另一任务中仍在讨论的完整 RAG/MCP/模型 API 实现。设计与独立验收仍由本任务负责，产品代码由 Terra 实现。
+
+
 - Python 包 + CLI / 可调用 Python API，Windows 为本地验收环境，Linux 由 CI 覆盖。
 - LangGraph 编排；Docling 解析；LlamaIndex 仅 RAG 模块；Qdrant 向量库；SQLite 保存规范化业务记录。
 - 首版 OpenAlex + EPO OPS；Lens 后续。模型适配先覆盖 OpenAI 兼容接口和 Anthropic，保留同契约扩展。

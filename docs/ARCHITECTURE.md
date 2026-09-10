@@ -144,3 +144,7 @@ workspace/                  # Git 忽略：raw、db、index、sessions、runs、
 - [Lens API](https://docs.api.lens.org/)：后续选配，需对应访问权限。
 
 本列表证明技术能力存在，不证明本项目已集成或 API 凭据可用；实际测试见验收记录。
+
+## D17 采集入口（2026-09-10）
+
+`research_harness.literature` 提供有界 OpenAlex search 和开放全文 download 共用函数，`python -m research_harness.literature` 为薄入口。查询配置与筛选后 manifest 是可交换 JSON；新资料作为 discovery 候选原文保存，未自动导入 baseline 或向量索引。未来 MCP/API 适配器复用这些函数，不另建采集状态机。设计、输入字段和真实案例边界见 [OA_COLLECTION](OA_COLLECTION.md)。
