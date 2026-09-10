@@ -30,7 +30,7 @@ def _safe_error(exc: BaseException) -> dict[str, Any]:
                 return {"code": value["code"], "message": str(value.get("message", "operation failed"))}
         except Exception:
             pass
-    code = getattr(exc, "code", None)
+    code = "RH_RAG_DEPENDENCY" if isinstance(exc, ImportError) else getattr(exc, "code", None)
     if not isinstance(code, str) or not code.startswith("RH_"):
         code = "RH_RAG_INTERNAL"
     return {"code": code, "message": "operation failed"}
@@ -83,7 +83,14 @@ class RagMCPServer:
 
 def create_mcp_server(rag: RagMCPServer) -> Any:
     """Build the SDK server.  Importing this module does not require MCP."""
-    from mcp.server.fastmcp import FastMCP
+    try:
+        from mcp.server.fastmcp import FastMCP
+    except ModuleNotFoundError as exc:
+        # MCP SDK 2.x renamed FastMCP to MCPServer; both expose the same
+        # public decorator/run surface used here.
+        if exc.name != "mcp.server.fastmcp":
+            raise
+        from mcp.server.mcpserver import MCPServer as FastMCP
     from mcp.types import ToolAnnotations
 
     mcp = FastMCP(
@@ -142,6 +149,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         create_mcp_server(rag).run(transport="stdio")
+    except Exception as exc:
+        error = _safe_error(exc)
+        print(f"{error['code']}: {error['message']}", file=sys.stderr)
+        return 1
     finally:
         rag.close()
     return 0

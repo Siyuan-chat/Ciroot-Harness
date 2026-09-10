@@ -2,9 +2,15 @@
 
 これはローカル STDIO MCP アダプターです。`research_harness.rag.RagLibrary` を呼び出すだけで、Codex の認証情報を読み取らず、生成モデルを呼び出さず、HTTP/UI も提供しません。
 
-Terra が用意する環境にプロジェクトと MCP Python SDK をインストールし、書き込み可能な workspace と catalog を用意してください。catalog の `records[].file` は許可されたローカル PDF/TXT を指す必要があります。workspace と catalog は起動時に固定され、ツールから変更できません。
+プロジェクトと MCP Python SDK（利用可能なら `.[rag,mcp]` オプション依存）をインストールし、書き込み可能な workspace と catalog を用意してください。catalog の `records[].file` は catalog ディレクトリからの相対 PDF/TXT パスです。ディレクトリ外へのパスは拒否され、原資料ディレクトリは読み取り専用です。workspace と catalog は起動時に固定され、ツールから変更できません。
 
-`examples/rag-mcp.windows.json` をホストの MCP 設定へコピーし、Python、workspace、catalog のパスを置き換えます。直接起動する場合：
+Codex CLI への登録（パスを置き換えてください）：
+
+```powershell
+codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+```
+
+`examples/rag-mcp.windows.json` は同形式の JSON を受け付ける他の MCP ホスト向けです。直接起動する場合：
 
 ```powershell
 python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json

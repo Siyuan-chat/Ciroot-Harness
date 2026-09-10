@@ -2,9 +2,15 @@
 
 这是一个本地 STDIO MCP 适配器。它只调用 `research_harness.rag.RagLibrary`，不读取 Codex 凭据、不调用生成模型，也不提供 HTTP 或 GUI。
 
-先在 Terra 提供的项目环境安装项目及 MCP Python SDK，然后准备一个可写的 workspace 和 catalog。catalog 的 `records[].file` 必须指向 workspace 外部允许读取的本地 PDF/TXT；启动参数固定 workspace 与 catalog，工具不能改路径。
+先安装项目及 MCP Python SDK（例如项目提供的 `.[rag,mcp]` 可选依赖），然后准备一个可写的 workspace 和 catalog。catalog 的 `records[].file` 是相对 catalog 目录的 PDF/TXT 路径，适配器会拒绝越出 catalog 目录的路径；原目录保持只读。启动参数固定 workspace 与 catalog，工具不能改路径。
 
-将 `examples/rag-mcp.windows.json` 复制到宿主 MCP 配置并替换 Python、workspace、catalog 路径。也可以运行：
+在 Codex 中使用 CLI 注册（替换实际路径）：
+
+```powershell
+codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+```
+
+`examples/rag-mcp.windows.json` 是接受该 JSON 格式的其它 MCP 宿主的配置示例；也可以直接运行：
 
 ```powershell
 python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
