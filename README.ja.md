@@ -39,6 +39,15 @@ python -m venv .venv
 
 ## OA 文献収集
 
+## ローカル RAG（D18、進行中）
+
+```powershell
+.venv\Scripts\python -m pip install ".[rag-mcp]"
+.venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
+```
+
+ローカル RAG は設定済み catalog だけを読み、Codex 資格情報の読取りや生成モデル呼出しを行いません。JSON 操作は `import`、`search`、`context`、`document`、`status` です。実 PDF の受入は進行中です。
+
 `literature` は独立した OpenAlex 検索・OA PDF 収集モジュールであり、RAG や科学的選別ではありません。検証機能を導入し、提供済みなら検証済み23件の manifest を使います。
 
 ```powershell

@@ -21,7 +21,7 @@ _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]")
 _WORD_RE = re.compile(r"[\w-]+", re.UNICODE)
 _CHUNK_SIZE = 200
 _CHUNK_OVERLAP = 30
-_PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-v1"
+_PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-no-cell-match-v2"
 
 
 class RagError(Exception):
@@ -170,11 +170,11 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             coordinates = {key: getattr(bbox, key, None) for key in ("l", "t", "r", "b", "coord_origin")}
         return {"page": page if isinstance(page, int) and page > 0 else None, "bbox": coordinates, "printed_page": None}
 
-    def _parse_pdf(self, path: Path) -> tuple[list[dict[str, Any]], int | None, list[str]]:
+    def _parse_pdf(self, path: Path) -> tuple[list[dict[str, Any]], int | None, str, list[str]]:
         try:
             from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
             from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions
             from docling.document_converter import DocumentConverter, PdfFormatOption
         except ImportError as exc:
             raise RagError("RH_RAG_DEPENDENCY", "Docling is not installed") from exc
@@ -183,6 +183,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 options = PdfPipelineOptions()
                 options.do_ocr = False
                 options.do_table_structure = True
+                options.table_structure_options = TableStructureOptions(do_cell_matching=False)
                 self._converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options, backend=PyPdfiumDocumentBackend)})
             converted = self._converter.convert(path)
             document = converted.document
@@ -192,19 +193,23 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 if text.strip():
                     blocks.append({"text": text.strip(), "locator": self._locator(item), "section": section, "role": role})
             pages = getattr(document, "pages", {})
-            return blocks, len(pages) if hasattr(pages, "__len__") else None, []
+            page_numbers = set(pages) if isinstance(pages, dict) else set()
+            observed = {block["locator"]["page"] for block in blocks if block["locator"]["page"]}
+            missing = sorted(page_numbers - observed)
+            errors = [f"no extracted text on physical page {page}" for page in missing]
+            return blocks, len(pages) if hasattr(pages, "__len__") else None, "partial" if missing else "full_text", errors
         except RagError:
             raise
         except Exception as exc:
             raise RagError("RH_RAG_PARSE_FAILED", "Docling could not parse this PDF") from exc
 
-    def _parse(self, path: Path) -> tuple[list[dict[str, Any]], int | None, list[str]]:
+    def _parse(self, path: Path) -> tuple[list[dict[str, Any]], int | None, str, list[str]]:
         if path.suffix.casefold() == ".pdf":
             return self._parse_pdf(path)
         if path.suffix.casefold() != ".txt":
             raise RagError("RH_RAG_UNSUPPORTED", "only PDF and TXT files are supported")
         text = path.read_text(encoding="utf-8", errors="replace")
-        return ([{"text": text, "locator": {"line_start": 1, "line_end": text.count("\n") + 1}, "section": None, "role": "text"}], None, [])
+        return ([{"text": text, "locator": {"line_start": 1, "line_end": text.count("\n") + 1}, "section": None, "role": "text"}], None, "full_text", [])
 
     @staticmethod
     def _chunks(blocks: list[dict[str, Any]], splitter_cls: Any) -> Iterator[dict[str, Any]]:
@@ -238,7 +243,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             if old and self._version_is_indexed(old["version_id"]):
                 reused += 1; documents.append({"document_id": document_id, "version_id": old["version_id"], "parse_status": "reused"}); continue
             try:
-                blocks, pages, parse_errors = self._parse(source)
+                blocks, pages, coverage, parse_errors = self._parse(source)
                 _embedder, qdrant, splitter = self._components()
                 chunks = list(self._chunks(blocks, splitter))
                 if not chunks:
@@ -250,7 +255,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                     evidence.append({"evidence_id": evidence_id, "ordinal": ordinal, "version_id": version_id, **chunk})
                 self._index(evidence, qdrant, _embedder)
                 raw_path = self._copy_source(source, version_id)
-                self._store_document(record, raw_path, document_id, version_id, digest, pages, parse_errors, evidence)
+                self._store_document(record, raw_path, document_id, version_id, digest, pages, coverage, parse_errors, evidence)
                 imported += 1; documents.append({"document_id": document_id, "version_id": version_id, "parse_status": "completed", "evidence_count": len(evidence)})
             except RagError as exc:
                 self._db.rollback()
@@ -289,10 +294,10 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         self._db.execute("UPDATE rag_documents SET parse_status='failed',coverage='unknown',errors=? WHERE document_id=? AND current_version_id IS NULL", (json.dumps([error.to_dict()]), document_id))
         self._db.commit()
 
-    def _store_document(self, record: dict[str, Any], source: Path, document_id: str, version_id: str, digest: str, pages: int | None, errors: list[str], evidence: list[dict[str, Any]]) -> None:
-        self._db.execute("INSERT OR IGNORE INTO rag_documents VALUES (?,?,?,?,?,?,?,?,?,?)", (document_id, str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, "completed", "full_text", json.dumps(errors)))
-        self._db.execute("UPDATE rag_documents SET title=?,doi=?,year=?,document_type=?,source_path=?,current_version_id=?,parse_status='completed',coverage='full_text',errors=? WHERE document_id=?", (str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, json.dumps(errors), document_id))
-        self._db.execute("INSERT INTO rag_versions (version_id,document_id,content_sha256,parser,page_count,coverage,errors,source_path,created) VALUES (?,?,?,?,?,?,?,?,strftime('%s','now'))", (version_id, document_id, digest, _PARSER_FINGERPRINT, pages, "full_text", json.dumps(errors), str(source)))
+    def _store_document(self, record: dict[str, Any], source: Path, document_id: str, version_id: str, digest: str, pages: int | None, coverage: str, errors: list[str], evidence: list[dict[str, Any]]) -> None:
+        self._db.execute("INSERT OR IGNORE INTO rag_documents VALUES (?,?,?,?,?,?,?,?,?,?)", (document_id, str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, "completed", coverage, json.dumps(errors)))
+        self._db.execute("UPDATE rag_documents SET title=?,doi=?,year=?,document_type=?,source_path=?,current_version_id=?,parse_status='completed',coverage=?,errors=? WHERE document_id=?", (str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, coverage, json.dumps(errors), document_id))
+        self._db.execute("INSERT INTO rag_versions (version_id,document_id,content_sha256,parser,page_count,coverage,errors,source_path,created) VALUES (?,?,?,?,?,?,?,?,strftime('%s','now'))", (version_id, document_id, digest, _PARSER_FINGERPRINT, pages, coverage, json.dumps(errors), str(source)))
         self._db.executemany("INSERT INTO rag_evidence VALUES (?,?,?,?,?,?,?,?,?)", [(value["evidence_id"], document_id, version_id, value["ordinal"], value["text"], json.dumps(value["locator"]), value["section"], value["role"], value["quality"]) for value in evidence])
         self._db.commit()
 
