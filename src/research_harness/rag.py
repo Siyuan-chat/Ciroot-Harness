@@ -27,6 +27,7 @@ _PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-no-cell-match-vi
 _EMBEDDING_DIMENSION = 384
 _EMBEDDING_THREADS = 2
 _EMBEDDING_BATCH_SIZE = 16
+_RRF_K = 60
 
 
 class RagError(Exception):
@@ -101,6 +102,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         self._embedder: Any | None = None
         self._qdrant: Any | None = None
         self._converter: Any | None = None
+        self._bm25_cache: dict[tuple[str, ...], tuple[Any, list[list[str]]]] = {}
 
     def __exit__(self, *_: Any) -> None:
         self.close()
@@ -556,16 +558,28 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchAny(any=candidate_versions))])
         hits = qdrant.query_points(collection, query=query_vector, query_filter=query_filter, limit=len(candidates)).points
         vector_scores = {hit.payload["evidence_id"]: float(hit.score) for hit in hits if hit.payload and hit.payload.get("evidence_id") in allowed}
-        query_tokens = _tokens(query)
-        lexical_scores: dict[str, int] = {}
-        for item in candidates:
-            item_tokens = _tokens(item["text"])
-            lexical_scores[item["evidence_id"]] = sum(
-                min(count, item_tokens[token]) for token, count in query_tokens.items()
-            )
-        scores = {item["evidence_id"]: vector_scores.get(item["evidence_id"], 0.0) + lexical_scores[item["evidence_id"]] / max(1, sum(query_tokens.values())) for item in candidates}
+        try:
+            from rank_bm25 import BM25Okapi
+        except ImportError as exc:
+            raise RagError("RH_RAG_DEPENDENCY", "rank-bm25 is not installed") from exc
+        query_tokens = list(_tokens(query).elements())
+        cache_key = tuple(item["evidence_id"] for item in candidates)
+        cached = self._bm25_cache.get(cache_key)
+        if cached is None:
+            tokenized = [list(_tokens(item["text"]).elements()) for item in candidates]
+            cached = (BM25Okapi(tokenized), tokenized)
+            self._bm25_cache = {cache_key: cached}
+        bm25, _tokenized = cached
+        raw_bm25 = bm25.get_scores(query_tokens) if query_tokens else [0.0] * len(candidates)
+        lexical_scores = {item["evidence_id"]: float(value) for item, value in zip(candidates, raw_bm25)}
+        scores = {item["evidence_id"]: 0.0 for item in candidates}
+        for rank, evidence_id in enumerate(sorted(vector_scores, key=lambda value: (vector_scores[value], value), reverse=True), 1):
+            scores[evidence_id] += 1 / (_RRF_K + rank)
+        lexical_ranked = [item["evidence_id"] for item in sorted(candidates, key=lambda item: (lexical_scores[item["evidence_id"]], item["evidence_id"]), reverse=True) if lexical_scores[item["evidence_id"]] > 0]
+        for rank, evidence_id in enumerate(lexical_ranked, 1):
+            scores[evidence_id] += 1 / (_RRF_K + rank)
         ranked = sorted(candidates, key=lambda item: (scores[item["evidence_id"]], item["evidence_id"]), reverse=True)[:top_k]
-        return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["PDF layout tables retain Docling extraction quality notes"]}}
+        return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["BM25 plus reciprocal-rank fusion; PDF layout tables retain Docling extraction quality notes"]}}
 
     @staticmethod
     def _item(row: dict[str, Any], score: float | None = None) -> dict[str, Any]:
