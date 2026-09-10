@@ -6,6 +6,8 @@ The tested local execution settings are `threads=2` and `batch_size=16`. They af
 
 The cached tokenizer configuration reports `max_length=128` and `model_max_length=512`; FastEmbed uses their minimum, so embeddings are effectively limited to 128 tokens. Body chunks are 200 LlamaIndex tokens and tables remain whole evidence blocks, so long inputs can be truncated for vector retrieval while returned evidence and context remain complete. This recorded retrieval-quality limitation will be evaluated on the frozen set before changing chunking or table indexing.
 
+`full_text` records that each converted page has text coverage; it does not certify that every figure caption or figure-derived reading is scientifically accurate. The Clemens import showed repeated and garbled figure-caption extraction, an extraction limitation rather than a statement about the source paper. Check the rendered original PDF before using quantitative conclusions from figures.
+
 Set cache locations before the first import so weights are reusable and remain outside Git:
 
 ```powershell
