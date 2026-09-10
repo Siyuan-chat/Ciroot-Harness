@@ -19,3 +19,5 @@ python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C
 The five tools are `import_library(limit?)`, `search_evidence(query, top_k?, filters?)`, `get_evidence_context(evidence_id, before?, after?)`, `get_document(document_id)`, and `get_library_status()`. Import is the only write tool. Failures return `{ "error": { "code", "message" } }` without low-level exception text or secrets.
 
 Actual parser, embedding, index, and coverage support comes from RagLibrary. The protocol tests use an explicit fake service; they do not establish real PDF, multilingual retrieval, or Codex-host acceptance.
+
+After the core service has imported documents, run `real_service_probe(python_executable, workspace, catalog)` for a real STDIO check; it does not import. Record this evidence separately from the fake protocol test.

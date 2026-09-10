@@ -19,3 +19,5 @@ python -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C
 ツールは `import_library(limit?)`、`search_evidence(query, top_k?, filters?)`、`get_evidence_context(evidence_id, before?, after?)`、`get_document(document_id)`、`get_library_status()` の5つです。書き込みは import のみです。失敗時は低レベル例外や秘密を含まない `{ "error": { "code", "message" } }` を返します。
 
 対応する解析器、Embedding、索引、coverage は RagLibrary の実装に依存します。プロトコルテストは明示的な fake service を使うため、実 PDF、多言語検索、Codex ホスト接続の合格を意味しません。
+
+コアサービスで資料を導入済みの場合は `real_service_probe(python_executable, workspace, catalog)` で実 STDIO 検査を実行できます。導入処理は行いません。fake プロトコルテストとは別の証拠として記録してください。

@@ -104,3 +104,55 @@ def protocol_probe():
 
     asyncio.run(run())
     print("real-mcp-stdio: PASS (initialize/list_tools/call_tool + safe failure)")
+
+
+def real_service_probe(python_executable, workspace, catalog):
+    """Probe an installed real RagLibrary through the MCP STDIO boundary.
+
+    This deliberately performs no import.  It is an acceptance helper for a
+    workspace that has already been populated by the RAG core implementation.
+    """
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    async def run():
+        params = StdioServerParameters(
+            command=str(python_executable),
+            args=["-m", "research_harness.rag_mcp", "--workspace", str(workspace), "--catalog", str(catalog)],
+        )
+        async with stdio_client(params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                names = [tool.name for tool in tools.tools]
+                assert names == [
+                    "import_library", "search_evidence", "get_evidence_context", "get_document", "get_library_status"
+                ]
+                status = await session.call_tool("get_library_status", {})
+                search = await session.call_tool("search_evidence", {"query": "交联阴离子交换膜", "top_k": 2})
+                status_data = status.structured_content or {}
+                search_data = search.structured_content or {}
+                result = {
+                    "tools": names,
+                    "status": {key: status_data.get(key) for key in ("document_count", "version_count", "evidence_count", "indexed_document_count")},
+                    "search": {"query": search_data.get("query"), "item_count": len(search_data.get("items", [])), "diagnostics": search_data.get("diagnostics")},
+                    "context": None,
+                    "document": None,
+                    "invalid_filter_error": None,
+                }
+                items = search_data.get("items", [])
+                if items:
+                    evidence_id = items[0]["evidence_id"]
+                    document_id = items[0]["document_id"]
+                    context = await session.call_tool("get_evidence_context", {"evidence_id": evidence_id})
+                    document = await session.call_tool("get_document", {"document_id": document_id})
+                    result["context"] = {"ok": not context.is_error, "item_count": len((context.structured_content or {}).get("items", []))}
+                    result["document"] = {"ok": not document.is_error, "document_id": document_id}
+                invalid = await session.call_tool("search_evidence", {"query": "test", "filters": {"unknown": True}})
+                result["invalid_filter_error"] = (invalid.structured_content or {}).get("error")
+                assert result["invalid_filter_error"] and result["invalid_filter_error"]["code"] == "RH_RAG_INVALID_INPUT"
+                return result
+
+    result = asyncio.run(run())
+    print({"real_service_probe": result})
+    return result
