@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-from research_harness.rag_mcp import RagMCPServer
+from research_harness.rag_mcp import RagMCPServer, SERVER_INSTRUCTIONS
 
 
 class FakeRag:
@@ -67,6 +67,17 @@ def test_close_delegates_without_exposing_close_tool():
     adapter = RagMCPServer(".", "catalog.json", library=fake)
     adapter.close()
     assert fake.calls == [("close",)]
+
+
+def test_server_instructions_require_exact_evidence_reasoning():
+    for phrase in (
+        "continuous exact substring",
+        "preserving spaces, punctuation, and symbols",
+        "missing or not reported data cannot support yes",
+        "few examples cannot establish a universal claim",
+        "mixed or garbled figure captions",
+    ):
+        assert phrase in SERVER_INSTRUCTIONS
 
 
 def protocol_probe():
