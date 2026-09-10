@@ -329,12 +329,14 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
     def _index(self, evidence: list[dict[str, Any]], qdrant: Any, embedder: Any) -> None:
         from qdrant_client import models
-        vectors = list(embedder.embed([item["text"] for item in evidence], batch_size=_EMBEDDING_BATCH_SIZE))
+        ordered = sorted(enumerate(evidence), key=lambda value: len(value[1]["text"]))
+        vectors = list(embedder.embed([item["text"] for _, item in ordered], batch_size=_EMBEDDING_BATCH_SIZE))
         if not vectors:
             raise RagError("RH_RAG_INDEX_FAILED", "embedding returned no vectors")
+        by_position = {position: vector for (position, _), vector in zip(ordered, vectors)}
         if not qdrant.collection_exists("evidence"):
             qdrant.create_collection("evidence", vectors_config=models.VectorParams(size=len(vectors[0]), distance=models.Distance.COSINE))
-        points = [models.PointStruct(id=str(uuid.UUID(hashlib.sha256(item["evidence_id"].encode()).hexdigest()[:32])), vector=vector.tolist(), payload={"evidence_id": item["evidence_id"], "version_id": item["version_id"] if "version_id" in item else None}) for item, vector in zip(evidence, vectors)]
+        points = [models.PointStruct(id=str(uuid.UUID(hashlib.sha256(item["evidence_id"].encode()).hexdigest()[:32])), vector=by_position[position].tolist(), payload={"evidence_id": item["evidence_id"], "version_id": item["version_id"] if "version_id" in item else None}) for position, item in enumerate(evidence)]
         qdrant.upsert("evidence", points=points, wait=True)
 
     def _valid_filters(self, filters: dict[str, Any] | None) -> dict[str, Any]:
