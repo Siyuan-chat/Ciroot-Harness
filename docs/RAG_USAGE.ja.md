@@ -2,6 +2,21 @@
 
 これはローカル STDIO MCP アダプターです。`research_harness.rag.RagLibrary` を呼び出すだけで、Codex の認証情報を読み取らず、生成モデルを呼び出さず、HTTP/UI も提供しません。
 
+## 最短のローカル手順
+
+[RAG_RUNTIME.md](RAG_RUNTIME.md) に従ってキャッシュを設定し `.[rag-mcp]` を導入します。長時間の CLI 導入を終えてから、同じ workspace に MCP を登録してください。
+
+```powershell
+$env:RAG_MODEL_CACHE = "$PWD\.local\rag-runtime\models"
+$env:HF_HOME = "$PWD\.local\rag-runtime\huggingface"
+python -m pip install ".[rag-mcp]"
+python -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
+python -m research_harness.rag --workspace C:\data\rag-workspace search "架橋 膨潤"
+codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+```
+
+範囲は [RAG_STAGE.md](RAG_STAGE.md) を参照してください。生成モデル API はこの段階では契約のみで、実23文献の受入は進行中です。
+
 プロジェクトと MCP Python SDK（利用可能なら `.[rag,mcp]` オプション依存）をインストールし、書き込み可能な workspace と catalog を用意してください。catalog の `records[].file` は catalog ディレクトリからの相対 PDF/TXT パスです。ディレクトリ外へのパスは拒否され、原資料ディレクトリは読み取り専用です。workspace と catalog は起動時に固定され、ツールから変更できません。
 
 Codex CLI への登録（パスを置き換えてください）：

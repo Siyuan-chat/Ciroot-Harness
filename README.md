@@ -37,8 +37,6 @@ The first later case is polymer design. [Its draft](examples/polymer-design.draf
 
 Keep credentials, private originals and runtime workspaces outside Git. Packaged demo material is synthetic. Product investigations are manually triggered, with no default background schedule.
 
-## OA literature collection
-
 ## Local RAG (D18, in progress)
 
 ```powershell
@@ -47,6 +45,8 @@ Keep credentials, private originals and runtime workspaces outside Git. Packaged
 ```
 
 The local RAG reads only the configured catalog, does not read Codex credentials, and does not call a generation model. Its JSON operations are `import`, `search`, `context`, `document`, and `status`. Real-PDF acceptance remains in progress.
+
+## OA literature collection
 
 `literature` is a separate OpenAlex search and OA-PDF collection module, not RAG or scientific screening. Install its validator, then use the verified 23-item manifest when supplied:
 

@@ -37,8 +37,6 @@ python -m venv .venv
 
 キー、非公開原文、実行ワークスペースは Git に保存しないでください。同梱デモは合成資料のみです。調査は手動で開始し、標準の定期実行はありません。
 
-## OA 文献収集
-
 ## ローカル RAG（D18、進行中）
 
 ```powershell
@@ -47,6 +45,8 @@ python -m venv .venv
 ```
 
 ローカル RAG は設定済み catalog だけを読み、Codex 資格情報の読取りや生成モデル呼出しを行いません。JSON 操作は `import`、`search`、`context`、`document`、`status` です。実 PDF の受入は進行中です。
+
+## OA 文献収集
 
 `literature` は独立した OpenAlex 検索・OA PDF 収集モジュールであり、RAG や科学的選別ではありません。検証機能を導入し、提供済みなら検証済み23件の manifest を使います。
 

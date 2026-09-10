@@ -2,6 +2,21 @@
 
 This is a local STDIO MCP adapter. It delegates to `research_harness.rag.RagLibrary`; it does not read Codex credentials, call a generation model, or provide HTTP/UI.
 
+## Short local sequence
+
+Set `RAG_MODEL_CACHE` and `HF_HOME` as described in [RAG_RUNTIME.md](RAG_RUNTIME.md), install `.[rag-mcp]`, finish the long CLI import, then register MCP for the same workspace:
+
+```powershell
+$env:RAG_MODEL_CACHE = "$PWD\.local\rag-runtime\models"
+$env:HF_HOME = "$PWD\.local\rag-runtime\huggingface"
+python -m pip install ".[rag-mcp]"
+python -m research_harness.rag --workspace C:\data\rag-workspace import C:\data\catalog.json
+python -m research_harness.rag --workspace C:\data\rag-workspace search "crosslinking swelling"
+codex mcp add research-harness-rag -- C:\path\to\.venv\Scripts\python.exe -m research_harness.rag_mcp --workspace C:\data\rag-workspace --catalog C:\data\catalog.json
+```
+
+See [RAG_STAGE.md](RAG_STAGE.md). Generation-model API mode is contract-only; real 23-document acceptance remains pending.
+
 Install the project and MCP Python SDK (for example, the project's `.[rag,mcp]` extras when available). Prepare a writable workspace and a catalog whose `records[].file` entries are PDF/TXT paths relative to the catalog directory. Paths escaping that directory are rejected; the source directory remains read-only. Workspace and catalog are fixed at startup and cannot be supplied by tools.
 
 Register it in Codex CLI (replace paths):
