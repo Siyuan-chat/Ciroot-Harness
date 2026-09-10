@@ -2,6 +2,8 @@
 
 The D18 runtime is local: Docling 2.126.0, FastEmbed 0.8.0, Qdrant client 1.19.0, and LlamaIndex core 0.14.24. The tested embedding is `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, using FastEmbed 0.8 mean pooling and 384 dimensions. Its Hugging Face model card declares Apache-2.0: <https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2>.
 
+The tested local execution settings are `threads=2` and `batch_size=16`. They affect batching and CPU parallelism only; they do not change the model, dimension, or embedding preprocessing.
+
 Set cache locations before the first import so weights are reusable and remain outside Git:
 
 ```powershell

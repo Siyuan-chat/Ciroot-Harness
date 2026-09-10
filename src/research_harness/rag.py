@@ -24,6 +24,8 @@ _CHUNK_SIZE = 200
 _CHUNK_OVERLAP = 30
 _PARSER_FINGERPRINT = "docling-pypdfium2-no-ocr-table-structure-no-cell-match-visible-provenance-v3"
 _EMBEDDING_DIMENSION = 384
+_EMBEDDING_THREADS = 2
+_EMBEDDING_BATCH_SIZE = 16
 
 
 class RagError(Exception):
@@ -119,7 +121,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         if self._embedder is None:
             cache_dir = Path(os.environ.get("RAG_MODEL_CACHE", self.root.parent / "rag-runtime" / "models"))
             cache_dir.mkdir(parents=True, exist_ok=True)
-            self._embedder = TextEmbedding(model_name=self.embedding_model, cache_dir=str(cache_dir))
+            self._embedder = TextEmbedding(model_name=self.embedding_model, cache_dir=str(cache_dir), threads=_EMBEDDING_THREADS)
         if self._qdrant is None:
             try:
                 self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
@@ -201,6 +203,9 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             blocks: list[dict[str, Any]] = []
             dropped = 0
             for item, _level in document.iterate_items():
+                label = str(getattr(item, "label", "")).casefold()
+                if "page_header" in label or "page_footer" in label:
+                    continue
                 text, role, section = self._item_text(document, item)
                 if text.strip():
                     locator = self._locator(item, page_numbers)
@@ -324,7 +329,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
     def _index(self, evidence: list[dict[str, Any]], qdrant: Any, embedder: Any) -> None:
         from qdrant_client import models
-        vectors = list(embedder.embed([item["text"] for item in evidence]))
+        vectors = list(embedder.embed([item["text"] for item in evidence], batch_size=_EMBEDDING_BATCH_SIZE))
         if not vectors:
             raise RagError("RH_RAG_INDEX_FAILED", "embedding returned no vectors")
         if not qdrant.collection_exists("evidence"):
@@ -370,7 +375,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         candidate_versions = sorted({item["version_id"] for item in candidates})
         if not qdrant.collection_exists("evidence") or not all(self._version_is_indexed(version_id) for version_id in candidate_versions):
             raise RagError("RH_RAG_INDEX_INCOMPLETE", "selected evidence is not fully indexed")
-        query_vector = list(embedder.embed([query]))[0].tolist()
+        query_vector = list(embedder.embed([query], batch_size=_EMBEDDING_BATCH_SIZE))[0].tolist()
         allowed = {item["evidence_id"] for item in candidates}
         vector_scores: dict[str, float] = {}
         from qdrant_client import models
