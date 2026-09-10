@@ -46,4 +46,6 @@ Actual parser, embedding, index, and coverage support comes from RagLibrary. The
 
 MCP is a single-process serial service; initial model loading and imports block that process. Use the CLI for long imports, and do not run a CLI import while MCP has the same workspace open.
 
+When the corpus is English and the question is in Chinese or Japanese, the host model may generate a concise English retrieval query from the original request while retaining the original question for the answer. Do not use a hard-coded translation table or guess facts or numbers. For a complete, unique paper title, use DOI or document filters instead of putting the title into a topical query. Find direct evidence first, then read context. Direct Chinese/Japanese cross-language vector retrieval has not been accepted here and must not be claimed as passed.
+
 After the core service has imported documents, run `real_service_probe(python_executable, workspace, catalog)` for a real STDIO check; it does not import. Record this evidence separately from the fake protocol test.
