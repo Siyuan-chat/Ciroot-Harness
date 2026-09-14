@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from .errors import HarnessError, ValidationError, NotFoundError, UnsupportedError
 from langgraph.graph import StateGraph, START, END
+from jsonschema import validate
 
 ROLES=("planning","paper_search","patent_search","evidence_analysis","business_judgment","synthesis","writing","verification")
 
@@ -31,7 +32,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT,task_vers
         if spec.get("status")!="ready" or runtime.get("mode")!="host" or runtime.get("data_mode")!="synthetic": raise InvestigationError("RH_PRECONDITION","ready synthetic host inputs are required")
         run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=runtime.get("budget",{})
         self.db.execute("INSERT INTO investigations VALUES (?,?,?,?,?,?,?,?,?)",(run,json.dumps(spec),json.dumps(runtime),"running","planning",json.dumps(budget),now,now,None)); self.db.commit()
-        self._task(run,"planning","plan",{"spec":spec,"scenario":scenario or {}},{"type":"object"}); return {"run_id":run,"stage":"planning","status":"waiting_model"}
+        self._task(run,"planning","plan",{"spec":spec,"scenario":scenario or {}},{"type":"object","required":["summary"],"properties":{"summary":{"type":"string","minLength":1}}}); return {"run_id":run,"stage":"planning","status":"waiting_model"}
     def _task(self,run,role,kind,payload,schema):
         payload={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}
         self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,kind,json.dumps(payload),json.dumps(schema),"pending",None));self.db.commit()
@@ -45,18 +46,20 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT,task_vers
         if row["status"]=="completed":
             if row["result"]==value:return {"status":"reused","task_id":task_id}
             raise InvestigationError("RH_TASK_CONFLICT","different task result was submitted")
-        if not isinstance(result,dict) or not result: raise ValidationError()
+        schema=json.loads(row["output_schema"])
+        try: validate(result,schema)
+        except Exception as exc: raise ValidationError() from exc
         self.db.execute("UPDATE model_tasks SET status='completed',result=? WHERE id=?",(value,task_id));self.db.commit();return {"status":"accepted","task_id":task_id}
     def advance_investigation(self,run_id):
         row=self.db.execute("SELECT * FROM investigations WHERE id=?",(run_id,)).fetchone()
         if not row: raise NotFoundError()
-        def route(state):
+        def planning_gate(state):
             if self.get_pending_tasks(run_id): return "waiting"
             done=self.db.execute("SELECT COUNT(*) FROM model_tasks WHERE run_id=?",(run_id,)).fetchone()[0]
             if done>=len(ROLES): return "complete"
             prior=[r[0] for r in self.db.execute("SELECT id FROM model_tasks WHERE run_id=? AND status='completed' ORDER BY rowid",(run_id,))]
-            role=ROLES[done]; self._task(run_id,role,role,{"input_refs":prior},{"type":"object","required":["summary"]}); self.db.execute("UPDATE investigations SET stage=?,status='waiting_model',updated=? WHERE id=?",(role,time.time(),run_id));self.db.commit();return "waiting"
-        g=StateGraph(dict);g.add_node("route",lambda s:{"next":route(s)});g.add_edge(START,"route");g.add_conditional_edges("route",lambda s:s["next"],{"waiting":END,"complete":END});out=g.compile().invoke({})
+            role=ROLES[done]; self._task(run_id,role,role,{"input_refs":prior,"consumed_results":[json.loads(x[0]) for x in self.db.execute("SELECT result FROM model_tasks WHERE run_id=? AND status='completed'",(run_id,))]},{"type":"object","required":["summary"],"properties":{"summary":{"type":"string","minLength":1}}}); self.db.execute("UPDATE investigations SET stage=?,status='waiting_model',updated=? WHERE id=?",(role,time.time(),run_id));self.db.commit();return "waiting"
+        g=StateGraph(dict);g.add_node("planning_gate",lambda s:{"next":planning_gate(s)});g.add_node("source_task",lambda s:s);g.add_node("acquire_normalize",lambda s:s);g.add_node("analysis_task",lambda s:s);g.add_node("verification_gate",lambda s:s);g.add_edge(START,"planning_gate");g.add_conditional_edges("planning_gate",lambda s:s["next"],{"waiting":END,"complete":END});out=g.compile().invoke({})
         if out["next"]=="complete": self.db.execute("UPDATE investigations SET status='completed',stage='completed',updated=? WHERE id=?",(time.time(),run_id));self.db.commit();return {"run_id":run_id,"outcome":"completed","stage":"completed"}
         now=self.status(run_id);return {"run_id":run_id,"outcome":"waiting","waiting_reason":"model_task","stage":now["stage"]}
     def resume_investigation(self,run_id): return self.advance_investigation(run_id)
