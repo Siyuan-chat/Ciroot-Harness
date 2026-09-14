@@ -30,7 +30,5 @@ def get_task_schema(role: str) -> dict[str, Any]:
     schema = _load("investigation-task.schema.json")
     try:
         result = {"$schema": schema["$schema"], "$defs": schema["$defs"], **schema["$defs"]["roles"][role]}
-        extra = {"synthesis":{"claims":{"type":"array","items":{"type":"object","properties":{"finding_refs":{"type":"array","items":{"type":"integer","minimum":0}}},"required":["finding_refs"]}}},"verification":{"verification":{"type":"object","properties":{"supported_claim_refs":{"type":"array","items":{"type":"integer","minimum":0}}}}},"evidence_analysis":{"findings":{"type":"array","items":{"type":"object","properties":{"value":{"type":["number","string","null"]}}}}}}.get(role)
-        if extra: result["properties"].update(extra)
         return result
     except KeyError as exc: raise ValidationError("unknown investigation task role") from exc
