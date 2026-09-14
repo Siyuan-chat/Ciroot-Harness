@@ -1,18 +1,29 @@
-# D19-P1 host implementation
+# D19-P1 Luna host implementation
 
-Luna's host layer is a thin JSON/STDIO adapter around
-`InvestigationService(workspace)`. The CLI and MCP server share the same
-service methods and do not call sources, models, schedulers, or HTTP. MCP keeps
-one service instance and its async handlers call synchronous methods directly,
-which preserves SQLite thread affinity. Local work may block the process;
-long imports belong in the CLI, and CLI writes must not run concurrently with
-an open MCP library.
+本记录覆盖 Luna 独占的入口、replay 资源、PowerShell 薄适配和三语指南。所有结果均为本地 synthetic/replay 验证；没有真实来源、生成模型 API 或 OS 调度。
 
-The eight role prompt files describe planning, paper and patent search, evidence
-analysis, business judgment, synthesis, writing, and verification. They are
-host guidance, not a second orchestration engine. Shared schemas, package
-registration and the top-level `rh` dispatcher are integrated by Terra.
+## 已实现
 
-Validation status: focused adapter checks can use a fake service; end-to-end
-offline C1/C2/C3 acceptance requires Terra's `InvestigationService` and the
-separate D19 runtime. Live sources and model APIs are outside P1.
+- `rh monitor profile-update MONITOR_ID --profile PROFILE_JSON` 直接转发 `InvestigationService.update_monitor_profile`。
+- MCP `update_monitor_profile(monitor_id, profile)` 使用同一薄适配。
+- `scripts/investigation.ps1` 支持 `-Monitor`、`-ProfileMonitorId`，status 的 RunId 可选，report 语言仅在显式提供时转发。
+- `scripts/investigation_replay.py` 消费 `get_pending_tasks` 保存的一个或多个 JSON task，输出 deterministic replay 结果并标注 `synthetic=true`。结果包含 zh/en/ja writing sections；它不表示真实模型推理或科学效果。
+- `examples/investigation/planning-result.json` 与 `pending-planning.json` 符合严格 role schema；schemas/prompts/examples 已列入 wheel package data。
+- `pip install -e .[investigation]` 提供轻量 host 的 pypdf 与 MCP 依赖。
+
+## 可复现验证
+
+在 Terra 工作树执行：
+
+```powershell
+$env:PYTHONPATH='C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-worktrees\terra\src'
+& 'C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-runtime\venv\Scripts\python.exe' -m pytest -q tests/test_investigation_entrypoints.py tests/test_investigation_mcp.py
+& 'C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-runtime\venv\Scripts\python.exe' scripts/investigation_replay.py --pending examples/investigation/pending-planning.json --output .local/replay-result.json
+& 'C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-runtime\venv\Scripts\python.exe' -m pip wheel . --no-deps --no-build-isolation --wheel-dir .local/wheel
+```
+
+结果：host tests `8 passed`；replay 输出 `.local/replay-result.json`；planning result schema errors `0`；wheel `research_harness-0.1.0-py3-none-any.whl` 构建成功，检查到 schemas 5、investigation prompts 9、investigation examples 5。
+
+## 边界
+
+这些是 code/integration 层证据。真实 API、真实模型质量、无人值守调度和独立验收仍为 pending，由根任务按 D19-P1 acceptance 执行。
