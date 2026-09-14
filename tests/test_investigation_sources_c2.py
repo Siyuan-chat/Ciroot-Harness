@@ -8,8 +8,8 @@ def test_paging_and_failure_are_explicit():
     assert error.value.code=="RH_SOURCE_TIMEOUT"
 
 def test_normalization_and_confidential_default_deny():
-    ev=normalize({"document_id":"d1","version":"v2","content_type":"application/xml","text":"<p>quoted text</p>","locator":{"kind":"xml_paragraph","value":"3"}})
-    assert ev["text"].strip()=="quoted text" and ev["version_id"]=="v2"
+    ev=normalize({"document_id":"d1","version":"v2","content_type":"application/xml","text":"<root><p id='p1'>quoted text</p><claim id='c1'>claim text</claim></root>"})
+    assert [x["locator"]["value"] for x in ev]==["p1","c1"] and ev[0]["version_id"]=="v2"
     secret={"visibility":"confidential","company_id":"co"}
     assert not policy_allows(secret,{"executor_id":"host-synthetic"})
     assert policy_allows(secret,{"model_id":"local","data_policy":{"company_id":"co","allowed_models":["local"],"allow_query_egress":True}})

@@ -32,22 +32,25 @@ def normalize(document):
     if content_type=="application/xml":
         try: root=ElementTree.fromstring(blob if blob is not None else raw.encode("utf-8"))
         except (ElementTree.ParseError, AttributeError, UnicodeError) as exc: raise SourceError("RH_NORMALIZE_XML","invalid XML") from exc
-        node=next((x for x in root.iter() if x.tag.rsplit("}",1)[-1] in {"p","paragraph","claim"} and "".join(x.itertext()).strip()),None)
-        if node is None: raise SourceError("RH_NORMALIZE_EMPTY","XML has no extractable paragraph or claim")
-        text="".join(node.itertext()).strip(); locator=document.get("locator") or {"kind":"xml_"+node.tag.rsplit("}",1)[-1],"value":node.get("id") or "1"}
+        nodes=[x for x in root.iter() if x.tag.rsplit("}",1)[-1] in {"p","paragraph","claim"} and "".join(x.itertext()).strip()]
+        if not nodes: raise SourceError("RH_NORMALIZE_EMPTY","XML has no extractable paragraph or claim")
+        return [_evidence(document,"".join(node.itertext()).strip(),{"kind":"xml_"+node.tag.rsplit("}",1)[-1],"value":node.get("id") or str(index)},blob) for index,node in enumerate(nodes,1)]
     elif content_type=="application/pdf":
         if blob is None: raise SourceError("RH_NORMALIZE_PDF","PDF requires base64_bytes")
         try:
             from pypdf import PdfReader
-            reader=PdfReader(BytesIO(blob)); text="\n".join(page.extract_text() or "" for page in reader.pages)
+            reader=PdfReader(BytesIO(blob)); parts=[(str(i+1),page.extract_text() or "") for i,page in enumerate(reader.pages)]
         except Exception as exc: raise SourceError("RH_NORMALIZE_PDF","PDF extraction failed") from exc
-        locator=document.get("locator") or {"kind":"pdf_page","value":"1"}
+        return [_evidence(document,text,{"kind":"pdf_page","value":page},blob) for page,text in parts if text.strip()]
     elif content_type=="text/plain": text=raw; locator=document.get("locator") or {"kind":"paragraph","value":"1"}
     else: raise SourceError("RH_NORMALIZE_TYPE","unsupported synthetic content type")
     if not isinstance(text,str) or not text.strip(): raise SourceError("RH_NORMALIZE_EMPTY","source body is empty")
     if not locator.get("kind") or not locator.get("value"): raise SourceError("RH_SCENARIO_LOCATOR","source requires physical locator")
+    return [_evidence(document,text,locator,blob)]
+
+def _evidence(document,text,locator,blob):
     version=str(document.get("version","synthetic-v1")); identity=document["document_id"]+version+str(locator)+text
-    return {"evidence_id":"ev-"+hashlib.sha256(identity.encode()).hexdigest()[:12],"document_id":document["document_id"],"version_id":version,"text":text,"quote":text,"locator":locator,"content_type":content_type,"content_sha256":hashlib.sha256((blob if blob is not None else text.encode()).strip() if False else (blob if blob is not None else text.encode())).hexdigest()}
+    return {"evidence_id":"ev-"+hashlib.sha256(identity.encode()).hexdigest()[:12],"document_id":document["document_id"],"version_id":version,"text":text,"quote":text,"locator":locator,"content_type":document.get("content_type","text/plain"),"content_sha256":hashlib.sha256(blob if blob is not None else text.encode()).hexdigest()}
 
 def baseline_snapshot(references, runtime):
     """Freeze only policy-authorized synthetic references before planning."""
@@ -55,5 +58,5 @@ def baseline_snapshot(references, runtime):
     for item in references or []:
         if not policy_allows(item, runtime):
             continue
-        snapshot.append(normalize(item))
+        snapshot.extend(normalize(item))
     return snapshot

@@ -30,6 +30,11 @@ TASK_SCHEMAS = {
  "writing": schema("sections", {"type":"array","minItems":1,"items":{"type":"object","required":["title","text","claim_refs"],"additionalProperties":False,"properties":{"title":{"type":"string","minLength":1},"text":{"type":"string","minLength":1},"claim_refs":{"type":"array","items":{"type":"integer","minimum":0}}}}}),
  "verification": schema("verification", {"type":"object","required":["status","conclusion","supported_claim_refs"],"additionalProperties":False,"properties":{"status":{"enum":["supported","partial","insufficient","contradicted"]},"conclusion":{"type":"string","minLength":1},"supported_claim_refs":{"type":"array","items":{"type":"integer","minimum":0}}}}),
 }
+# D19 C2 extensions remain optional for C1 compatibility, but are required
+# before a frozen reader-facing ReportData object can be produced.
+TASK_SCHEMAS["evidence_analysis"]["properties"]["findings"]["items"]["properties"].update({"finding_id":{"type":"string"},"value":{"type":["string","number","null"]},"unit":{"type":["string","null"]},"conditions":{"type":["string","null"]}})
+TASK_SCHEMAS["synthesis"]["properties"]["claims"]["items"]["properties"].update({"claim_id":{"type":"string"},"evidence_refs":{"type":"array","items":{"type":"string"}},"quote":{"type":"string"},"document_id":{"type":"string"},"version_id":{"type":"string"}})
+TASK_SCHEMAS["writing"]["properties"]["sections"]["items"]["properties"].update({"deliverable_type":{"enum":["technical_report","literature_review","patent_monitor_digest"]},"language":{"type":"string"},"section_id":{"type":"string"},"body":{"type":"string"},"claim_ids":{"type":"array","items":{"type":"string"}}})
 
 class InvestigationService:
     def __init__(self, workspace):
@@ -92,6 +97,19 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if not r["result"]: raise InvestigationError("RH_RESULT_PENDING","investigation has not reached verification")
         return json.loads(r["result"])
     def get_artifacts(self,run_id): return self.get_result(run_id).get("artifacts",[])
+    def build_report_data(self,run_id):
+        run=self._run(run_id); result=self.get_result(run_id); rjson=json.loads(run["spec"])
+        claims=self._done(run_id,"synthesis","synthesize")[0]["claims"]; sections=self._done(run_id,"writing","write")[0]["sections"]
+        for claim in claims:
+            if not {"claim_id","evidence_refs","quote","document_id","version_id"} <= claim.keys(): raise InvestigationError("RH_REPORT_DATA","claim lacks required evidence binding")
+            self._check_claim(claim,result["evidence"])
+        if not all({"deliverable_type","language","section_id","title","body","claim_ids"} <= x.keys() for x in sections): raise InvestigationError("RH_REPORT_DATA","writing result lacks report section fields")
+        return {"synthetic":True,"report_version":"run-"+run_id,"research_question":rjson["research_question"],"report_targets":rjson.get("report_targets",["technical_report","literature_review"]),"findings":[dict(x, evidence_refs=x["evidence_ids"]) for x in result["findings"]],"evidence":result["evidence"],"claims":[dict(x,verification="verified") for x in claims],"sections":sections,"bibliography":[],"coverage":{"outcome":result["outcome"]},"issues":result.get("issues",[])}
+    def export_report(self,run_id,languages=None):
+        from .investigation_reporting import export_reports
+        data=self.build_report_data(run_id); exported=export_reports(self.root,run_id,data,languages)
+        row=self._run(run_id); result=json.loads(row["result"]); result["artifacts"]=exported["artifacts"]
+        self.db.execute("UPDATE investigations SET result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run_id));self.db.commit();return exported
 
     def _graph(self):
         g=StateGraph(dict)
@@ -124,7 +142,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             if doc.get("document_id") not in selected: continue
             if not policy_allows(doc,runtime):
                 self._trace(s["run_id"],"acquire_normalize","blocked",{"waiting_reason":{"code":"RH_POLICY_BLOCKED","scope":"model_payload","detail":"restricted"}}); continue
-            try: evidence.append(normalize(doc))
+            try: evidence.extend(normalize(doc))
             except SourceError as error: self._trace(s["run_id"],"acquire_normalize","source_failure",{"code":error.code})
         self._reserve_available(s["run_id"],2)
         self._task(s["run_id"],"evidence_analysis","extract",{"input_refs":["stage:acquire_normalize"],"evidence":evidence}); self._task(s["run_id"],"business_judgment","judge",{"input_refs":["stage:acquire_normalize"],"documents":[{"document_id":e["document_id"],"evidence_id":e["evidence_id"]} for e in evidence]})
@@ -159,6 +177,17 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             if not all(set(x["evidence_ids"])<={e["evidence_id"] for e in p["evidence"]} for x in result["findings"]):raise InvestigationError("RH_RESULT_REFERENCE","finding cites unknown evidence")
         elif role=="business_judgment":
             if not {x["document_id"] for x in result["judgments"]}<={x["document_id"] for x in p["documents"]}:raise InvestigationError("RH_RESULT_REFERENCE","judgment cites unknown document")
+        elif role=="synthesis":
+            findings=self._done(row["run_id"],"evidence_analysis","extract")[0]["findings"]
+            if any(any(i>=len(findings) for i in x["finding_refs"]) for x in result["claims"]):raise InvestigationError("RH_RESULT_REFERENCE","claim references unknown finding")
+        elif role=="verification":
+            claims=self._done(row["run_id"],"synthesis","synthesize")[0]["claims"]
+            if any(i>=len(claims) for i in result["verification"]["supported_claim_refs"]):raise InvestigationError("RH_RESULT_REFERENCE","verification references unknown claim")
+    def _check_claim(self,claim,evidence):
+        lookup={x["evidence_id"]:x for x in evidence}
+        for ref in claim["evidence_refs"]:
+            item=lookup.get(ref)
+            if not item or claim["document_id"]!=item["document_id"] or claim["version_id"]!=item["version_id"] or not item.get("locator") or claim["quote"] not in item["text"]:raise InvestigationError("RH_RESULT_REFERENCE","claim quotation does not bind to normalized evidence")
     def _done(self,run,role,typ):
         sql="SELECT result FROM model_tasks WHERE run_id=? AND task_type=? AND status='completed'";args=[run,typ]
         if role:sql+=" AND role=?";args.append(role)
