@@ -89,3 +89,13 @@ investigation_mcp为独立STDIO入口，复用服务，不改变aem_rag已注册
 人工问题按monitor/company/document保持稳定身份；文档/规则版本、原模型判定、程序升级和人工决定均保留事件。uncertain及强制规则升级为人工；模型false不关闭既有open项。人工relevant/irrelevant关闭当前问题，uncertain/defer保留open；新证据/规则需要人工时可重开，同版本重交不抹人工决定。此拆分实现已有P1范围，不新增监测服务或外部动作。
 
 Terra报告子任务完成渲染后，追加独占investigation_monitoring.py/test_investigation_monitoring.py，实现纯持久化MonitorStore；调查图和公共service桥接仍由核心Terra负责。该store持久化profile/规则版本、周期、采集水位、候选版本、判定积压与跨周期预留；不执行网络/模型、不新增agent状态机。采集已完成而判定积压未清不阻止新周期采集。
+
+## 9. C3公共服务接线细节
+
+为使离线周期能独立复现，run_monitor_once的scenario除sources/references/transport_pages外，显式提供cycle_key、window_start、window_end；同key相同事实恢复原run，不新增周期/模型预留，改写事实拒绝。时间窗由fixture提供，P1不从系统时钟推断未检索窗口。profile含company_id、rule_version、scope；monitor_spec含name、report_languages，可保留查询/研究条件扩展字段。首次模型planning读取冻结profile与baseline_evidence；后续周期保留可审计的查询版本。profile更新通过显式update_monitor_profile(monitor_id,profile)应用服务方法，不借create覆盖。
+
+公共服务使用已验收MonitorStore/ReviewStore，不复制其状态规则。来源采集完成即登记collection与完整性，判定未完成仍可开始不重叠的新周期；只有待判定的文档内容/规则版本进入business_judgment。无变化周期不重新判定；迟到旧公开、真正新公开与正文变化保留不同标记。业务判定结果写ReviewStore后才mark_judged；uncertain/强制人工升级使用store有效状态，调查/监测结果保留原模型与有效判定。人工待办与机器判定积压分开。
+
+每个monitor关联run及profile revision。每次模型任务创建前同时检查该run max_tasks与monitor max_total_tasks，重复恢复不重复预留；每周期来源调用受max_source_calls限制。预算不足保留已有来源、证据和待办并返回partial，不能遗留无解释waiting。来源失败窗口不记为完整；重新触发同key不重做已经确认成功的操作。pause只阻止新采集周期，已有人工决定仍可保存。
+
+patent_monitor_digest从冻结事实生成，列出相关性、人工标记、规则/文档版本、窗口、漏检/失败与待办。它与调查双报告共用证据和报告出口，不覆盖历史报告。CLI/MCP的profile-update为该方法薄适配；不增加OS调度、真实API或模型后台调用。

@@ -9,7 +9,7 @@ from research_harness.errors import HarnessError
 S={'status':'ready','project_id':'ind-query','revision':1,'research_question':'SYNTHETIC Meridian indigo separator investigation','report_targets':['technical_report','literature_review'],'references':[]}
 R={'mode':'host','data_mode':'synthetic','budget':{'max_tasks':20,'max_source_calls':12}}
 def doc(name,**kw):return dict({'source':'synthetic-paper','document_id':name,'version':'v1','title':'SYNTHETIC '+name,'text':'SYNTHETIC indigo separator record '+name+'.'},**kw)
-def q(name,source='synthetic-paper'):return {'query_id':name,'source':source,'query':'indigo separator '+name,'input_refs':[]}
+def q(name,source='synthetic-paper'):return {'query_id':name,'source':source,'query':'indigo separator '+name,'input_refs':[],'parent_query_id':None}
 def pg(query,docs,cursor=None,next_cursor=None,**kw):return dict({'source':query['source'],'query_id':query['query_id'],'cursor':cursor,'candidates':docs,'next_cursor':next_cursor},**kw)
 def start(s,docs,pages,queries,rt=None,refs=None):
  run=s.create_investigation(copy.deepcopy(S),copy.deepcopy(rt or R),{'sources':docs,'transport_pages':pages,'references':refs or []})['run_id']
@@ -21,10 +21,11 @@ def finish(s,run):
   for t in tasks:
    role=t['role'];pl=t['payload']
    if role in ('paper_search','patent_search'):r={'candidates':[{'document_id':x['document_id'],'relevance':'relevant','reason':'SYNTHETIC independent selection'} for x in pl['candidates']]}
-   elif role=='evidence_analysis':r={'findings':[{'finding':'SYNTHETIC retained public evidence','evidence_ids':[x['evidence_id'] for x in pl['evidence']]}]}
+   elif role=='evidence_analysis':r={'findings':[{'finding_id':'f0','finding':'SYNTHETIC retained public evidence','evidence_ids':[x['evidence_id'] for x in pl['evidence']],'value':None,'unit':None,'conditions':None}]}
    elif role=='business_judgment':r={'judgments':[{'document_id':x['document_id'],'relevance':'relevant','human_review_required':False,'reason':'SYNTHETIC scope'} for x in pl['documents']]}
-   elif role=='synthesis':r={'claims':[{'claim':'SYNTHETIC public evidence remains','finding_refs':[0]}]}
-   elif role=='writing':r={'sections':[{'title':'SYNTHETIC report','text':'SYNTHETIC public evidence remains','claim_refs':[0]}]}
+   elif role=='synthesis':
+    e=pl['evidence'][0];r={'claims':[{'claim_id':'c0','claim':e['text'],'finding_refs':[0],'evidence_refs':[e['evidence_id']],'quote':e['text'],'document_id':e['document_id'],'version_id':e['version_id']}]}
+   elif role=='writing':r={'sections':[{'deliverable_type':kind,'language':'en','section_id':'results','title':'SYNTHETIC report','body':'SYNTHETIC public evidence remains available for the bounded investigation.','claim_ids':['c0']} for kind in ('technical_report','literature_review')]}
    elif role=='verification':r={'verification':{'status':'supported','conclusion':'SYNTHETIC retained public evidence','supported_claim_refs':[0]}}
    else:raise AssertionError('Unexpected role '+role)
    s.submit_model_result(run,t['task_id'],r,t['task_version'])
@@ -91,6 +92,7 @@ def query_egress():
    run=start(s,[],[pg(query,[])],[query],rt,[secret]);st=s.status(run)
    assert st['budget']['reserved_source_calls']==0,'Forbidden derived query executed'
    assert not s.get_pending_tasks(run) and 'RH_POLICY_BLOCKED' in json.dumps(st)
+   assert 'PRIVATE_QUERY_8642' not in json.dumps(st), 'Sensitive blocked query leaked in general status coverage'
    return 'Approved model does not imply query egress permission'
   finally:s.close()
 def source_visibility():
@@ -117,8 +119,51 @@ def cyclic():
    d=doc('cycle-doc');query=q('cycle');run=start(s,[d],[pg(query,[d],next_cursor='loop'),pg(query,[d],cursor='loop',next_cursor='loop')],[query]);assert s.status(run)['budget']['reserved_source_calls']<=12
    assert 'cycle' in json.dumps(s.status(run)).lower() or 'partial' in json.dumps(s.status(run)).lower()
   finally:s.close()
+
+def fault_sequences():
+ for errors in (['rate_limit'],['timeout','server_error']):
+  with tempfile.TemporaryDirectory() as tmp:
+   s=InvestigationService(tmp)
+   try:
+    d=doc('retry-success');query=q('retry');pages=[pg(query,[],error=code,attempt=i+1) for i,code in enumerate(errors)]+[pg(query,[d],attempt=len(errors)+1)]
+    run=start(s,[d],pages,[query]);st=s.status(run)
+    assert st['coverage']['complete'] is True and s.get_pending_tasks(run), 'Transient failure did not reach provided successful response'
+    assert st['budget']['reserved_source_calls']==len(errors)+1, 'Retry accounting incorrect'
+    s.resume_investigation(run);assert s.status(run)['budget']==st['budget']
+   finally:s.close()
+ for code in ('unauthorized','uncertain','invalid_json'):
+  with tempfile.TemporaryDirectory() as tmp:
+   s=InvestigationService(tmp)
+   try:
+    query=q('terminal');run=start(s,[],[pg(query,[],error=code)],[query]);before=s.status(run)
+    for _ in range(3):s.resume_investigation(run)
+    assert s.status(run)['budget']['reserved_source_calls']==1 and s.status(run)['budget']==before['budget'], 'Terminal/uncertain operation was repeated'
+    assert s.status(run)['outcome']=='partial'
+   finally:s.close()
+ return 'Transient retries consume actual attempts; auth/uncertain/malformed remain bounded'
+def malformed_candidate():
+ with tempfile.TemporaryDirectory() as tmp:
+  s=InvestigationService(tmp)
+  try:
+   query=q('malformed');run=start(s,[],[pg(query,[{'title':'Record without identity'}])],[query])
+   assert s.status(run)['outcome']=='partial' and not s.get_pending_tasks(run)
+   return 'Malformed record produces explicit source failure'
+  finally:s.close()
+def invalid_lineage():
+ with tempfile.TemporaryDirectory() as tmp:
+  s=InvestigationService(tmp)
+  try:
+   run=s.create_investigation(S,R,{'sources':[],'references':[],'transport_pages':[]})['run_id'];task=s.get_pending_tasks(run)[0]
+   query=q('unknown-ref');query['input_refs']=['not-a-real-evidence-id']
+   try:s.submit_model_result(run,task['task_id'],{'search_plan':{'queries':[query]}},task['task_version'])
+   except HarnessError:pass
+   else:raise AssertionError('Unknown query evidence reference consumed planning task')
+   assert s.get_pending_tasks(run)[0]['task_id']==task['task_id'] and s.status(run)['budget']['reserved_source_calls']==0
+   return 'Invalid lineage rejected before consuming planning result'
+  finally:s.close()
+
 checks=[]
-for name,fn in [('multi',multi),('partial',partial),('budget',budget),('baseline-policy',blocked_baseline),('query-egress',query_egress),('source-policy',source_visibility),('cycle',cyclic)]:
+for name,fn in [('multi',multi),('partial',partial),('budget',budget),('baseline-policy',blocked_baseline),('query-egress',query_egress),('source-policy',source_visibility),('cycle',cyclic),('fault-sequences',fault_sequences),('malformed-candidate',malformed_candidate),('invalid-lineage',invalid_lineage)]:
  if a.case and a.case!=name:continue
  try:detail=fn();checks.append({'id':name,'status':'passed','detail':detail})
  except Exception as e:checks.append({'id':name,'status':'failed','type':type(e).__name__,'detail':str(e)[:900]})

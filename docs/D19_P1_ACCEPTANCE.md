@@ -50,3 +50,15 @@ C1检查点c3eef60追加独立边界10/10通过（draft/mode/schema/跨run/版�
 C2-B首5a79b99独立7/7未通过：同source多query任务身份冲突、失败误completed、源预算无可恢复partial、拒绝基准被静默删、派生查询外发未拦、transport元数据绕过保密、循环cursor超时。已单独委派Terra来源任务修复，结果.local/d19-acceptance/queries-5a79b99-independent.json。
 
 ReportData builder首7983e96组合探针3失败/4通过，未接受：supported状态与内部verified不一致、无支持报告无法导出诊断、无支持章节状态错误；若负例因为所有正常claim均被错误拒绝而通过，不视为引用边界的有效验收。记录.local/d19-acceptance/report-data-7983e96-independent.json。
+
+ReportData修正efef397经根独立组合复测7/7通过：实际6份三语双报告、CSV证据映射、跨finding引用绑定、无支持可导诊断、章节与条件边界、上游partial传播。结果.local/d19-acceptance/report-data-efef397-independent.json。
+
+来源修正bb0e011经根独立公共服务B探针7/7及来源模块5/5通过，后者含新增doc/version身份元组碰撞测试。结果.local/d19-acceptance/queries-bb0e011-independent.json与sources-bb0e011-independent.json。尚未覆盖最终整合包或真实API；更完整故障/契约/监测接线仍在后续验收。
+
+已准备独立非editable安装验收环境.local/d19-installed/venv：复用桌面系统库，并通过明确的d19-shared-dependencies.pth复用本轮d19-runtime依赖；不是完全隔离新机器。安装项目前检查langgraph/jsonschema/mcp/pypdf可导入，research_harness不可导入。后续wheel安装将检验实际包来源和资源，不使用源码PYTHONPATH。
+
+contracts首fabb1a8因整项/结果envelope不匹配拒绝。149e105初始五项通过，但静态复核发现内层约束被覆盖；扩展nested-fields后重现缺document_id仍可提交，撤回严格合同通过。修正c5b3fc0归档独立6/6通过，结果contracts-c5b3fc0-independent.json。该快照完整公共服务探针仍失败：无效引句提交消费了任务，已回传核心修正；模块通过不能覆盖服务层失败。
+
+扩展来源查询探针包含10项，覆盖429/timeout/5xx实际重试序列、401/uncertain/invalid_json不重做、无身份candidate及未定义来源引用。c5b3fc0下9通过，partial链因核心仍使用旧角色schema拒绝新结果形状未通过；等待核心统一新契约后复测。FileLock3.32.6已安装到本轮验收环境，未修改旧D18环境。
+
+C2检查点88d4f26归档独立复跑：公共服务完整8角色、6份三语双报告、3种伪造claim拒绝与冻结重启通过；扩展来源queries10/10通过；真实SDK子进程STDIO初始化、创建、非法提交拒绝及第二进程恢复通过。扩展service权限读取通过，混合正常TXT/非法PDF失败传播仍未通过，回传修正。记录service-88d4f26-independent.json、queries-88d4f26-independent.json、mcp-88d4f26-independent.json及service-88d4f26-expanded.json。
