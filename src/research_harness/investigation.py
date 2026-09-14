@@ -113,10 +113,10 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self._run(run_id)
         try: self.graph.invoke({"run_id":run_id})
         except InvestigationError as error:
-            if error.code != "RH_MODEL_BUDGET": raise
+            if error.code not in {"RH_MODEL_BUDGET","RH_MONITOR_BUDGET"}: raise
             extracted=self._done(run_id,"evidence_analysis","extract")
             evidence_row=self.db.execute("SELECT payload FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract'",(run_id,)).fetchone()
-            result={"run_id":run_id,"synthetic":True,"outcome":"partial","conclusion":"Model task budget exhausted before the next stage.","verification":None,"findings":extracted[0]["findings"] if extracted else [],"evidence":json.loads(evidence_row["payload"])["evidence"] if evidence_row else [],"artifacts":[],"issues":[{"code":"RH_MODEL_BUDGET","status":"open"}]}
+            result={"run_id":run_id,"synthetic":True,"outcome":"partial","conclusion":"Task budget exhausted before the next stage.","verification":None,"findings":extracted[0]["findings"] if extracted else [],"evidence":json.loads(evidence_row["payload"])["evidence"] if evidence_row else [],"artifacts":[],"issues":[{"code":error.code,"status":"open"}]}
             self.db.execute("UPDATE investigations SET status='partial',stage='budget_exhausted',result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run_id)); self.db.commit()
         s=self.status(run_id)
         if s["status"] in ("completed","partial"): return {"run_id":run_id,"outcome":s["status"],"stage":"completed"}
@@ -182,7 +182,11 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.monitors.record_collection(cycle["cycle_id"],stored,not failed,{"source_status":"partial" if failed else "complete","cycle_key":scenario["cycle_key"]})
         spec={"status":"ready","project_id":"monitor-"+monitor_id,"revision":config["profile_revision"],"research_question":config["profile"].get("scope",monitor_id),"report_targets":[{"deliverable_type":"patent_monitor_digest","languages":config["monitor_spec"].get("report_languages",[])}],"references":scenario.get("references",[])}
         run=self.create_investigation(spec,config["runtime"],scenario)["run_id"]
-        self.monitors.bind_run(cycle["cycle_id"],run); self.db.execute("INSERT INTO monitor_runs VALUES (?,?,?,?)",(run,monitor_id,cycle["cycle_id"],json.dumps(config["profile"]))); self.db.commit(); self.monitors.reserve_tasks(monitor_id,1)
+        self.monitors.bind_run(cycle["cycle_id"],run); self.db.execute("INSERT INTO monitor_runs VALUES (?,?,?,?)",(run,monitor_id,cycle["cycle_id"],json.dumps(config["profile"]))); self.db.commit()
+        try:self.monitors.reserve_tasks(monitor_id,1)
+        except Exception:
+            result={"run_id":run,"synthetic":True,"outcome":"partial","conclusion":"Monitor task budget exhausted before planning.","verification":None,"findings":[],"evidence":[],"artifacts":[],"issues":[{"code":"RH_MONITOR_BUDGET","status":"open"}],"coverage":self._coverage(run)}
+            self.db.execute("UPDATE investigations SET status='partial',stage='budget_exhausted',result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run)); self.db.commit()
         return {"monitor_id":monitor_id,"run_id":run,"cycle_id":cycle["cycle_id"],"reused":False}
 
     def _graph(self):
@@ -288,7 +292,9 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         b=json.loads(self._run(run)["budget"])
         if b["reserved_tasks"]>=b["max_tasks"]:raise InvestigationError("RH_MODEL_BUDGET","model task budget exhausted")
         monitor=self._monitor_context(run)
-        if monitor:self.monitors.reserve_tasks(monitor["monitor_id"],1)
+        if monitor:
+            try:self.monitors.reserve_tasks(monitor["monitor_id"],1)
+            except Exception as error: raise InvestigationError("RH_MONITOR_BUDGET","monitor task budget exhausted") from error
         p={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}; self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,typ,json.dumps(p),json.dumps(get_task_schema(role)),"pending",None,None,time.time()));b["reserved_tasks"]+=1;self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(b),time.time(),run));self.db.commit()
     def _monitor_context(self,run):
         row=self.db.execute("SELECT monitor_id,cycle_id,profile FROM monitor_runs WHERE run_id=?",(run,)).fetchone()
