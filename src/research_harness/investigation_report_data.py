@@ -145,12 +145,17 @@ def build_report_data(run_id: str, spec: dict[str, Any], evidence: list[dict[str
         checked_sections.append(copy.deepcopy(section))
     targets = _report_targets(spec, sections)
     for target in targets:
-        kind = target if isinstance(target, str) else target.get("deliverable_type") if isinstance(target, dict) else None
-        languages = [] if isinstance(target, str) else target.get("languages", [])
-        if languages and isinstance(languages, list):
+        kind = target.get("deliverable_type")
+        languages = target.get("languages", [])
+        target_sections = [section for section in checked_sections if section.get("deliverable_type") == kind]
+        if not target_sections:
+            result_issues.append(_issue("RH_REPORT_BODY_MISSING", "requested report target has no verified body", deliverable_type=kind))
+        if languages:
             for language in languages:
-                if not any(section.get("deliverable_type") == kind and section.get("language") == language for section in checked_sections):
+                if not any(section.get("language") == language for section in target_sections):
                     result_issues.append(_issue("RH_REPORT_LANGUAGE_MISSING", "host did not provide a verified body in requested language", deliverable_type=kind, language=language))
+    if targets and (not evidence or not valid):
+        result_issues.append(_issue("RH_REPORT_NO_SUPPORTED_EVIDENCE", "a research report requires normalized evidence and at least one supported claim"))
     checked_findings = []
     for finding in findings:
         item = copy.deepcopy(finding); item["evidence_refs"] = copy.deepcopy(finding["evidence_ids"]); checked_findings.append(item)

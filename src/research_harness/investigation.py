@@ -63,12 +63,18 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         except Timeout as error: raise InvestigationError("RH_WORKSPACE_BUSY","another investigation service owns this workspace") from error
     def doctor(self): return {"ok":True,"mode":"offline","network":"disabled","data_mode":"synthetic","missing":[],"capabilities":{"langgraph":True,"model_api":False,"sources":"synthetic_only"}}
     def validate_plan(self, plan):
+        if not isinstance(plan,dict): raise ValidationError("plan must be an object")
+        search_plan=plan.get("search_plan",plan if "queries" in plan else None)
+        if search_plan is not None:
+            queries=search_plan.get("queries") if isinstance(search_plan,dict) else None
+            self._validate_queries(queries)
+            return {"valid":True,"mode":"offline","queries":len(queries),"sources":sorted({item["source"] for item in queries})}
         validate_spec(plan)
-        if not isinstance(plan,dict) or not isinstance(plan.get("research_question"),str) or not plan["research_question"].strip(): raise ValidationError()
+        if not isinstance(plan.get("research_question"),str) or not plan["research_question"].strip(): raise ValidationError()
         if plan.get("status") not in (None,"ready"): raise InvestigationError("RH_PLAN_STATUS","plan must be ready")
         return {"valid":True,"mode":"offline","sources":plan.get("sources",[]),"budget":plan.get("budget",{})}
     def create_investigation(self,spec,runtime,scenario=None):
-        self.validate_plan(spec)
+        validate_spec(spec)
         validate_runtime(runtime)
         if spec.get("status")!="ready" or runtime.get("mode")!="host" or runtime.get("data_mode")!="synthetic": raise InvestigationError("RH_PRECONDITION","ready synthetic host inputs are required")
         scenario=scenario or {}
@@ -152,22 +158,9 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if r["stage"]!="planning":return {"run_id":s["run_id"],"next":"source_task"}
         if self._pending(s["run_id"]):return {"run_id":s["run_id"],"next":"end"}
         plan=self._done(s["run_id"],"planning","plan")[0]["search_plan"]; q=plan["queries"]
-        query_ids=[item.get("query_id") or "q-"+hashlib.sha256((item["source"]+item["query"]+str(item.get("parent_query_id",""))).encode()).hexdigest()[:12] for item in q]
-        if len(query_ids)!=len(set(query_ids)):
-            raise InvestigationError("RH_QUERY_IDENTITY","query_id must be unique within a run")
         reference_ids={x.get("document_id") for x in json.loads(r["scenario"]).get("references",[])}
         evidence_ids={x.get("evidence_id") for x in json.loads(r["scenario"]).get("baseline_snapshot",[])}
-        for item, query_id in zip(q,query_ids):
-            parent=item.get("parent_query_id")
-            if parent is not None and parent not in query_ids:
-                raise InvestigationError("RH_QUERY_REFERENCE","parent_query_id is not an actual query")
-            for ref in item.get("input_refs",[]):
-                if ref.startswith("baseline:") and ref[9:] not in reference_ids:
-                    raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown baseline")
-                if ref.startswith("query:") and ref[6:] not in query_ids:
-                    raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown query")
-                if not (ref in evidence_ids or ref.startswith("baseline:") or ref.startswith("query:")):
-                    raise InvestigationError("RH_QUERY_REFERENCE","input_refs must name actual baseline evidence or query")
+        self._validate_queries(q,reference_ids,evidence_ids)
         runtime=json.loads(r["runtime"])
         # Source screen tasks are all-or-partial as one planning checkpoint.
         self._reserve_available(s["run_id"],len(q))
@@ -202,21 +195,23 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
     def _acquire(self,s):
         r=self._run(s["run_id"])
         if r["stage"]!="acquire_normalize":return {"run_id":s["run_id"],"next":"analysis_task"}
-        selected={x["document_id"] for task in self._screens(s["run_id"]) for x in task["candidates"] if x["relevance"]!="irrelevant"}; evidence=[]
+        selected={x["document_id"] for task in self._screens(s["run_id"]) for x in task["candidates"] if x["relevance"]!="irrelevant"}; evidence=[]; acquisition_issues=[]
         runtime=json.loads(r["runtime"])
         for doc in self._sources(r):
             if doc.get("document_id") not in selected: continue
             if not policy_allows(doc,runtime):
                 self._trace(s["run_id"],"acquire_normalize","blocked",{"waiting_reason":{"code":"RH_POLICY_BLOCKED","scope":"model_payload","detail":"restricted"}}); continue
             try: evidence.extend(normalize(doc))
-            except SourceError as error: self._trace(s["run_id"],"acquire_normalize","source_failure",{"code":error.code})
+            except SourceError as error:
+                issue={"code":error.code,"status":"open","document_id":doc.get("document_id"),"version_id":str(doc.get("version","synthetic-v1")),"message":error.message}
+                acquisition_issues.append(issue); self._trace(s["run_id"],"acquire_normalize","source_failure",issue)
         for item in evidence:
             doc=next((x for x in self._sources(r) if x.get("document_id")==item["document_id"]),{})
             self.db.execute("INSERT OR IGNORE INTO discovery_evidence VALUES (?,?,?,?,?,?,?)",(item["evidence_id"],s["run_id"],item["document_id"],item["version_id"],json.dumps(item),doc.get("visibility","public"),doc.get("company_id")))
         self.db.commit()
         baseline=json.loads(r["scenario"]).get("baseline_snapshot",[])
         self._reserve_available(s["run_id"],2)
-        payload={"input_refs":["stage:acquire_normalize"],"evidence":evidence,"discovery_evidence":evidence,"baseline_evidence":baseline,"report_targets":json.loads(r["spec"]).get("report_targets",[])}
+        payload={"input_refs":["stage:acquire_normalize"],"evidence":evidence,"discovery_evidence":evidence,"baseline_evidence":baseline,"acquisition_issues":acquisition_issues,"report_targets":json.loads(r["spec"]).get("report_targets",[])}
         self._task(s["run_id"],"evidence_analysis","extract",payload); self._task(s["run_id"],"business_judgment","judge",{**payload,"documents":[{"document_id":e["document_id"],"evidence_id":e["evidence_id"]} for e in evidence]})
         self._set(s["run_id"],stage="analysis",status="waiting_model");self._trace(s["run_id"],"acquire_normalize","normalized",{"evidence_count":len(evidence)});return {"run_id":s["run_id"],"next":"end"}
     def _analysis(self,s):
@@ -237,10 +232,11 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         v=self._done(s["run_id"],"verification","verify")[0]["verification"]; coverage=self._coverage(s["run_id"]); findings=self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"]; evidence=extract_payload["evidence"]
         from .investigation_report_data import build_report_data
         bibliography=[self._bibliography(doc) for doc in self._sources(r) if any(x["document_id"]==doc.get("document_id") for x in evidence)]
+        acquisition_issues=extract_payload.get("acquisition_issues",[])
         try:
-            report=build_report_data(s["run_id"],json.loads(r["spec"]),evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,[],"run-"+s["run_id"]); report["baseline_evidence"]=extract_payload.get("baseline_evidence",[])
+            report=build_report_data(s["run_id"],json.loads(r["spec"]),evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,acquisition_issues,"run-"+s["run_id"]); report["baseline_evidence"]=extract_payload.get("baseline_evidence",[])
         except Exception as error:
-            report={"synthetic":True,"run_id":s["run_id"],"report_version":"run-"+s["run_id"],"research_question":json.loads(r["spec"])["research_question"],"report_targets":json.loads(r["spec"]).get("report_targets",[]),"findings":findings,"evidence":evidence,"claims":[],"sections":[],"bibliography":bibliography,"coverage":coverage,"issues":[{"code":"RH_REPORT_DATA","message":str(error)}]}
+            report={"synthetic":True,"run_id":s["run_id"],"report_version":"run-"+s["run_id"],"research_question":json.loads(r["spec"])["research_question"],"report_targets":json.loads(r["spec"]).get("report_targets",[]),"findings":findings,"evidence":evidence,"claims":[],"sections":[],"bibliography":bibliography,"coverage":coverage,"issues":[*acquisition_issues,{"code":"RH_REPORT_DATA","message":str(error)}]}
         self.db.execute("INSERT OR REPLACE INTO frozen_reports VALUES (?,?,?)",(s["run_id"],json.dumps(report),time.time())); self.db.commit()
         legacy=any("claim_id" not in claim for claim in synthesis) or any("body" not in section or "claim_ids" not in section for section in self._done(s["run_id"],"writing","write")[0]["sections"])
         outcome="completed" if v["status"]=="supported" and coverage["complete"] and (legacy or not report.get("issues")) else "partial"; result={"run_id":s["run_id"],"synthetic":True,"outcome":outcome,"conclusion":v["conclusion"],"verification":v,"findings":findings,"evidence":evidence,"baseline_evidence":extract_payload.get("baseline_evidence",[]),"artifacts":[],"coverage":coverage,"issues":report.get("issues",[])}
@@ -250,20 +246,33 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         b=json.loads(self._run(run)["budget"])
         if b["reserved_tasks"]>=b["max_tasks"]:raise InvestigationError("RH_MODEL_BUDGET","model task budget exhausted")
         p={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}; self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,typ,json.dumps(p),json.dumps(get_task_schema(role)),"pending",None,None,time.time()));b["reserved_tasks"]+=1;self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(b),time.time(),run));self.db.commit()
+    def _validate_queries(self,queries,reference_ids=None,evidence_ids=None):
+        errors=list(Draft202012Validator(get_task_schema("planning")).iter_errors({"search_plan":{"queries":queries}}))
+        if errors: raise InvestigationError("RH_QUERY_IDENTITY","query plan failed schema validation")
+        ids=[]
+        for item in queries:
+            if item["source"] not in {"synthetic-paper","synthetic-patent"}: raise InvestigationError("RH_QUERY_IDENTITY","query source is not available in offline mode")
+            ids.append(item["query_id"])
+        if len(ids)!=len(set(ids)): raise InvestigationError("RH_QUERY_IDENTITY","query_id must be unique within a run")
+        known=set(ids)
+        for item in queries:
+            parent=item["parent_query_id"]
+            if parent is not None and (parent not in known or parent==item["query_id"]): raise InvestigationError("RH_QUERY_REFERENCE","parent_query_id must name a different actual query")
+            for ref in item["input_refs"]:
+                if not isinstance(ref,str): raise InvestigationError("RH_QUERY_REFERENCE","input_refs must be strings")
+                if reference_ids is None or evidence_ids is None: continue
+                if ref.startswith("baseline:") and ref[9:] not in reference_ids: raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown baseline")
+                if ref.startswith("query:") and ref[6:] not in known: raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown query")
+                if not (ref in evidence_ids or ref.startswith("baseline:") or ref.startswith("query:")): raise InvestigationError("RH_QUERY_REFERENCE","input_refs must name actual baseline evidence or query")
     def _reserve_available(self,run,count):
         b=json.loads(self._run(run)["budget"])
         if b["reserved_tasks"]+count>b["max_tasks"]:raise InvestigationError("RH_MODEL_BUDGET","model task budget exhausted")
     def _refs(self,row,result):
         p=json.loads(row["payload"]); role=row["role"]
         if role == "planning":
-            queries=result["search_plan"]["queries"]; ids=[x.get("query_id") for x in queries if x.get("query_id")]
-            if len(ids)!=len(set(ids)): raise InvestigationError("RH_QUERY_IDENTITY","query_id must be unique within a run")
+            queries=result["search_plan"]["queries"]
             run=self._run(row["run_id"]); references=json.loads(run["scenario"]).get("references",[]); docs={x.get("document_id") for x in references}; evidence={x.get("evidence_id") for x in json.loads(run["scenario"]).get("baseline_snapshot",[])}
-            for query in queries:
-                for ref in query.get("input_refs",[]):
-                    if ref.startswith("baseline:") and ref[9:] not in docs: raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown baseline")
-                    if ref.startswith("query:") and ref[6:] not in {x.get("query_id") for x in queries}: raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown query")
-                    if not (ref in evidence or ref.startswith("baseline:") or ref.startswith("query:")): raise InvestigationError("RH_QUERY_REFERENCE","input_refs must name actual baseline evidence or query")
+            self._validate_queries(queries,docs,evidence)
         elif role in ("paper_search","patent_search"):
             if not {x["document_id"] for x in result["candidates"]}<={x["document_id"] for x in p["candidates"]}:raise InvestigationError("RH_RESULT_REFERENCE","candidate is not in source task")
         elif role=="evidence_analysis":

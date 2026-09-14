@@ -68,3 +68,12 @@ def test_partial_verification_can_support_listed_claim_but_is_overall_partial():
     report = build_report_data("run6", spec, evidence, findings, claims, sections, verification, [], {}, [])
     assert report["claims"][0]["verification"] == "verified"
     assert report["validation"]["outcome"] == "partial"
+
+def test_string_target_and_empty_supported_facts_cannot_complete_report():
+    spec, evidence, findings, claims, sections, verification = _input()
+    spec["report_targets"] = ["literature_review"]
+    report = build_report_data("run7", spec, evidence, findings, claims, sections, verification, [], {}, [])
+    assert report["validation"]["outcome"] == "partial"
+    assert any(issue["code"] == "RH_REPORT_BODY_MISSING" for issue in report["issues"])
+    report = build_report_data("run8", {**spec, "report_targets": ["technical_report"]}, [], [], [], [], {"status": "supported", "conclusion": "checked", "supported_claim_refs": []}, [], {}, [])
+    assert any(issue["code"] == "RH_REPORT_NO_SUPPORTED_EVIDENCE" for issue in report["issues"])
