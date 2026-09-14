@@ -118,8 +118,16 @@ def create_mcp_server(adapter: InvestigationMCPServer) -> Any:
     async def create_monitor(profile: dict[str, Any], monitor_spec: dict[str, Any], runtime: dict[str, Any], scenario: dict[str, Any] | None = None) -> dict[str, Any]:
         return _call(adapter.service, "create_monitor", profile, monitor_spec, runtime, scenario)
 
+    @tool("monitor_validate", "Validate monitor configuration without executing sources.")
+    async def monitor_validate(profile: dict[str, Any], monitor_spec: dict[str, Any], runtime: dict[str, Any]) -> dict[str, Any]:
+        return _call(adapter.service, "validate_monitor", profile, monitor_spec, runtime)
+
     @tool("run_monitor_once", "Run one explicit offline monitor cycle.", False)
     async def run_monitor_once(monitor_id: str, scenario: dict[str, Any] | None = None) -> dict[str, Any]: return _call(adapter.service, "run_monitor_once", monitor_id, scenario)
+
+    @tool("monitor_status", "Read logical monitor state and review backlog.")
+    async def monitor_status(monitor_id: str | None = None) -> dict[str, Any]:
+        return _call(adapter.service, "monitor_status", monitor_id) if monitor_id else _call(adapter.service, "monitor_status")
 
     @tool("pause_monitor", "Pause a logical monitor.", False)
     async def pause_monitor(monitor_id: str) -> dict[str, Any]: return _call(adapter.service, "pause_monitor", monitor_id)

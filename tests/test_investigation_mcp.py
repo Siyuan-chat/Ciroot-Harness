@@ -25,7 +25,7 @@ def test_mcp_registers_fifteen_tools():
     tools = getattr(server, "_tool_manager")._tools
     expected = {"doctor", "validate_plan", "create_investigation", "get_pending_tasks", "submit_model_result",
                 "advance_investigation", "resume_investigation", "investigation_status", "get_result", "get_artifacts",
-                "export_report", "create_monitor", "run_monitor_once", "pause_monitor", "resume_monitor", "review_list", "review_decide"}
+                "export_report", "create_monitor", "monitor_validate", "run_monitor_once", "monitor_status", "pause_monitor", "resume_monitor", "review_list", "review_decide"}
     assert set(tools) == expected
 
 

@@ -9,6 +9,10 @@ from typing import Any
 
 
 def _json(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        pass
     path = Path(value)
     if path.is_file():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -26,14 +30,16 @@ def _parser() -> argparse.ArgumentParser:
     x = sub.add_parser("submit"); x.add_argument("run_id"); x.add_argument("task_id"); x.add_argument("--result", required=True); x.add_argument("--task-version", required=True, type=int)
     for name in ("work", "resume", "status", "result", "report"):
         x = sub.add_parser(name)
-        if name != "status": x.add_argument("run_id")
-        if name == "report": x.add_argument("--languages", default="zh,en,ja")
+        if name not in ("status",): x.add_argument("run_id")
+        elif name == "status": x.add_argument("run_id", nargs="?")
+        if name == "report": x.add_argument("--languages")
     return p
 
 
 def _monitor_parser(p: argparse.ArgumentParser) -> None:
     p.add_argument("--workspace", required=True)
     sub = p.add_subparsers(dest="command", required=True)
+    x=sub.add_parser("validate"); x.add_argument("--profile",required=True);x.add_argument("--spec",required=True);x.add_argument("--runtime",required=True)
     x=sub.add_parser("create"); x.add_argument("--profile",required=True);x.add_argument("--spec",required=True);x.add_argument("--runtime",required=True);x.add_argument("--scenario")
     x=sub.add_parser("run-once");x.add_argument("monitor_id");x.add_argument("--scenario")
     for name in ("status", "pause", "resume"):
@@ -70,14 +76,15 @@ def main(argv: list[str] | None = None) -> int:
             elif c == "submit": result=service.submit_model_result(args.run_id,args.task_id,_json(args.result),args.task_version)
             elif c == "work": result=service.advance_investigation(args.run_id)
             elif c == "resume": result=service.resume_investigation(args.run_id)
-            elif c == "status": result=service.status()
+            elif c == "status": result=service.status(args.run_id) if args.run_id else service.status()
             elif c == "result": result=service.get_result(args.run_id)
-            else: result=service.export_report(args.run_id,args.languages.split(","))
+            else: result=service.export_report(args.run_id,args.languages.split(",") if args.languages else None)
         else:
             c=args.command
-            if c == "create": result=service.create_monitor(_json(args.profile),_json(args.spec),_json(args.runtime),_json(args.scenario) if args.scenario else None)
+            if c == "validate": result=service.validate_monitor(_json(args.profile),_json(args.spec),_json(args.runtime))
+            elif c == "create": result=service.create_monitor(_json(args.profile),_json(args.spec),_json(args.runtime),_json(args.scenario) if args.scenario else None)
             elif c == "run-once": result=service.run_monitor_once(args.monitor_id,_json(args.scenario) if args.scenario else None)
-            elif c == "status": result=service.status(args.monitor_id)
+            elif c == "status": result=service.monitor_status(args.monitor_id)
             elif c == "pause": result=service.pause_monitor(args.monitor_id)
             elif c == "resume": result=service.resume_monitor(args.monitor_id)
             elif c == "review": result=service.review_list(args.monitor_id)
