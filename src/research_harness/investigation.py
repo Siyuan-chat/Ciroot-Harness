@@ -4,6 +4,7 @@ import hashlib, json, sqlite3, time, uuid
 from pathlib import Path
 from typing import Any
 from .errors import HarnessError, ValidationError, NotFoundError, UnsupportedError
+from langgraph.graph import StateGraph, START, END
 
 ROLES=("planning","paper_search","patent_search","evidence_analysis","business_judgment","synthesis","writing","verification")
 
@@ -22,7 +23,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT,task_vers
     def close(self): self.db.close()
     def __enter__(self): return self
     def __exit__(self,*_): self.close()
-    def doctor(self): return {"ok":True,"mode":"offline","network":"disabled","data_mode":"synthetic","missing":[]}
+    def doctor(self): return {"ok":True,"mode":"offline","network":"disabled","data_mode":"synthetic","missing":[],"capabilities":{"langgraph":True,"model_api":False,"sources":"synthetic_only"}}
     def validate_plan(self, plan):
         if not isinstance(plan,dict) or not plan.get("research_question"): raise ValidationError()
         return {"valid":True,"mode":"offline","sources":plan.get("sources",[]),"budget":plan.get("budget",{})}
@@ -32,9 +33,10 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT,task_vers
         self.db.execute("INSERT INTO investigations VALUES (?,?,?,?,?,?,?,?,?)",(run,json.dumps(spec),json.dumps(runtime),"running","planning",json.dumps(budget),now,now,None)); self.db.commit()
         self._task(run,"planning","plan",{"spec":spec,"scenario":scenario or {}},{"type":"object"}); return {"run_id":run,"stage":"planning","status":"waiting_model"}
     def _task(self,run,role,kind,payload,schema):
+        payload={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}
         self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,kind,json.dumps(payload),json.dumps(schema),"pending",None));self.db.commit()
     def get_pending_tasks(self,run_id):
-        return [{k:r[k] for k in ("id","task_version","role","task_type","payload","output_schema")} for r in self.db.execute("SELECT id,task_version,role,task_type,payload,output_schema FROM model_tasks WHERE run_id=? AND status='pending'",(run_id,))]
+        return [{"task_id":r["id"],"task_version":r["task_version"],"role":r["role"],"task_type":r["task_type"],"input_refs":json.loads(r["payload"]).get("input_refs",[]),"payload":json.loads(r["payload"]),"output_schema":json.loads(r["output_schema"]),"allowed_operations":json.loads(r["payload"]).get("allowed_operations",[])} for r in self.db.execute("SELECT id,task_version,role,task_type,payload,output_schema FROM model_tasks WHERE run_id=? AND status='pending'",(run_id,))]
     def submit_model_result(self,run_id,task_id,result,task_version):
         row=self.db.execute("SELECT * FROM model_tasks WHERE id=? AND run_id=?",(task_id,run_id)).fetchone()
         if not row: raise NotFoundError()
@@ -43,16 +45,20 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT,task_vers
         if row["status"]=="completed":
             if row["result"]==value:return {"status":"reused","task_id":task_id}
             raise InvestigationError("RH_TASK_CONFLICT","different task result was submitted")
-        if not isinstance(result,dict): raise ValidationError()
+        if not isinstance(result,dict) or not result: raise ValidationError()
         self.db.execute("UPDATE model_tasks SET status='completed',result=? WHERE id=?",(value,task_id));self.db.commit();return {"status":"accepted","task_id":task_id}
     def advance_investigation(self,run_id):
         row=self.db.execute("SELECT * FROM investigations WHERE id=?",(run_id,)).fetchone()
         if not row: raise NotFoundError()
-        pending=self.get_pending_tasks(run_id)
-        if pending:return {"run_id":run_id,"outcome":"waiting","waiting_reason":"model_task","stage":row["stage"]}
-        done=self.db.execute("SELECT COUNT(*) FROM model_tasks WHERE run_id=?",(run_id,)).fetchone()[0]
-        if done>=len(ROLES): self.db.execute("UPDATE investigations SET status='completed',stage='completed',updated=? WHERE id=?",(time.time(),run_id));self.db.commit();return {"run_id":run_id,"outcome":"completed","stage":"completed"}
-        role=ROLES[done];self._task(run_id,role,role,{"prior_tasks":done},{"type":"object"});self.db.execute("UPDATE investigations SET stage=?,updated=? WHERE id=?",(role,time.time(),run_id));self.db.commit();return {"run_id":run_id,"outcome":"waiting","waiting_reason":"model_task","stage":role}
+        def route(state):
+            if self.get_pending_tasks(run_id): return "waiting"
+            done=self.db.execute("SELECT COUNT(*) FROM model_tasks WHERE run_id=?",(run_id,)).fetchone()[0]
+            if done>=len(ROLES): return "complete"
+            prior=[r[0] for r in self.db.execute("SELECT id FROM model_tasks WHERE run_id=? AND status='completed' ORDER BY rowid",(run_id,))]
+            role=ROLES[done]; self._task(run_id,role,role,{"input_refs":prior},{"type":"object","required":["summary"]}); self.db.execute("UPDATE investigations SET stage=?,status='waiting_model',updated=? WHERE id=?",(role,time.time(),run_id));self.db.commit();return "waiting"
+        g=StateGraph(dict);g.add_node("route",lambda s:{"next":route(s)});g.add_edge(START,"route");g.add_conditional_edges("route",lambda s:s["next"],{"waiting":END,"complete":END});out=g.compile().invoke({})
+        if out["next"]=="complete": self.db.execute("UPDATE investigations SET status='completed',stage='completed',updated=? WHERE id=?",(time.time(),run_id));self.db.commit();return {"run_id":run_id,"outcome":"completed","stage":"completed"}
+        now=self.status(run_id);return {"run_id":run_id,"outcome":"waiting","waiting_reason":"model_task","stage":now["stage"]}
     def resume_investigation(self,run_id): return self.advance_investigation(run_id)
     def status(self,run_id=None):
         if run_id:
