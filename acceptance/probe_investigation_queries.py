@@ -154,12 +154,13 @@ def invalid_lineage():
   s=InvestigationService(tmp)
   try:
    run=s.create_investigation(S,R,{'sources':[],'references':[],'transport_pages':[]})['run_id'];task=s.get_pending_tasks(run)[0]
-   query=q('unknown-ref');query['input_refs']=['not-a-real-evidence-id']
-   try:s.submit_model_result(run,task['task_id'],{'search_plan':{'queries':[query]}},task['task_version'])
-   except HarnessError:pass
-   else:raise AssertionError('Unknown query evidence reference consumed planning task')
-   assert s.get_pending_tasks(run)[0]['task_id']==task['task_id'] and s.status(run)['budget']['reserved_source_calls']==0
-   return 'Invalid lineage rejected before consuming planning result'
+   for change in ({'input_refs':['not-a-real-evidence-id']},{'parent_query_id':'missing-parent'},{'parent_query_id':'unknown-ref'},{'source':'not-an-enabled-source'}):
+    query=q('unknown-ref');query.update(change)
+    try:s.submit_model_result(run,task['task_id'],{'search_plan':{'queries':[query]}},task['task_version'])
+    except HarnessError:pass
+    else:raise AssertionError('Invalid query consumed planning task: '+str(change))
+    assert s.get_pending_tasks(run)[0]['task_id']==task['task_id'] and s.status(run)['budget']['reserved_source_calls']==0
+   return 'Invalid evidence/parent/source rejected before consuming planning result'
   finally:s.close()
 
 checks=[]

@@ -114,3 +114,7 @@
 用户明确“OK，按照这个执行”，批准P1离线框架及Terra/Luna分工、设计者独立验收与自动修正。当前范围以D19_P1_HANDOFF.md为准，覆盖任务交接/恢复、合成调查与双报告、多周期监测与人工分流、脚本/包/三语指南。此新授权优先于旧D18阶段约束；P1通过后停止，不自动进入P2、不调用真实业务API、不启用调度、不处理公司秘密、不推送GitHub。
 
 P1接口对接补充：CLI/MCP的监测验证和状态分别调用validate_monitor(profile, monitor_spec, runtime)、monitor_status(monitor_id=None)。验证没有创建或执行副作用，监测状态与调查运行状态分开；属于已授权功能的契约澄清。
+
+### D19-P1 离线框架验收与停止（2026-09-14）
+
+实现 8f0895f 已通过设计任务独立源码/非editable安装验收：72项回归、调查和多周期监测公共服务、双报告/监测简报、CLI/PowerShell/真实STDIO。详见[D19_P1_ACCEPTANCE](D19_P1_ACCEPTANCE.md)。初始监测scenario作为默认输入保存，后续周期继承未覆盖的baseline references；同周期有效输入冻结。更新profile后重新检查模型数据策略。此记录只接受P1合成工程闭环；按授权在本轮停止，不启动P2真实API/生成模型、公司资料处理、OS调度或GitHub同步。

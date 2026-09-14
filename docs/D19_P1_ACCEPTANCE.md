@@ -1,8 +1,27 @@
 # D19-P1 独立验收记录
 
-2026-09-14 · 状态：实施中，尚未验收通过
+2026-09-14 · 状态：D19-P1 离线框架独立验收通过
 
 范围以[D19_P1_HANDOFF](D19_P1_HANDOFF.md)为准。设计基线af414b3；实现检查点由Terra/Luna分阶段提交。本记录在取得独立结果后更新，不以实现者自测替代验收。
+
+## 本轮结论
+
+验收实现提交：`8f0895fad11d1ebb81b27cd8c0209510c49a1efd`。Terra/Luna 实现，设计任务从 Git 不可变归档及非 editable wheel 独立验证。C1、C2、C3 的本轮离线边界均通过；本轮停止，不自动进入 P2。
+
+| 最终检查 | 结果 | 本地证据（位于 .local/d19-acceptance） |
+|---|---|---|
+| 全部项目回归 | 72 passed | pytest-8f0895f.xml |
+| 安装版调查公共服务 | 4/4，通过实际 PDF/XML 证据、八角色、6份三语双报告、引用拒绝、部分失败与恢复 | service-installed-8f0895f.json |
+| 安装版监测公共服务 | 6/6，通过四周期、变化/迟到、实际采集、累计预算、人工历史、规则和基准继承 | monitor-installed-8f0895f.json |
+| 真实 CLI / PowerShell | native rh、模块入口、status、冻结导出、monitor create/profile-update 通过 | installed-8f0895f/acceptance.json |
+| 真实 SDK STDIO MCP | 初始化、工具发现、任务交接、非法提交拒绝及第二进程恢复通过 | mcp-installed-8f0895f.json |
+| 包资源 | 5 schemas、9 prompts、7 examples；项目从安装目录导入，无 PYTHONPATH | installed-8f0895f/acceptance.json |
+
+完整源码测试均为离线夹具。旧 RAG prepare 测试显式 stub 版本元数据，验证缓存行为，不证明真实重型 RAG 环境；本轮没有重建或改动已验收的 23 篇库。来源分页/故障 10 项、合同 6 项、ReportData 8 项及未改动的 store 不变量复用下方已记录的有效证据。
+
+安装环境位于 `.local/d19-installed/venv`，项目为真正 wheel 安装，依赖通过 `site.addsitedir` 共享 `.local/d19-runtime/venv`，以正确加载 Windows SDK 的 pywin32 初始化；不是全新机器全隔离证明。wheel 位于 `.local/d19-acceptance/dist-8f0895f/research_harness-0.1.0-py3-none-any.whl`，SHA256 为 `80ee8d1e4fd4082a17fa5521e9138c50ec1fbb796ce2a9edeb0b6862285284c3`。
+
+本轮成立的是：显式合成来源和宿主任务/replay 驱动下，调查、监测、人审及报告的工程闭环。真实生成模型/订阅宿主的判断质量、真实论文/专利 API、真实公司资料策略与无人值守调度仍属于后续阶段。既有文献下载和 D18 RAG 服务保留；没有启用新后台任务或推送 GitHub。
 
 ## 验收方式
 
@@ -25,7 +44,7 @@
 
 本机2026-09-14的桌面运行时已更新，旧RAG venv依赖部分来自系统目录，当前jsonschema/langgraph不可导入。P1新建.local/d19-runtime/venv，不修改旧RAG环境；新环境与全新机器安装证据区分。
 
-## 当前结果
+## 检查点历史
 
 C1初始骨架42e028a/23c8ac1尚未通过。对23c8ac1的独立公共接口探针在模型任务上限1时提交8个不符合角色语义的非空对象，全部被接受并到达completed；没有产生真实来源/证据/报告。这证明schema、配额和结果消费尚未落实，不能以可调用接口或LangGraph导入代表完成。失败证据为.local/d19-acceptance/c1-initial-diagnostic.json，已回传Terra从编排与结果契约重设计，不覆盖初始失败记录。
 
@@ -62,3 +81,9 @@ contracts首fabb1a8因整项/结果envelope不匹配拒绝。149e105初始五项
 扩展来源查询探针包含10项，覆盖429/timeout/5xx实际重试序列、401/uncertain/invalid_json不重做、无身份candidate及未定义来源引用。c5b3fc0下9通过，partial链因核心仍使用旧角色schema拒绝新结果形状未通过；等待核心统一新契约后复测。FileLock3.32.6已安装到本轮验收环境，未修改旧D18环境。
 
 C2检查点88d4f26归档独立复跑：公共服务完整8角色、6份三语双报告、3种伪造claim拒绝与冻结重启通过；扩展来源queries10/10通过；真实SDK子进程STDIO初始化、创建、非法提交拒绝及第二进程恢复通过。扩展service权限读取通过，混合正常TXT/非法PDF失败传播仍未通过，回传修正。记录service-88d4f26-independent.json、queries-88d4f26-independent.json、mcp-88d4f26-independent.json及service-88d4f26-expanded.json。
+
+修正ba25f33归档独立验收：service4/4通过，包含2页实际PDF与2个XML定位、8角色/6份三语报告、有效任务幂等、伪造引用拒绝、正文获取失败partial、发现库公司权限及任务上限2/7恢复。ReportData扩展8/8通过，增加缺失目标正文/零证据结果不能completed。结果service-ba25f33-independent.json与report-data-ba25f33-independent.json。C3与最终安装包仍在接线验收。
+
+C3初版e003622独立公共service探针：四周期/规则和人工历史、积压与失败窗口的初步接口检查通过，但累计任务预算抛未处理PreflightError，未接受C3。静态复核发现更重要路径问题：run_monitor_once在实际planning/transport前直接从scenario.sources登记采集且any(page.error)决定完整性，会把未检索材料和临时错误当最终事实。已要求改为实际查询账本驱动，并扩展actual-collection探针及冻结digest业务事实检查。记录monitor-service-e003622-independent.json保留原初步结果，不能作为C3通过声明。
+
+最终安装验收补记：0608806 的 72 项回归通过，但安装版普通报告因 `monitor=None` 触发 renderer 空值回归；已由 8f0895f 修复并重新构建、安装、验收。独立环境最初因共享依赖未处理 pywin32.pth 而无法启动 MCP，改用 site.addsitedir 后正确加载 Windows DLL；产品仍从独立安装目录导入。最终 8f0895f 的 72 项回归、安装调查4项、监测6项、CLI/PowerShell和真实STDIO全部通过，早期失败输出保留。

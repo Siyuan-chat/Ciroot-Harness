@@ -59,3 +59,14 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 ```
 
 `anonymous: true` 明确执行无密钥查询；否则设置 `OPENALEX_API_KEY`。AEM 检索示例使用 `review_only: false`，因为 OpenAlex type 标签会遗漏综述，调用者须筛选记录。下载器校验可读性、身份和记录可选的 `expected_min_pages`；不足时返回 `partial` 和退出码 4。
+
+## 离线调查与监测（D19 P1）
+
+调查服务提供八个宿主 agent 角色、查询与重试记账、PDF/XML/文本证据、冻结的技术调查报告与文献综述，以及保留规则版本和人工决定历史的专利监测。离线夹具支持中文、英文、日文产物。
+
+```powershell
+.venv\Scripts\python -m pip install ".[investigation]"
+.venv\Scripts\rh investigate --workspace .local\investigation doctor
+```
+
+[使用指南](docs/INVESTIGATION_USAGE.zh-CN.md) · [实现记录](docs/D19_P1_IMPLEMENTATION.md) · [独立验收与边界](docs/D19_P1_ACCEPTANCE.md)。本阶段使用显式合成来源及宿主/replay 结果，不启用真实模型/来源 API 或系统定时任务。D18 本地 RAG 与文献采集模块保持独立。

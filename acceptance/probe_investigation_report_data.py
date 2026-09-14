@@ -58,5 +58,13 @@ def invalid_quote():
   except HarnessError:continue
   assert d['validation']['outcome']=='partial' and not d['sections']
  return 'Invalid quotation, version and empty finding refs are withheld'
-for name,fn in [('O02-builder-renderer',normal),('F10-evidence-binding',evidence_binding),('O03-unsupported-export',unsupported),('O03-section-support',empty_and_unknown_sections),('F10-condition-boundary',conditions),('F06-upstream-partial',prior_issue),('F10-quote-version',invalid_quote)]:check(name,fn)
+
+def missing_targets():
+ for sections in ([],[x for x in SEC if x['deliverable_type']=='technical_report']):
+  d=build(sections=sections);assert d['validation']['outcome']=='partial','Missing requested report body was completed'
+ d=build(e=[],f=[],c=[],sections=[],v=dict(V,supported_claim_refs=[]))
+ assert d['validation']['outcome']=='partial','Empty evidence and empty output was completed'
+ return 'All requested report targets need supported body; no evidence is not completed research'
+
+for name,fn in [('O02-builder-renderer',normal),('F10-evidence-binding',evidence_binding),('O03-unsupported-export',unsupported),('O03-section-support',empty_and_unknown_sections),('F10-condition-boundary',conditions),('F06-upstream-partial',prior_issue),('F10-quote-version',invalid_quote),('O01-missing-target-body',missing_targets)]:check(name,fn)
 r={'checkpoint':a.checkpoint,'synthetic':True,'scope':'Frozen data and renderer combination; service integration remains separate','checks':checks};a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(r,ensure_ascii=False,indent=2),encoding='utf-8');print(json.dumps(r,ensure_ascii=False));raise SystemExit(0 if all(x['status']=='passed' for x in checks) else 1)

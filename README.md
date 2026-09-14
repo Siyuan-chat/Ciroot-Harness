@@ -59,3 +59,14 @@ The local RAG reads only the configured catalog, does not read Codex credentials
 ```
 
 `anonymous: true` explicitly performs a no-key search; otherwise set `OPENALEX_API_KEY`. The AEM search example uses `review_only: false`: OpenAlex type labels miss reviews, so callers screen records. The downloader verifies readability, identity and optional record-specific `expected_min_pages`; incomplete results return `partial` and exit code 4.
+
+## Offline investigation and monitoring (D19 P1)
+
+The investigation service provides eight host-agent roles, source-query accounting, PDF/XML/text evidence, frozen technical reports and literature reviews, and versioned patent monitoring with human-review history. The offline fixture path supports Chinese, English and Japanese outputs.
+
+```powershell
+.venv\Scripts\python -m pip install ".[investigation]"
+.venv\Scripts\rh investigate --workspace .local\investigation doctor
+```
+
+[Host usage](docs/INVESTIGATION_USAGE.en.md) · [Implementation](docs/D19_P1_IMPLEMENTATION.md) · [Independent acceptance and limits](docs/D19_P1_ACCEPTANCE.md). This stage uses explicit synthetic sources and host/replay results; it enables no live model/source API or OS schedule. Existing D18 RAG and OA collection remain separate services.

@@ -59,3 +59,14 @@ python -m venv .venv
 ```
 
 `anonymous: true` はキーなし検索を明示し、それ以外では `OPENALEX_API_KEY` が必要です。AEM 検索例は OpenAlex type ラベルがレビューを取りこぼすため `review_only: false` とします。ダウンローダーは可読性、同一性、任意の `expected_min_pages` を検証し、不足時は `partial` と終了コード 4 を返します。
+
+## オフライン調査と監視（D19 P1）
+
+調査サービスは、8つのホスト agent ロール、検索と再試行の記録、PDF/XML/テキストの証拠、固定された技術調査報告・文献レビュー、およびルール版と人手判断の履歴を保持する特許監視を提供します。合成データによる中国語・英語・日本語の出力に対応します。
+
+```powershell
+.venv\Scripts\python -m pip install ".[investigation]"
+.venv\Scripts\rh investigate --workspace .local\investigation doctor
+```
+
+[利用ガイド](docs/INVESTIGATION_USAGE.ja.md) · [実装記録](docs/D19_P1_IMPLEMENTATION.md) · [独立検証と範囲](docs/D19_P1_ACCEPTANCE.md)。この段階は明示的な合成ソースとホスト/replay 結果を使用し、実モデル・情報源 API や OS スケジュールを起動しません。既存の D18 RAG と文献収集は独立したサービスです。

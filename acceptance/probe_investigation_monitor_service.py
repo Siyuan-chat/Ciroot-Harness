@@ -1,5 +1,5 @@
 """Independent synthetic public monitor/review lifecycle; no scheduler or live API."""
-import argparse,copy,json,socket,sys,tempfile
+import argparse,copy,csv,json,socket,sys,tempfile
 from pathlib import Path
 from probe_investigation_service import answer
 P={'company_id':'violet','rule_version':'rule1','scope':'SYNTHETIC violet separator business'}
@@ -36,6 +36,17 @@ def multi():
    m=s.create_monitor(P,MS,R)['monitor_id'];a=doc('ZZ8642A1');first=scenario('w1','2026-01-01','2026-01-08',[a])
    run=s.run_monitor_once(m,first)['run_id'];roles=drive(s,run)
    assert 'business_judgment' in roles
+   frozen=s.build_report_data(run);assert 'monitor' in frozen and 'rule1' in json.dumps(frozen['monitor']) and '2026-01-01' in json.dumps(frozen['monitor']),'Frozen report lacks monitoring context'
+   assert 'human_review_required' in json.dumps(frozen) and 'uncertain' in json.dumps(frozen),'Effective judgment not frozen'
+   first_export=s.export_report(run);md=next(x for x in first_export['artifacts'] if x['format']=='markdown')
+   body=(Path(tmp)/md['path']).read_text(encoding='utf-8');assert 'rule1' in body and '2026-01-01' in body and 'uncertain' in body,'Digest omits decision/rule/window facts'
+   html_art=next(x for x in first_export['artifacts'] if x['format']=='html');html_body=(Path(tmp)/html_art['path']).read_text(encoding='utf-8')
+   assert all(value in html_body for value in ('rule1','2026-01-01','uncertain')),'HTML omits frozen monitor facts'
+   assert '```json' not in body and '<pre>' not in html_body,'Monitor report contains raw implementation JSON rather than readable facts'
+   review_art=next(x for x in first_export['artifacts'] if x['format']=='review_csv')
+   rows=list(csv.DictReader((Path(tmp)/review_art['path']).read_text(encoding='utf-8-sig').splitlines()))
+   selected=next((x for x in rows if x.get('document_id')==a['document_id']),None)
+   assert selected and selected.get('relevance')=='uncertain' and str(selected.get('human_review_required')).lower() in ('true','1'),'Review CSV omits effective company judgment'
    c1=cycle_state(s,m,'w1');assert c1['complete'] and c1['watermark'] and not c1['judgment_backlog']
    items=s.review_list(m);assert len(items)==1 and items[0]['status']=='open' and items[0]['effective_judgment']['human_review_required'] is True,'uncertain false was not upgraded'
    issue=items[0]['issue_id'];budget=s.monitor_status(m)['budget']
@@ -74,6 +85,79 @@ def backlog_and_failure():
    before=s.monitor_status(m)['budget'];s.run_monitor_once(m,scenario('b','2026-01-08','2026-01-15',[],error='forbidden'));assert s.monitor_status(m)['budget']==before
    return 'New collection is independent of old judgment backlog; failures retain uncovered windows'
   finally:s.close()
+
+def cumulative_budget():
+ with tempfile.TemporaryDirectory() as tmp:
+  s=InvestigationService(tmp)
+  try:
+   runtime=copy.deepcopy(R);runtime['budget'].update(max_total_tasks=8,max_cycles=2)
+   m=s.create_monitor(P,MS,runtime)['monitor_id']
+   first=s.run_monitor_once(m,scenario('cap1','2026-01-01','2026-01-08',[doc('ZZ8642A1')]))['run_id'];drive(s,first)
+   before=s.monitor_status(m)['budget'];assert 0<before['task_reserved']<=8
+   second=s.run_monitor_once(m,scenario('cap2','2026-01-08','2026-01-15',[doc('ZZ8642B1')]))['run_id'];drive(s,second)
+   state=s.monitor_status(m);assert state['budget']['task_reserved']<=8 and s.get_result(second)['outcome']=='partial'
+   s.close();s=InvestigationService(tmp);assert s.monitor_status(m)==state
+   s.resume_investigation(second);assert s.monitor_status(m)['budget']==state['budget']
+   try:s.run_monitor_once(m,scenario('cap3','2026-01-15','2026-01-22',[]))
+   except HarnessError:pass
+   else:raise AssertionError('Cross-cycle cap admitted another cycle')
+   return 'Per-task cumulative budget survives restart and limits new cycles'
+  finally:s.close()
+
+
+def actual_collection():
+ with tempfile.TemporaryDirectory() as tmp:
+  s=InvestigationService(tmp)
+  try:
+   m=s.create_monitor(P,MS,R)['monitor_id'];a=doc('ZZ8642A1');extra=doc('ZZ8642UNQUERIED')
+   sc=scenario('observed','2026-01-01','2026-01-08',[a]);sc['sources'].append(extra)
+   run=s.run_monitor_once(m,sc)['run_id'];initial=cycle_state(s,m,'observed')
+   assert not initial['complete'] and initial['watermark'] is None and not initial['documents'],'Collection completed before any actual query'
+   changed=copy.deepcopy(sc);changed['sources'][0]['text']='Changed facts under same cycle key'
+   try:s.run_monitor_once(m,changed)
+   except HarnessError:pass
+   else:raise AssertionError('Existing cycle accepted different scenario facts')
+   drive(s,run,stop_before_judgment=True);collected=cycle_state(s,m,'observed')
+   assert {d['document_id'] for d in collected['documents']}=={a['document_id']},'Unqueried scenario corpus was treated as search results'
+   retry=scenario('retry','2026-01-08','2026-01-15',[doc('ZZ8642B1')]);success=retry['transport_pages'][0];success['attempt']=2
+   retry['transport_pages'].insert(0,dict(success,attempt=1,error='rate_limit',candidates=[]))
+   rr=s.run_monitor_once(m,retry)['run_id'];drive(s,rr,stop_before_judgment=True)
+   assert cycle_state(s,m,'retry')['complete'],'Recovered retry was mistaken for final failed collection'
+   missing=scenario('missing','2026-01-15','2026-01-22',[doc('ZZ8642C1')]);missing['transport_pages']=[]
+   mr=s.run_monitor_once(m,missing)['run_id'];drive(s,mr)
+   assert not cycle_state(s,m,'missing')['complete'] and not cycle_state(s,m,'missing')['documents'],'Unqueried/missing response advanced watermark'
+   return 'Collection follows executed queries, exact scenario replay, and actual retry outcome'
+  finally:s.close()
+
+
+def updated_profile_policy():
+ with tempfile.TemporaryDirectory() as tmp:
+  s=InvestigationService(tmp)
+  try:
+   m=s.create_monitor(P,MS,R)['monitor_id'];private=dict(P,rule_version='private-rule',visibility='confidential',scope='PRIVATE_PROFILE_8642')
+   try:s.update_monitor_profile(m,private)
+   except HarnessError:return 'Unauthorized profile update was rejected before activation'
+   try:r=s.run_monitor_once(m,scenario('private','2026-01-01','2026-01-08',[doc('ZZ8642A1')]))
+   except HarnessError:return 'Updated confidential profile blocked before model task creation'
+   pending=s.get_pending_tasks(r['run_id']);assert not pending and 'PRIVATE_PROFILE_8642' not in json.dumps(pending),'Updated private profile bypassed executor policy'
+   assert s.status(r['run_id'])['budget']['reserved_source_calls']==0
+   return 'Updated profile produces policy-blocked run without secret task payload'
+  finally:s.close()
+
+
+def saved_baseline():
+ with tempfile.TemporaryDirectory() as tmp:
+  s=InvestigationService(tmp)
+  try:
+   baseline=doc('COMPANY-PUBLIC-BASE','baseline-v1',published='2020-01-01');baseline['text']='SYNTHETIC company baseline for violet scope.'
+   m=s.create_monitor(P,MS,R,{'references':[baseline]})['monitor_id'];baseline['text']='Mutated caller object after create'
+   sc=scenario('baseline-cycle','2026-01-01','2026-01-08',[doc('ZZ8642A1')]);del sc['references']
+   run=s.run_monitor_once(m,sc)['run_id'];planning=s.get_pending_tasks(run)[0]
+   ev=planning['payload']['baseline_evidence'];assert len(ev)==1 and ev[0]['version_id']=='baseline-v1' and ev[0]['text']=='SYNTHETIC company baseline for violet scope.','Configured baseline was dropped or changed'
+   before=s.get_pending_tasks(run);s.close();s=InvestigationService(tmp);assert s.get_pending_tasks(run)==before
+   return 'Configured company baseline persists across new-source cycles and restart'
+  finally:s.close()
+
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--source-root',type=Path);p.add_argument('--checkpoint',required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
  if a.source_root:sys.path.insert(0,str(a.source_root.resolve()/'src'))
@@ -81,7 +165,7 @@ if __name__=='__main__':
  from research_harness.investigation import InvestigationService
  from research_harness.errors import HarnessError
  checks=[]
- for name,fn in [('C3-public-monitor-review',multi),('C3-backlog-and-source-gap',backlog_and_failure)]:
+ for name,fn in [('C3-public-monitor-review',multi),('C3-backlog-and-source-gap',backlog_and_failure),('C3-cumulative-budget',cumulative_budget),('C3-actual-collection',actual_collection),('M01-updated-profile-policy',updated_profile_policy),('M02-saved-baseline',saved_baseline)]:
   try:checks.append({'id':name,'status':'passed','detail':fn()})
   except Exception as e:
    import traceback

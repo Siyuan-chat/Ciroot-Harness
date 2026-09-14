@@ -1,5 +1,6 @@
 """Independent full public-service replay, with synthetic content and no network."""
-import argparse,copy,hashlib,json,socket,sys,tempfile
+import argparse,base64,copy,hashlib,json,socket,sys,tempfile
+from io import BytesIO
 from pathlib import Path
 
 def fixture():
@@ -7,6 +8,11 @@ def fixture():
     runtime={'mode':'host','data_mode':'synthetic','budget':{'max_tasks':20,'max_source_calls':8}}
     baseline={'document_id':'violet-paper','source':'synthetic-paper','version':'v1','text':'SYNTHETIC archived baseline at 10 C.','title':'SYNTHETIC baseline'}
     docs=[{'document_id':'violet-paper','source':'synthetic-paper','version':'v2','text':'SYNTHETIC violet separator conductivity is 13 mS/cm at 20 C.','title':'SYNTHETIC Violet observation','doi':'10.8642/violet'}, {'document_id':'ZZ8642A1','source':'synthetic-patent','version':'v1','text':'SYNTHETIC patent describes a violet separator support.','title':'SYNTHETIC Violet support','publication_number':'ZZ8642A1','family_id':'violet-family'}]
+    from reportlab.pdfgen import canvas
+    pdf=BytesIO();c=canvas.Canvas(pdf)
+    c.drawString(30,760,docs[0]['text']);c.showPage();c.drawString(30,760,'SYNTHETIC second physical page retains its own locator.');c.save()
+    docs[0].update(content_type='application/pdf',base64_bytes=base64.b64encode(pdf.getvalue()).decode())
+    docs[1].update(content_type='application/xml',text='<patent><claim id="claim-1">SYNTHETIC patent describes a violet separator support.</claim><p id="description-2">SYNTHETIC description gives no conductivity measurement.</p></patent>')
     queries=[{'query_id':'qp','source':'synthetic-paper','query':'violet separator','input_refs':[],'parent_query_id':None},{'query_id':'qpat','source':'synthetic-patent','query':'violet separator support','input_refs':[],'parent_query_id':None}]
     pages=[dict(source=q['source'],query_id=q['query_id'],cursor=None,next_cursor=None,candidates=[d]) for q,d in zip(queries,docs)]
     return spec,runtime,{'references':[baseline],'sources':docs,'transport_pages':pages},queries
@@ -44,6 +50,9 @@ def drive(service,run,queries,invalid=False):
                     else:raise AssertionError('Invalid claim consumed task: '+field)
                     assert any(t['task_id']==task['task_id'] for t in service.get_pending_tasks(run))
             service.submit_model_result(run,task['task_id'],result,task['task_version'])
+            before=service.status(run)['budget']
+            assert service.submit_model_result(run,task['task_id'],result,task['task_version'])['status']=='reused'
+            assert service.status(run)['budget']==before
         service.advance_investigation(run)
         if not service.get_pending_tasks(run) and service.status(run)['outcome'] in ('completed','partial'):
             return service.get_result(run),seen,rejected
@@ -59,6 +68,8 @@ def full():
             assert result['outcome']=='completed',json.dumps(result.get('issues'))
             assert result['baseline_evidence'][0]['version_id']=='v1'
             evidence=result['evidence'];assert any(e['document_id']=='violet-paper' and e['version_id']=='v2' for e in evidence)
+            assert {e['locator']['value'] for e in evidence if e['locator']['kind']=='pdf_page'}=={'1','2'}
+            assert {e['locator']['value'] for e in evidence if e['document_id']=='ZZ8642A1'}=={'claim-1','description-2'}
             for e in evidence:assert s.get_discovery_evidence(e['evidence_id'])==e
             frozen=s.build_report_data(run);assert frozen['baseline_evidence'][0]['version_id']=='v1','Frozen report dropped baseline'
             assert frozen['bibliography'] and 'Violet observation' in json.dumps(frozen['bibliography'])
@@ -106,6 +117,23 @@ def discovery_policy():
             return 'Discovery reads enforce the owning company and model policy'
         finally:s.close()
 
+
+def task_budget():
+    for limit in (2,7):
+        spec,runtime,scenario,queries=fixture();runtime['budget']['max_tasks']=limit
+        with tempfile.TemporaryDirectory() as tmp:
+            s=InvestigationService(tmp)
+            try:
+                run=s.create_investigation(spec,runtime,scenario)['run_id'];result,_,_=drive(s,run,queries)
+                assert result['outcome']=='partial' and not s.get_pending_tasks(run)
+                before=s.status(run)['budget'];assert before['reserved_tasks']<=limit
+                if limit==7:assert result['evidence'] and result['findings'],'Task cap discarded retained findings'
+                s.close();s=InvestigationService(tmp)
+                for _ in range(3):s.resume_investigation(run)
+                assert s.status(run)['budget']==before
+            finally:s.close()
+    return 'Task caps stop with retained state and cannot reset on resume'
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--source-root',type=Path);parser.add_argument('--checkpoint',required=True);parser.add_argument('--output',type=Path,required=True);args=parser.parse_args()
     if args.source_root:sys.path.insert(0,str(args.source_root.resolve()/'src'))
@@ -113,7 +141,7 @@ if __name__=='__main__':
     from research_harness.investigation import InvestigationService
     from research_harness.errors import HarnessError
     checks=[]
-    for name,fn in [('C2-public-service',full),('F06-acquisition-failure',acquisition_failure),('M02-discovery-policy',discovery_policy)]:
+    for name,fn in [('C2-public-service',full),('F06-acquisition-failure',acquisition_failure),('M02-discovery-policy',discovery_policy),('F07-task-budget',task_budget)]:
         try:checks.append({'id':name,'status':'passed','detail':fn()})
         except Exception as exc:
             import traceback
