@@ -42,6 +42,7 @@ def _monitor_parser(p: argparse.ArgumentParser) -> None:
     x=sub.add_parser("validate"); x.add_argument("--profile",required=True);x.add_argument("--spec",required=True);x.add_argument("--runtime",required=True)
     x=sub.add_parser("create"); x.add_argument("--profile",required=True);x.add_argument("--spec",required=True);x.add_argument("--runtime",required=True);x.add_argument("--scenario")
     x=sub.add_parser("run-once");x.add_argument("monitor_id");x.add_argument("--scenario")
+    x=sub.add_parser("profile-update");x.add_argument("monitor_id");x.add_argument("--profile",required=True)
     for name in ("status", "pause", "resume"):
         x=sub.add_parser(name);x.add_argument("monitor_id")
     x=sub.add_parser("review");x.add_argument("--monitor-id")
@@ -84,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
             if c == "validate": result=service.validate_monitor(_json(args.profile),_json(args.spec),_json(args.runtime))
             elif c == "create": result=service.create_monitor(_json(args.profile),_json(args.spec),_json(args.runtime),_json(args.scenario) if args.scenario else None)
             elif c == "run-once": result=service.run_monitor_once(args.monitor_id,_json(args.scenario) if args.scenario else None)
+            elif c == "profile-update": result=service.update_monitor_profile(args.monitor_id,_json(args.profile))
             elif c == "status": result=service.monitor_status(args.monitor_id)
             elif c == "pause": result=service.pause_monitor(args.monitor_id)
             elif c == "resume": result=service.resume_monitor(args.monitor_id)

@@ -10,6 +10,9 @@ class FakeService:
     def doctor(self): self.calls.append("doctor"); return {"ok": True}
     def status(self, run_id=None): return {"run_id": run_id}
     def close(self): self.calls.append("close")
+    def update_monitor_profile(self, monitor_id, profile):
+        self.calls.append(("update_monitor_profile", monitor_id, profile))
+        return {"monitor_id": monitor_id, "profile": profile}
 
 
 def test_call_projects_json_and_safe_errors():
@@ -25,7 +28,7 @@ def test_mcp_registers_fifteen_tools():
     tools = getattr(server, "_tool_manager")._tools
     expected = {"doctor", "validate_plan", "create_investigation", "get_pending_tasks", "submit_model_result",
                 "advance_investigation", "resume_investigation", "investigation_status", "get_result", "get_artifacts",
-                "export_report", "create_monitor", "monitor_validate", "run_monitor_once", "monitor_status", "pause_monitor", "resume_monitor", "review_list", "review_decide"}
+                "export_report", "create_monitor", "monitor_validate", "run_monitor_once", "update_monitor_profile", "monitor_status", "pause_monitor", "resume_monitor", "review_list", "review_decide"}
     assert set(tools) == expected
 
 
@@ -35,6 +38,15 @@ def test_async_handler_keeps_direct_service_call():
     handler = getattr(server, "_tool_manager")._tools["doctor"].fn
     assert asyncio.run(handler()) == {"ok": True}
     assert fake.calls == ["doctor"]
+
+
+def test_async_profile_update_forwards_exact_payload():
+    fake = FakeService()
+    server = create_mcp_server(InvestigationMCPServer(".", service=fake))
+    handler = getattr(server, "_tool_manager")._tools["update_monitor_profile"].fn
+    profile = {"company_id": "c", "rule_version": "r1", "scope": "public"}
+    assert asyncio.run(handler("mon-1", profile)) == {"monitor_id": "mon-1", "profile": profile}
+    assert fake.calls == [("update_monitor_profile", "mon-1", profile)]
 
 
 def test_real_stdio_initialize_list_and_call(tmp_path: Path):

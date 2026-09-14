@@ -125,6 +125,10 @@ def create_mcp_server(adapter: InvestigationMCPServer) -> Any:
     @tool("run_monitor_once", "Run one explicit offline monitor cycle.", False)
     async def run_monitor_once(monitor_id: str, scenario: dict[str, Any] | None = None) -> dict[str, Any]: return _call(adapter.service, "run_monitor_once", monitor_id, scenario)
 
+    @tool("update_monitor_profile", "Update a monitor profile through the application service.", False)
+    async def update_monitor_profile(monitor_id: str, profile: dict[str, Any]) -> dict[str, Any]:
+        return _call(adapter.service, "update_monitor_profile", monitor_id, profile)
+
     @tool("monitor_status", "Read logical monitor state and review backlog.")
     async def monitor_status(monitor_id: str | None = None) -> dict[str, Any]:
         return _call(adapter.service, "monitor_status", monitor_id) if monitor_id else _call(adapter.service, "monitor_status")
