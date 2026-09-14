@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.execute("CREATE TABLE IF NOT EXISTS frozen_reports(run_id TEXT PRIMARY KEY,payload TEXT NOT NULL,created REAL NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_runs(run_id TEXT PRIMARY KEY,monitor_id TEXT NOT NULL,cycle_id TEXT NOT NULL,profile TEXT NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_cycle_facts(monitor_id TEXT NOT NULL,cycle_key TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(monitor_id,cycle_key))")
+        self.db.execute("CREATE TABLE IF NOT EXISTS monitor_defaults(monitor_id TEXT PRIMARY KEY,scenario TEXT NOT NULL)")
         self.db.commit(); self.monitors=MonitorStore(self.root); self.reviews=ReviewStore(self.root); self.graph=self._graph()
     def close(self):
         self.db.close()
@@ -159,6 +160,12 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
     def create_monitor(self,profile,monitor_spec,runtime,scenario=None):
         self.validate_monitor(profile,monitor_spec,runtime)
         state=self.monitors.create(profile,monitor_spec,runtime)
+        defaults=scenario or {}
+        if not isinstance(defaults,dict): raise InvestigationError("RH_MONITOR_SCENARIO","monitor scenario must be an object")
+        prior=self.db.execute("SELECT scenario FROM monitor_defaults WHERE monitor_id=?",(state["monitor_id"],)).fetchone()
+        encoded=json.dumps(defaults,ensure_ascii=False,sort_keys=True)
+        if prior and prior["scenario"] != encoded: raise InvestigationError("RH_MONITOR_SCENARIO","existing monitor defaults cannot be replaced")
+        self.db.execute("INSERT OR IGNORE INTO monitor_defaults VALUES (?,?)",(state["monitor_id"],encoded)); self.db.commit()
         return {"monitor_id":state["monitor_id"],"status":state["status"],"scheduler":"disabled"}
     def update_monitor_profile(self,monitor_id,profile):
         return self.monitors.update_profile(monitor_id,profile)
@@ -168,7 +175,9 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
     def review_list(self,monitor_id=None): return self.reviews.review_list(monitor_id)
     def review_decide(self,issue_id,decision,note=""): return self.reviews.review_decide(issue_id,decision,note)
     def run_monitor_once(self,monitor_id,scenario=None):
-        scenario=scenario or {}
+        saved=self.db.execute("SELECT scenario FROM monitor_defaults WHERE monitor_id=?",(monitor_id,)).fetchone()
+        defaults=json.loads(saved["scenario"]) if saved else {}
+        scenario={**defaults,**(scenario or {})}
         required=("cycle_key","window_start","window_end")
         if not isinstance(scenario,dict) or any(not scenario.get(key) for key in required): raise InvestigationError("RH_MONITOR_SCENARIO","cycle_key and explicit window are required")
         facts={key:scenario.get(key) for key in ("cycle_key","window_start","window_end","sources","references","transport_pages")}; fingerprint=hashlib.sha256(json.dumps(facts,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
