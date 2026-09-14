@@ -2,6 +2,8 @@
 
 [中文](README.zh-CN.md) · English · [日本語](README.ja.md)
 
+[Integrated system design (Chinese)](docs/SYSTEM_DESIGN.md) · [Architecture diagram](docs/diagrams/harness-overview.svg) · [D19 experiment plan](docs/INVESTIGATION_EXPERIMENT_PLAN.md). These describe the target design; implementation status is stated separately.
+
 A local literature/patent investigation framework. The target workflow is natural-language requirements → versioned JSON → retrieval → comparison with a frozen reference library → human review and reports.
 
 **D2 fixture framework independently accepted on 2026-09-09.** See the [acceptance report](docs/FRAMEWORK_ACCEPTANCE.md). The demo uses synthetic text and local source/model callables. It runs real LangGraph, SQLite and citation verification, producing Chinese, English and Japanese reports. It needs no API keys and makes no external API calls.

@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600" viewBox="0 0 1600 1600" role="img" aria-labelledby="title desc">
+<title id="title">autoSearch Harness 整体架构</title>
+<desc id="desc">两种模式共用一个本地编排核心与八个模型角色，输出三种交付物；保密控制、人工分流和恢复预算贯穿全程。D19目标设计，尚未实现。</desc>
+<rect width="1600" height="1600" fill="#f3f6fa"/>
+<text x="60" y="79" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="43" font-weight="700" fill="#142a44">autoSearch Harness</text>
+<text x="60" y="121" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#50637b">整体架构  /  两种运行模式 · 八个产品角色 · 三个交付出口</text>
+<rect x="1250" y="42" width="290" height="42" rx="12" fill="#fff1d4" stroke="#e9c777"/>
+<text x="1269" y="68" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="19" font-weight="700" fill="#8c5d0a">D19 目标设计 · 尚未实施</text>
+<rect x="60" y="154" width="720" height="131" rx="18" fill="#eaf2ff" stroke="#dce4ed"/>
+<text x="78" y="193" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">一次性调查  investigation</text>
+<text x="78" y="225" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">自然语言问题 + 本地参照 + 报告目标</text>
+<text x="78" y="252" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">规划 → 检索 → 分析 → 综合与写作</text>
+<rect x="820" y="154" width="720" height="131" rx="18" fill="#e9f6f1" stroke="#dce4ed"/>
+<text x="838" y="193" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#146753">企业专利监测  patent_monitor</text>
+<text x="838" y="225" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">公司资料 + 当前业务范围 + 历史判定</text>
+<text x="838" y="252" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">周期查询 → 增量获取 → 該非判定与人工分流</text>
+<rect x="60" y="312" width="1480" height="188" rx="18" fill="#ffffff" stroke="#dce4ed"/>
+<text x="78" y="352" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="700" fill="#63758d">01</text>
+<text x="123" y="356" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="700" fill="#142a44">Harness 本体</text>
+<text x="1515" y="351" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="19" font-weight="400" fill="#26364c"></text>
+<text x="600" y="353" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#63758d">本地 Python · 同一应用服务 · 唯一调查状态机</text>
+<rect x="80" y="379" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="98" y="418" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">CLI / MCP / Python</text>
+<text x="98" y="450" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">入口与可选周期触发</text>
+<rect x="446" y="379" width="340" height="101" rx="18" fill="#eaf2ff" stroke="#dce4ed"/>
+<text x="464" y="418" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">LangGraph 编排</text>
+<text x="464" y="450" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">任务分配、进度与恢复</text>
+<rect x="812" y="379" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="830" y="418" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">工具与策略执行</text>
+<text x="830" y="450" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">查询、权限、预算、校验</text>
+<rect x="1178" y="379" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="1196" y="418" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">任务与产物服务</text>
+<text x="1196" y="450" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">模型交接、人工记录、导出</text>
+<rect x="60" y="526" width="1480" height="319" rx="18" fill="#ffffff" stroke="#dce4ed"/>
+<text x="78" y="565" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="700" fill="#63758d">02</text>
+<text x="123" y="569" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="700" fill="#142a44">八个产品角色</text>
+<text x="1515" y="564" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="19" font-weight="400" fill="#26364c"></text>
+<text x="600" y="566" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#63758d">经 ModelTask / ModelResult 交接；不要求八个独立进程</text>
+<rect x="80" y="593" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="98" y="632" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">规划</text>
+<text x="98" y="664" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">问题、术语、查询与提纲</text>
+<rect x="446" y="593" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="464" y="632" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">论文检索</text>
+<text x="464" y="664" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">论文初筛、引用追踪</text>
+<rect x="812" y="593" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="830" y="632" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">专利检索</text>
+<text x="830" y="664" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">公开文本、族线索、初筛</text>
+<rect x="1178" y="593" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="1196" y="632" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">证据分析</text>
+<text x="1196" y="664" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">正文、数值、条件、定位</text>
+<rect x="80" y="709" width="340" height="101" rx="18" fill="#e9f6f1" stroke="#dce4ed"/>
+<text x="98" y="748" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#146753">业务該非判定</text>
+<text x="98" y="780" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">相关性 + 是否需要人工</text>
+<rect x="446" y="709" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="464" y="748" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">综合</text>
+<text x="464" y="780" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">跨文献比较、冲突与缺口</text>
+<rect x="812" y="709" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="830" y="748" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">写作</text>
+<text x="830" y="780" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">章节、主张与引用映射</text>
+<rect x="1178" y="709" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="1196" y="748" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">核查</text>
+<text x="1196" y="780" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">证据支持、正文、人工分流</text>
+<rect x="60" y="871" width="1480" height="187" rx="18" fill="#ffffff" stroke="#dce4ed"/>
+<text x="78" y="910" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="700" fill="#63758d">03</text>
+<text x="123" y="914" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="700" fill="#142a44">共享证据与执行资源</text>
+<text x="1515" y="909" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="19" font-weight="400" fill="#26364c"></text>
+<text x="600" y="911" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#63758d">由 Harness 访问与控制；输入受数据政策约束</text>
+<rect x="80" y="937" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="98" y="976" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">本地 RAG 与原文</text>
+<text x="98" y="1008" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">冻结参照 / 本轮发现</text>
+<rect x="446" y="937" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="464" y="976" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">公司工作区</text>
+<text x="464" y="1008" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">资料 / 规则 / 人工历史</text>
+<rect x="812" y="937" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="830" y="976" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">数据源适配器</text>
+<text x="830" y="1008" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">OpenAlex / EPO</text>
+<rect x="1178" y="937" width="340" height="101" rx="18" fill="#f6f8fc" stroke="#dce4ed"/>
+<text x="1196" y="976" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">模型执行端</text>
+<text x="1196" y="1008" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">Codex/Luna；API端预留</text>
+<rect x="60" y="1084" width="1480" height="187" rx="18" fill="#ffffff" stroke="#dce4ed"/>
+<text x="78" y="1123" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="700" fill="#63758d">04</text>
+<text x="123" y="1127" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="700" fill="#142a44">三个交付出口</text>
+<text x="1515" y="1122" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="19" font-weight="400" fill="#26364c"></text>
+<text x="600" y="1124" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#63758d">共享事实快照、可定位证据与版本；支持中英日</text>
+<rect x="80" y="1150" width="462" height="101" rx="18" fill="#eaf2ff" stroke="#dce4ed"/>
+<text x="98" y="1189" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">技术调查报告</text>
+<text x="98" y="1221" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">路线比较、风险与验证建议</text>
+<rect x="568" y="1150" width="462" height="101" rx="18" fill="#eaf2ff" stroke="#dce4ed"/>
+<text x="586" y="1189" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#2459a9">文献综述</text>
+<text x="586" y="1221" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">主题脉络、共识、分歧与空白</text>
+<rect x="1056" y="1150" width="462" height="101" rx="18" fill="#e9f6f1" stroke="#dce4ed"/>
+<text x="1074" y="1189" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#146753">专利监测简报</text>
+<text x="1074" y="1221" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#26364c">新增/变化项、判定与人工清单</text>
+<rect x="60" y="1297" width="1480" height="221" rx="18" fill="#142a44" stroke="#142a44"/>
+<text x="80" y="1346" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="700" fill="#ffffff">贯穿全程的约束</text>
+<text x="82" y="1394" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#b8d4ff">保密与外发</text>
+<text x="82" y="1431" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" fill="#ffffff">模型读取与查询外发分别控制</text>
+<text x="82" y="1465" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" fill="#ffffff">合格执行器 + 获准查询版本</text>
+<text x="570" y="1394" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#b8d4ff">相关性与人工分流</text>
+<text x="570" y="1431" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" fill="#ffffff">相关 / 不相关 / 尚不确定</text>
+<text x="570" y="1465" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" fill="#ffffff">是否需人工独立判断，保留理由</text>
+<text x="1058" y="1394" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" fill="#b8d4ff">可靠运行与证据</text>
+<text x="1058" y="1431" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" fill="#ffffff">SQLite、检查点、中央预算</text>
+<text x="1058" y="1465" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" fill="#ffffff">有界补查、幂等复用、单写入者</text>
+<text x="60" y="1563" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="20" font-weight="400" fill="#63758d">D2 / D17 / D18 已有验收另见记录；本图描述 D19 整体目标，不表示已启用 API 调查或持续监测。</text>
+</svg>

@@ -2,6 +2,8 @@
 
 [中文](README.zh-CN.md) · [English](README.md) · 日本語
 
+[全体設計（中国語）](docs/SYSTEM_DESIGN.md) · [構成図](docs/diagrams/harness-overview.svg) · [D19検証計画](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。目標設計と実装済みの機能は区別して記載しています。
+
 ローカルの文献・特許調査フレームワークです。目標の流れは、自然言語の要件 → バージョン付き JSON → 検索 → 固定した参照資料との比較 → 人による確認とレポートです。
 
 **D2 合成フィクスチャの独立受入は 2026-09-09 に完了しました。** [受入記録](docs/FRAMEWORK_ACCEPTANCE.md)をご覧ください。デモは合成テキストとローカルの情報源／モデル関数を使い、実際の LangGraph、SQLite、引用検証と中国語・英語・日本語レポートを動作させます。API キーや外部 API は使いません。

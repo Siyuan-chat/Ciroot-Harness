@@ -2,6 +2,8 @@
 
 中文 · [English](README.md) · [日本語](README.ja.md)
 
+[整体设计文档](docs/SYSTEM_DESIGN.md) · [总架构图](docs/diagrams/harness-overview.svg) · [D19实验方案](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。设计覆盖一次性调查、企业监测与人工分流；已实现能力另有明确状态。
+
 本地文献／专利调查框架。目标流程：自然语言需求 → 版本化 JSON → 检索 → 与冻结参照库比较 → 人工判断与报告。
 
 **D2 合成夹具框架已于 2026-09-09 通过独立验收。** 见[验收报告](docs/FRAMEWORK_ACCEPTANCE.md)。demo 使用合成文本和本地来源／模型函数，实际运行 LangGraph、SQLite、引用核查及中英日报告；无需 API 密钥，不调用外部 API。

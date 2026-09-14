@@ -1,6 +1,12 @@
-> 当前阶段更新（2026-09-10）：D2 已验收结束。用户现已授权 D18 本地 RAG 与 Codex/Luna 接入，范围、公共契约、分工和 RG01–RG07 验收以 [RAG_STAGE.md](RAG_STAGE.md) 为准；下文历史阶段要求保留。
+> 当前整体设计入口：[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)（D19 v1.0，2026-09-10），含总架构图、两模式工作流、八角色、人工分流与保密边界。本文保留 D1/D2 历史架构及阶段补充；新增设计不等于已实现。
+
+> 历史阶段更新（2026-09-10）：D2 已验收结束。D18 本地 RAG 与 Codex/Luna 接入的范围、公共契约和 RG01–RG07 验收以 [RAG_STAGE.md](RAG_STAGE.md) 为准；实际完成记录见 RAG_ACCEPTANCE.md。
+
+> D19 v0.2 设计补充（2026-09-10，尚未实施）：当前目标增加技术调查报告与文献综述双出口。Harness 本体、七个产品角色、来源/证据/写作反馈环及状态边界以 [调查方案第13节](INVESTIGATION_EXPERIMENT_PLAN.md#13-双出口与产品内多-agent-工作流v02) 为准。下文 D1/D2 历史架构不代表所有组件已接入；D18 已完成状态见 RAG_ACCEPTANCE.md。
 
 # 架构设计 D1
+
+> D19 v0.3：增加 patent_monitor 模式与业务該非判定角色，复用调查编排、RAG 和人工历史；定时器只触发单轮服务，检索完成窗口与判定积压分开管理。公司数据的模型读取与查询外发分别控制，缺合格模型执行器时保密任务等待。完整架构与边界见 [调查方案第14节](INVESTIGATION_EXPERIMENT_PLAN.md)，尚未实施。
 
 > D2 当前只落地框架主干：LangGraph 最小流程、现有 SQLite、可替换 fixture 适配器及报告；Docling/向量库/真实来源集成后移。CLI 和未来 GUI 作为薄入口调用同一应用服务，不重复业务逻辑。GUI 不读取 CLI stdout、不直接操作数据库，也不直接依赖 LangGraph 状态对象；本轮不增加 HTTP/WebSocket 或 UI 技术栈。
 

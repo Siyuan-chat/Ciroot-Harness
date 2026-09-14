@@ -1,6 +1,12 @@
-> 当前阶段更新（2026-09-10）：D2 已验收结束。用户现已授权 D18 本地 RAG 与 Codex/Luna 接入，范围、公共契约、分工和 RG01–RG07 验收以 [RAG_STAGE.md](RAG_STAGE.md) 为准；下文历史阶段要求保留。
+> Current integrated design: [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md), D19 v1.0, 2026-09-10. This file preserves accepted legacy contracts and proposed extensions. D19 contracts are design requirements, not yet implemented schema guarantees; accepted D2/D18 behavior remains protected.
+
+> D19 v0.2 proposed extension (2026-09-10; not implemented): see [Investigation plan, section 13](INVESTIGATION_EXPERIMENT_PLAN.md#13-双出口与产品内多-agent-工作流v02) for report_spec, role-scoped ModelTask, supported synthesis claims, section-to-evidence mapping, dual deliverables and immutable report versions. Extend existing domain objects; preserve accepted D2 behavior. These proposed fields are not yet executable schema guarantees.
 
 # Data and application contracts — D1
+
+> D19 v0.3 proposed extension: CompanyProfile, MonitorSpec, policy-bound Query/ModelTask, company relevance Finding and patent_monitor_digest reuse existing identities and review history. Search progress and judgment progress are distinct; human and model decisions remain separately versioned. See [Investigation plan, section 14](INVESTIGATION_EXPERIMENT_PLAN.md). These are design requirements, not implemented schema guarantees.
+
+> D19 human triage clarification: every completed business judgment returns relevance independently from human_review_required and review reasons. Relevant and irrelevant patents can both require human review; unresolved uncertain judgments must require it. Program/policy checks may escalate a model recommendation, while pending judgments cannot masquerade as false. Persist the effective decision, concrete review question and model proposal separately; reuse existing review issue history. See section 14.6 of the investigation plan.
 
 > D2 current scope: the executable fixture framework is accepted against K01–K07. Full provider, parsing, retrieval and recovery requirements below remain the later product contract. The following application boundary is required now for a future GUI wrapper.
 
