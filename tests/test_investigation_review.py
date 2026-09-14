@@ -37,3 +37,15 @@ def test_decision_idempotence_restart_and_isolation(tmp_path):
     assert b["issue_id"] != a["issue_id"]
     assert len(s.review_list()) == 2
     s.close()
+
+
+def test_same_version_model_cannot_override_human_but_new_version_reopens(tmp_path):
+    s = ReviewStore(tmp_path)
+    a = s.record_judgment("m", "c", "d", "v1", "r1", j("relevant", True, "first"), ["e"])
+    s.review_decide(a["issue_id"], "irrelevant", "human")
+    same = s.record_judgment("m", "c", "d", "v1", "r1", j("irrelevant", False, "changed"), ["e2"])
+    assert same["status"] == "resolved" and same["effective_judgment"]["relevance"] == "irrelevant"
+    newer = s.record_judgment("m", "c", "d", "v2", "r1", j("relevant", True, "new evidence"), ["e3"])
+    assert newer["status"] == "open" and len(s.review_list()[0]["events"]) == 4
+    s.close()
+    s = ReviewStore(tmp_path)
