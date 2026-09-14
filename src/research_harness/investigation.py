@@ -1,13 +1,14 @@
 """Offline, resumable D19-P1 investigation orchestration."""
 from __future__ import annotations
 
-import hashlib, json, os, sqlite3, time, uuid
+import hashlib, json, sqlite3, time, uuid
 from pathlib import Path
 from jsonschema import Draft202012Validator
 from langgraph.graph import StateGraph, START, END
 from .errors import HarnessError, NotFoundError, ValidationError
 from .investigation_sources import SourceError, SyntheticTransport, baseline_snapshot, normalize, policy_allows, canonical_identity
 from .investigation_contracts import get_task_schema, validate_spec, validate_runtime
+from filelock import FileLock, Timeout
 
 ROLES = ("planning", "paper_search", "patent_search", "evidence_analysis", "business_judgment", "synthesis", "writing", "verification")
 
@@ -41,7 +42,7 @@ TASK_SCHEMAS["planning"]["properties"]["search_plan"]["properties"]["queries"]["
 class InvestigationService:
     def __init__(self, workspace):
         self.root=Path(workspace); self.root.mkdir(parents=True, exist_ok=True)
-        self._lock=self.root/".investigation.write.lock"
+        self._lock=FileLock(str(self.root/".investigation.write.lock"))
         self._acquire_lock()
         self.db=sqlite3.connect(self.root/"investigation.sqlite"); self.db.row_factory=sqlite3.Row
         self.db.executescript("""CREATE TABLE IF NOT EXISTS investigations(id TEXT PRIMARY KEY,spec TEXT NOT NULL,runtime TEXT NOT NULL,scenario TEXT NOT NULL,status TEXT NOT NULL,stage TEXT NOT NULL,budget TEXT NOT NULL,created REAL NOT NULL,updated REAL NOT NULL,result TEXT,trace TEXT NOT NULL);
@@ -53,17 +54,13 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.commit(); self.graph=self._graph()
     def close(self):
         self.db.close()
-        try: self._lock.unlink()
-        except FileNotFoundError: pass
+        self._lock.release()
     def __enter__(self): return self
     def __exit__(self,*_): self.close()
     def _acquire_lock(self):
         try:
-            fd=os.open(self._lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY); os.write(fd,str(os.getpid()).encode()); os.close(fd); return
-        except FileExistsError:
-            try: pid=int(self._lock.read_text(encoding="utf-8")); os.kill(pid,0)
-            except (ValueError, ProcessLookupError): self._lock.unlink(); return self._acquire_lock()
-            raise InvestigationError("RH_WORKSPACE_BUSY","another investigation service owns this workspace")
+            self._lock.acquire(timeout=0)
+        except Timeout as error: raise InvestigationError("RH_WORKSPACE_BUSY","another investigation service owns this workspace") from error
     def doctor(self): return {"ok":True,"mode":"offline","network":"disabled","data_mode":"synthetic","missing":[],"capabilities":{"langgraph":True,"model_api":False,"sources":"synthetic_only"}}
     def validate_plan(self, plan):
         validate_spec(plan)
@@ -241,7 +238,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         from .investigation_report_data import build_report_data
         bibliography=[self._bibliography(doc) for doc in self._sources(r) if any(x["document_id"]==doc.get("document_id") for x in evidence)]
         try:
-            report=build_report_data(s["run_id"],json.loads(r["spec"]),evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,[],"run-"+s["run_id"])
+            report=build_report_data(s["run_id"],json.loads(r["spec"]),evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,[],"run-"+s["run_id"]); report["baseline_evidence"]=extract_payload.get("baseline_evidence",[])
         except Exception as error:
             report={"synthetic":True,"run_id":s["run_id"],"report_version":"run-"+s["run_id"],"research_question":json.loads(r["spec"])["research_question"],"report_targets":json.loads(r["spec"]).get("report_targets",[]),"findings":findings,"evidence":evidence,"claims":[],"sections":[],"bibliography":bibliography,"coverage":coverage,"issues":[{"code":"RH_REPORT_DATA","message":str(error)}]}
         self.db.execute("INSERT OR REPLACE INTO frozen_reports VALUES (?,?,?)",(s["run_id"],json.dumps(report),time.time())); self.db.commit()
@@ -252,7 +249,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
     def _task(self,run,role,typ,payload):
         b=json.loads(self._run(run)["budget"])
         if b["reserved_tasks"]>=b["max_tasks"]:raise InvestigationError("RH_MODEL_BUDGET","model task budget exhausted")
-        p={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}; self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,typ,json.dumps(p),json.dumps(TASK_SCHEMAS[role]),"pending",None,None,time.time()));b["reserved_tasks"]+=1;self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(b),time.time(),run));self.db.commit()
+        p={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}; self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,typ,json.dumps(p),json.dumps(get_task_schema(role)),"pending",None,None,time.time()));b["reserved_tasks"]+=1;self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(b),time.time(),run));self.db.commit()
     def _reserve_available(self,run,count):
         b=json.loads(self._run(run)["budget"])
         if b["reserved_tasks"]+count>b["max_tasks"]:raise InvestigationError("RH_MODEL_BUDGET","model task budget exhausted")
@@ -276,6 +273,8 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         elif role=="synthesis":
             findings=self._done(row["run_id"],"evidence_analysis","extract")[0]["findings"]
             if any(any(i>=len(findings) for i in x["finding_refs"]) for x in result["claims"]):raise InvestigationError("RH_RESULT_REFERENCE","claim references unknown finding")
+            evidence=json.loads(self.db.execute("SELECT payload FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract'",(row["run_id"],)).fetchone()["payload"])["evidence"]
+            for claim in result["claims"]: self._check_claim(claim,evidence)
         elif role=="verification":
             claims=self._done(row["run_id"],"synthesis","synthesize")[0]["claims"]
             if any(i>=len(claims) for i in result["verification"]["supported_claim_refs"]):raise InvestigationError("RH_RESULT_REFERENCE","verification references unknown claim")
@@ -347,7 +346,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
 
     def _bibliography(self,document):
         """Project source metadata without inventing missing citation fields."""
-        item={"id":document.get("document_id"),"title":document.get("title") or document.get("document_id"),"doi":document.get("doi"),"year":document.get("year"),"type":"misc"}
+        item={"id":document.get("document_id"),"citation_key":"ref"+hashlib.sha256(str(document.get("document_id")).encode()).hexdigest()[:12],"title":document.get("title") or document.get("document_id"),"doi":document.get("doi"),"year":document.get("year"),"type":"misc"}
         if document.get("authors"): item["author"]=" and ".join(str(x) for x in document["authors"])
         if document.get("publication_number"): item["note"]="publication "+str(document["publication_number"])
         return {key:value for key,value in item.items() if value not in (None,"")}
