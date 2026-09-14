@@ -34,7 +34,7 @@ def validate_claims(evidence: list[dict[str, Any]], findings: list[dict[str, Any
     _unique(evidence, "evidence_id"); _unique(findings, "finding_id"); _unique(claims, "claim_id")
     evidence_by_id = {item["evidence_id"]: item for item in evidence}
     for finding in findings:
-        if any(field not in finding for field in ("finding", "evidence_ids", "value", "unit", "conditions")) or not isinstance(finding["evidence_ids"], list) or any(ref not in evidence_by_id for ref in finding["evidence_ids"]):
+        if any(field not in finding for field in ("finding", "evidence_ids", "value", "unit", "conditions")) or not isinstance(finding["evidence_ids"], list) or not finding["evidence_ids"] or any(ref not in evidence_by_id for ref in finding["evidence_ids"]):
             raise ValidationError("finding has invalid fields or evidence_ids")
     for claim in claims:
         if any(field not in claim for field in ("claim", "finding_refs", "evidence_refs", "quote", "document_id", "version_id")):
@@ -43,12 +43,13 @@ def validate_claims(evidence: list[dict[str, Any]], findings: list[dict[str, Any
     if not isinstance(supported, list) or not all(isinstance(index, int) for index in supported):
         raise ValidationError("supported_claim_refs must be integer indexes")
     if any(index < 0 or index >= len(claims) for index in supported): raise ValidationError("supported_claim_refs is out of bounds")
-    verified = verification.get("status") == "verified"
+    verification_status = verification.get("status")
+    verified = verification_status in {"supported", "partial"}
     issues: list[dict[str, Any]] = []; valid: list[str] = []; draft: list[str] = []
     for index, claim in enumerate(claims):
         claim_id = claim["claim_id"]; reasons = []
         finding_refs = claim.get("finding_refs", [])
-        if not isinstance(finding_refs, list) or not all(isinstance(ref, int) and 0 <= ref < len(findings) for ref in finding_refs):
+        if not isinstance(finding_refs, list) or not finding_refs or not all(isinstance(ref, int) and 0 <= ref < len(findings) for ref in finding_refs):
             reasons.append("finding_refs is invalid")
         if not verified or index not in supported:
             reasons.append("claim is not supported by verification")
@@ -59,19 +60,22 @@ def validate_claims(evidence: list[dict[str, Any]], findings: list[dict[str, Any
                 reasons.append("evidence reference is invalid"); continue
             item = evidence_by_id.get(ref["evidence_id"])
             if not item:
-                reasons.append(f"unknown evidence {ref['evidence_id']}"); continue
+                reasons.append("evidence reference is unknown"); continue
             quote = ref.get("quote", claim.get("quote")); document_id = ref.get("document_id", claim.get("document_id")); version_id = ref.get("version_id", claim.get("version_id"))
             if not item.get("document_id") or not item.get("version_id") or not item.get("locator"):
-                reasons.append(f"evidence {ref['evidence_id']} lacks identity or locator")
+                reasons.append("evidence lacks identity or locator")
             if document_id != item.get("document_id") or version_id != item.get("version_id"):
-                reasons.append(f"evidence {ref['evidence_id']} document/version mismatch")
+                reasons.append("evidence document/version mismatch")
             if not isinstance(quote, str) or not quote or quote not in str(item.get("text", "")):
-                reasons.append(f"evidence {ref['evidence_id']} quote is not a continuous original substring")
-        if not reasons and len(finding_refs) > 1:
-            conditions = {_stable_condition(findings[ref].get("conditions")) for ref in finding_refs}
-            if len(conditions) > 1:
+                reasons.append("evidence quote is not a continuous original substring")
+        if isinstance(finding_refs, list) and finding_refs and all(isinstance(ref, int) and 0 <= ref < len(findings) for ref in finding_refs):
+            allowed = {evidence_id for finding_ref in finding_refs for evidence_id in findings[finding_ref]["evidence_ids"]}
+            if any(not isinstance(ref, dict) or ref.get("evidence_id") not in allowed for ref in refs):
+                reasons.append("claim evidence is not bound to referenced findings")
+            conditions = [findings[ref].get("conditions") for ref in finding_refs]
+            if len(finding_refs) > 1 and (any(condition is None for condition in conditions) or len({_stable_condition(condition) for condition in conditions}) > 1):
                 reasons.append("not-comparable: referenced findings have different conditions")
-                issues.append(_issue("RH_NOT_COMPARABLE", "cross-finding conditions differ; deterministic comparative conclusion is blocked", claim_id=claim_id, finding_refs=finding_refs))
+                issues.append(_issue("RH_NOT_COMPARABLE", "cross-finding conditions are missing or differ; deterministic comparative conclusion is blocked", claim_id=claim_id, finding_refs=finding_refs))
         if reasons:
             draft.append(claim_id); issues.append(_issue("RH_CLAIM_DRAFT", "; ".join(dict.fromkeys(reasons)), claim_id=claim_id))
         else: valid.append(claim_id)
@@ -85,10 +89,26 @@ def _stable_condition(value: Any) -> str:
 
 def _report_targets(spec: dict[str, Any], sections: list[dict[str, Any]]) -> list[Any]:
     targets = spec.get("report_targets")
-    if targets is not None:
-        if not isinstance(targets, list): raise ValidationError("spec.report_targets must be a list")
-        return copy.deepcopy(targets)
-    return [{"deliverable_type": section.get("deliverable_type"), "languages": [section.get("language")]} for section in sections]
+    if targets is None:
+        targets = [section.get("deliverable_type") for section in sections]
+    if not isinstance(targets, list): raise ValidationError("spec.report_targets must be a list")
+    normalized = []
+    for target in targets:
+        kind = target if isinstance(target, str) else target.get("deliverable_type") if isinstance(target, dict) else None
+        languages = [] if isinstance(target, str) else target.get("languages", [])
+        if not isinstance(languages, list): raise ValidationError("report target languages must be a list")
+        if not languages: languages = [section.get("language") for section in sections if section.get("deliverable_type") == kind]
+        normalized.append({"deliverable_type": kind, "languages": list(dict.fromkeys(language for language in languages if language))})
+    return normalized
+
+
+def _synthetic(spec: dict[str, Any]) -> bool:
+    if "synthetic" in spec: return bool(spec["synthetic"])
+    runtime = spec.get("runtime", {})
+    if spec.get("data_mode") == "synthetic" or isinstance(runtime, dict) and runtime.get("data_mode") == "synthetic": return True
+    # P1's builder is offline-fixture-only.  A later live builder must require
+    # an explicit non-synthetic policy instead of silently reusing this path.
+    return True
 
 
 def build_report_data(run_id: str, spec: dict[str, Any], evidence: list[dict[str, Any]], findings: list[dict[str, Any]], claims: list[dict[str, Any]], sections: list[dict[str, Any]], verification: dict[str, Any], bibliography: list[dict[str, Any]], coverage: dict[str, Any], issues: list[dict[str, Any]], report_version: str = "v1") -> dict[str, Any]:
@@ -114,6 +134,10 @@ def build_report_data(run_id: str, spec: dict[str, Any], evidence: list[dict[str
             raise ValidationError("section has invalid fields")
         claim_ids = section.get("claim_ids", [])
         if not isinstance(claim_ids, list): raise ValidationError("section claim_ids must be a list")
+        factual = section.get("section_kind", "scientific") not in {"context", "method", "administrative"}
+        if factual and not claim_ids:
+            result_issues.append(_issue("RH_SECTION_DRAFT", "scientific section has no supported claims and is withheld", section_id=section.get("section_id")))
+            continue
         missing = [claim_id for claim_id in claim_ids if claim_id not in valid]
         if missing:
             result_issues.append(_issue("RH_SECTION_DRAFT", "section references unverified or invalid claims and is withheld", section_id=section.get("section_id"), claim_ids=missing))
@@ -127,9 +151,13 @@ def build_report_data(run_id: str, spec: dict[str, Any], evidence: list[dict[str
             for language in languages:
                 if not any(section.get("deliverable_type") == kind and section.get("language") == language for section in checked_sections):
                     result_issues.append(_issue("RH_REPORT_LANGUAGE_MISSING", "host did not provide a verified body in requested language", deliverable_type=kind, language=language))
-    return {"synthetic": bool(spec.get("synthetic", spec.get("data_mode") == "synthetic")), "run_id": run_id, "report_version": report_version,
+    checked_findings = []
+    for finding in findings:
+        item = copy.deepcopy(finding); item["evidence_refs"] = copy.deepcopy(finding["evidence_ids"]); checked_findings.append(item)
+    outcome = "partial" if result_issues or verification.get("status") == "partial" else "completed"
+    return {"synthetic": _synthetic(spec), "run_id": run_id, "report_version": report_version,
             "research_question": spec.get("research_question"), "spec": copy.deepcopy(spec), "report_targets": targets,
-            "findings": copy.deepcopy(findings), "evidence": copy.deepcopy(evidence), "claims": checked_claims,
+            "findings": checked_findings, "evidence": copy.deepcopy(evidence), "claims": checked_claims,
             "sections": checked_sections, "bibliography": copy.deepcopy(bibliography), "coverage": copy.deepcopy(coverage),
-            "issues": result_issues, "validation": {"outcome": "completed" if not validation["draft_claim_ids"] else "partial", **validation},
+            "issues": result_issues, "validation": {"outcome": outcome, **validation},
             "raw_model_output": {"findings": copy.deepcopy(findings), "claims": copy.deepcopy(claims), "sections": copy.deepcopy(sections), "verification": copy.deepcopy(verification)}}
