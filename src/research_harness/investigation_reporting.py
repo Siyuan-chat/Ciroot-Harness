@@ -286,7 +286,7 @@ def export_reports(workspace: str | Path, run_id: str, report_data: dict[str, An
     comparison_path = target / "comparison.csv"
     artifacts.append(_artifact(comparison_path, root, "comparison", version, None, "comparison_csv", _ensure(comparison_path, _csv_text(comparison_rows))))
     review_rows = [["issue_id", "document_id", "status", "relevance", "human_review_required", "reason"]]
-    for item in report_data.get("monitor", {}).get("review_issues", []):
+    for item in (report_data.get("monitor") or {}).get("review_issues", []):
         effective=item.get("effective_judgment", {})
         review_rows.append([item.get("issue_id", ""), item.get("document_id", ""), item.get("status", ""), effective.get("relevance", ""), effective.get("human_review_required", ""), effective.get("reason", "")])
     for item in issues:
