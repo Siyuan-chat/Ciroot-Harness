@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.execute("CREATE TABLE IF NOT EXISTS discovery_evidence(evidence_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,document_id TEXT NOT NULL,version_id TEXT NOT NULL,payload TEXT NOT NULL,visibility TEXT NOT NULL,company_id TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS frozen_reports(run_id TEXT PRIMARY KEY,payload TEXT NOT NULL,created REAL NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_runs(run_id TEXT PRIMARY KEY,monitor_id TEXT NOT NULL,cycle_id TEXT NOT NULL,profile TEXT NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS monitor_cycle_facts(monitor_id TEXT NOT NULL,cycle_key TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(monitor_id,cycle_key))")
         self.db.commit(); self.monitors=MonitorStore(self.root); self.reviews=ReviewStore(self.root); self.graph=self._graph()
     def close(self):
         self.db.close()
@@ -170,16 +171,15 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         scenario=scenario or {}
         required=("cycle_key","window_start","window_end")
         if not isinstance(scenario,dict) or any(not scenario.get(key) for key in required): raise InvestigationError("RH_MONITOR_SCENARIO","cycle_key and explicit window are required")
+        facts={key:scenario.get(key) for key in ("cycle_key","window_start","window_end","sources","references","transport_pages")}; fingerprint=hashlib.sha256(json.dumps(facts,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        prior=self.db.execute("SELECT fingerprint FROM monitor_cycle_facts WHERE monitor_id=? AND cycle_key=?",(monitor_id,scenario["cycle_key"])).fetchone()
+        if prior and prior["fingerprint"] != fingerprint: raise InvestigationError("RH_MONITOR_CYCLE_CONFLICT","cycle_key facts cannot be changed")
         cycle=self.monitors.begin_cycle(monitor_id,scenario["cycle_key"],scenario["window_start"],scenario["window_end"])
         if cycle["reused"]:
             state=self.monitors.status(monitor_id); prior=next(item for item in state["cycles"] if item["cycle_id"]==cycle["cycle_id"])
             if prior["run_id"]: return {"monitor_id":monitor_id,"run_id":prior["run_id"],"reused":True}
         config=self.monitors.get_configuration(monitor_id)
-        docs=list(scenario.get("sources",[])); failed=any(page.get("error") for page in scenario.get("transport_pages",[]) if isinstance(page,dict))
-        stored=[]
-        for doc in docs:
-            item=dict(doc); item["content_sha256"]=hashlib.sha256((str(item.get("text",""))+str(item.get("base64_bytes",""))).encode()).hexdigest(); stored.append(item)
-        self.monitors.record_collection(cycle["cycle_id"],stored,not failed,{"source_status":"partial" if failed else "complete","cycle_key":scenario["cycle_key"]})
+        self.db.execute("INSERT OR IGNORE INTO monitor_cycle_facts VALUES (?,?,?)",(monitor_id,scenario["cycle_key"],fingerprint)); self.db.commit()
         spec={"status":"ready","project_id":"monitor-"+monitor_id,"revision":config["profile_revision"],"research_question":config["profile"].get("scope",monitor_id),"report_targets":[{"deliverable_type":"patent_monitor_digest","languages":config["monitor_spec"].get("report_languages",[])}],"references":scenario.get("references",[])}
         run=self.create_investigation(spec,config["runtime"],scenario)["run_id"]
         self.monitors.bind_run(cycle["cycle_id"],run); self.db.execute("INSERT INTO monitor_runs VALUES (?,?,?,?)",(run,monitor_id,cycle["cycle_id"],json.dumps(config["profile"]))); self.db.commit()
@@ -226,6 +226,14 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             except InvestigationError as error:
                 if error.code != "RH_MODEL_BUDGET": raise
                 self._set_query(s["run_id"],query_id,"partial","model budget exhausted"); partial=True
+        monitor=self._monitor_context(s["run_id"])
+        if monitor:
+            selected={item["document_id"] for item in candidates if isinstance(item,dict) and item.get("document_id")} if 'candidates' in locals() else set()
+            documents=[]
+            for document in self._sources(r):
+                if document.get("document_id") in selected and policy_allows(document,runtime):
+                    item=dict(document); item["content_sha256"]=hashlib.sha256((str(item.get("text",""))+str(item.get("base64_bytes",""))).encode()).hexdigest(); documents.append(item)
+            self.monitors.record_collection(monitor["cycle_id"],documents,not partial,{"source_status":"complete" if not partial else "partial","queries":self._coverage(s["run_id"])["queries"]})
         if not any_task:
             self._finish_source_partial(s["run_id"], "No authorized candidates are available." if not partial else "Source collection is partial.")
             return {"run_id":s["run_id"],"next":"end"}
@@ -272,20 +280,21 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         synthesis=self._done(s["run_id"],"synthesis","synthesize")[0]["claims"]
         extract_payload=json.loads(self.db.execute("SELECT payload FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract'",(s["run_id"],)).fetchone()["payload"])
         if not self._done(s["run_id"],"writing","write"):
-            self._task(s["run_id"],"writing","write",{"input_refs":["task:synthesis"],"claims":synthesis,"findings":self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"],"evidence":extract_payload["evidence"],"spec":json.loads(r["spec"]),"report_targets":json.loads(r["spec"]).get("report_targets",[])});return {"run_id":s["run_id"],"next":"end"}
+            self._task(s["run_id"],"writing","write",{"input_refs":["task:synthesis"],"claims":synthesis,"findings":self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"],"evidence":extract_payload["evidence"],"spec":json.loads(r["spec"]),"monitor_snapshot":self._monitor_snapshot(s["run_id"]),"report_targets":json.loads(r["spec"]).get("report_targets",[])});return {"run_id":s["run_id"],"next":"end"}
         if not self._done(s["run_id"],"verification","verify"):
-            self._task(s["run_id"],"verification","verify",{"input_refs":["task:writing"],"sections":self._done(s["run_id"],"writing","write")[0]["sections"],"claims":synthesis,"findings":self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"],"evidence":extract_payload["evidence"],"spec":json.loads(r["spec"])});return {"run_id":s["run_id"],"next":"end"}
+            self._task(s["run_id"],"verification","verify",{"input_refs":["task:writing"],"sections":self._done(s["run_id"],"writing","write")[0]["sections"],"claims":synthesis,"findings":self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"],"evidence":extract_payload["evidence"],"spec":json.loads(r["spec"]),"monitor_snapshot":self._monitor_snapshot(s["run_id"])});return {"run_id":s["run_id"],"next":"end"}
         v=self._done(s["run_id"],"verification","verify")[0]["verification"]; coverage=self._coverage(s["run_id"]); findings=self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"]; evidence=extract_payload["evidence"]
         from .investigation_report_data import build_report_data
         bibliography=[self._bibliography(doc) for doc in self._sources(r) if any(x["document_id"]==doc.get("document_id") for x in evidence)]
         acquisition_issues=extract_payload.get("acquisition_issues",[])
         try:
             report=build_report_data(s["run_id"],json.loads(r["spec"]),evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,acquisition_issues,"run-"+s["run_id"]); report["baseline_evidence"]=extract_payload.get("baseline_evidence",[])
+            report["monitor_snapshot"]=self._monitor_snapshot(s["run_id"])
         except Exception as error:
             report={"synthetic":True,"run_id":s["run_id"],"report_version":"run-"+s["run_id"],"research_question":json.loads(r["spec"])["research_question"],"report_targets":json.loads(r["spec"]).get("report_targets",[]),"findings":findings,"evidence":evidence,"claims":[],"sections":[],"bibliography":bibliography,"coverage":coverage,"issues":[*acquisition_issues,{"code":"RH_REPORT_DATA","message":str(error)}]}
         self.db.execute("INSERT OR REPLACE INTO frozen_reports VALUES (?,?,?)",(s["run_id"],json.dumps(report),time.time())); self.db.commit()
         legacy=any("claim_id" not in claim for claim in synthesis) or any("body" not in section or "claim_ids" not in section for section in self._done(s["run_id"],"writing","write")[0]["sections"])
-        outcome="completed" if v["status"]=="supported" and coverage["complete"] and (legacy or not report.get("issues")) else "partial"; result={"run_id":s["run_id"],"synthetic":True,"outcome":outcome,"conclusion":v["conclusion"],"verification":v,"findings":findings,"evidence":evidence,"baseline_evidence":extract_payload.get("baseline_evidence",[]),"artifacts":[],"coverage":coverage,"issues":report.get("issues",[])}
+        outcome="completed" if v["status"]=="supported" and coverage["complete"] and (legacy or not report.get("issues")) else "partial"; result={"run_id":s["run_id"],"synthetic":True,"outcome":outcome,"conclusion":v["conclusion"],"verification":v,"findings":findings,"evidence":evidence,"baseline_evidence":extract_payload.get("baseline_evidence",[]),"artifacts":[],"coverage":coverage,"monitor_snapshot":self._monitor_snapshot(s["run_id"]),"issues":report.get("issues",[])}
         self.db.execute("UPDATE investigations SET stage='completed',status=?,result=?,updated=? WHERE id=?",(outcome,json.dumps(result),time.time(),s["run_id"]));self.db.commit();self._trace(s["run_id"],"verification_gate",v["status"]);return {"run_id":s["run_id"],"next":"end"}
 
     def _task(self,run,role,typ,payload):
@@ -307,6 +316,11 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
                 if document["document_id"] == evidence["document_id"] and document["document_version"] == evidence["version_id"]:
                     return any(item["document_id"] == evidence["document_id"] and item["document_version"] == evidence["version_id"] for item in cycle["judgment_backlog"])
         return True
+    def _monitor_snapshot(self,run):
+        monitor=self._monitor_context(run)
+        if not monitor:return None
+        state=self.monitors.status(monitor["monitor_id"]); cycle=next(item for item in state["cycles"] if item["cycle_id"]==monitor["cycle_id"])
+        return {"monitor_id":monitor["monitor_id"],"profile":monitor["profile"],"cycle":cycle,"review_issues":self.reviews.review_list(monitor["monitor_id"])}
     def _record_monitor_judgments(self,row,result):
         payload=json.loads(row["payload"]); monitor=payload.get("monitor")
         if not monitor:return
