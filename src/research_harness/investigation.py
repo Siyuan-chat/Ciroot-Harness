@@ -289,12 +289,12 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         acquisition_issues=extract_payload.get("acquisition_issues",[])
         try:
             report=build_report_data(s["run_id"],json.loads(r["spec"]),evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,acquisition_issues,"run-"+s["run_id"]); report["baseline_evidence"]=extract_payload.get("baseline_evidence",[])
-            report["monitor_snapshot"]=self._monitor_snapshot(s["run_id"])
+            report["monitor"]=self._monitor_snapshot(s["run_id"])
         except Exception as error:
             report={"synthetic":True,"run_id":s["run_id"],"report_version":"run-"+s["run_id"],"research_question":json.loads(r["spec"])["research_question"],"report_targets":json.loads(r["spec"]).get("report_targets",[]),"findings":findings,"evidence":evidence,"claims":[],"sections":[],"bibliography":bibliography,"coverage":coverage,"issues":[*acquisition_issues,{"code":"RH_REPORT_DATA","message":str(error)}]}
         self.db.execute("INSERT OR REPLACE INTO frozen_reports VALUES (?,?,?)",(s["run_id"],json.dumps(report),time.time())); self.db.commit()
         legacy=any("claim_id" not in claim for claim in synthesis) or any("body" not in section or "claim_ids" not in section for section in self._done(s["run_id"],"writing","write")[0]["sections"])
-        outcome="completed" if v["status"]=="supported" and coverage["complete"] and (legacy or not report.get("issues")) else "partial"; result={"run_id":s["run_id"],"synthetic":True,"outcome":outcome,"conclusion":v["conclusion"],"verification":v,"findings":findings,"evidence":evidence,"baseline_evidence":extract_payload.get("baseline_evidence",[]),"artifacts":[],"coverage":coverage,"monitor_snapshot":self._monitor_snapshot(s["run_id"]),"issues":report.get("issues",[])}
+        outcome="completed" if v["status"]=="supported" and coverage["complete"] and (legacy or not report.get("issues")) else "partial"; result={"run_id":s["run_id"],"synthetic":True,"outcome":outcome,"conclusion":v["conclusion"],"verification":v,"findings":findings,"evidence":evidence,"baseline_evidence":extract_payload.get("baseline_evidence",[]),"artifacts":[],"coverage":coverage,"monitor":self._monitor_snapshot(s["run_id"]),"issues":report.get("issues",[])}
         self.db.execute("UPDATE investigations SET stage='completed',status=?,result=?,updated=? WHERE id=?",(outcome,json.dumps(result),time.time(),s["run_id"]));self.db.commit();self._trace(s["run_id"],"verification_gate",v["status"]);return {"run_id":s["run_id"],"next":"end"}
 
     def _task(self,run,role,typ,payload):
