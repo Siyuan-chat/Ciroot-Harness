@@ -1,1 +1,1 @@
-{"summary":"Synthetic search plan: inspect supplied synthetic source."}
+{"search_plan":{"queries":[{"source":"synthetic-paper","query":"synthetic crosslinking membrane"},{"source":"synthetic-patent","query":"synthetic crosslinked polymer"}]}}
