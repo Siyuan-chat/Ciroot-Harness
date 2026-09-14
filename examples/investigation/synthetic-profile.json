@@ -1,0 +1,6 @@
+{
+  "company_id": "synthetic-company",
+  "rule_version": "rule-v1",
+  "scope": "synthetic membrane",
+  "visibility": "public"
+}

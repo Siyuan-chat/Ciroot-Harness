@@ -4,6 +4,8 @@ from research_harness.rag import RagLibrary
 
 
 def test_prepare_caches_parse_without_building_an_index(tmp_path, monkeypatch):
+    # Offline fixture: fingerprint metadata is explicit; this does not prove a real RAG environment.
+    monkeypatch.setattr("research_harness.rag.package_version", lambda _name: "fixture-0")
     source = tmp_path / "paper.txt"
     source.write_text("synthetic evidence", encoding="utf-8")
     catalog = tmp_path / "catalog.json"

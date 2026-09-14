@@ -1,0 +1,20 @@
+{
+  "search_plan": {
+    "queries": [
+      {
+        "query_id": "paper-query",
+        "source": "synthetic-paper",
+        "query": "synthetic crosslinking membrane",
+        "input_refs": [],
+        "parent_query_id": null
+      },
+      {
+        "query_id": "patent-query",
+        "source": "synthetic-patent",
+        "query": "synthetic crosslinked polymer",
+        "input_refs": [],
+        "parent_query_id": null
+      }
+    ]
+  }
+}
