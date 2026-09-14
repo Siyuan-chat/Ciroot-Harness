@@ -5,7 +5,7 @@
 
 ```powershell
 rh investigate --workspace .local/d19-workspace doctor
-rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
+rh investigate --workspace .local/d19-workspace start --spec .\examples\investigation\synthetic-spec.json --runtime .\examples\investigation\synthetic-runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 rh investigate --workspace .local/d19-workspace tasks RUN_ID
 ```
 
@@ -20,7 +20,7 @@ rh monitor --workspace .local/d19-workspace create --profile profile.json --spec
 完全なオフライン調査の流れは、依存関係（例: `pip install -e .[investigation]`）をインストールし、`spec.json` と `runtime.json` を用意して次を実行します。
 
 ```powershell
-rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
+rh investigate --workspace .local/d19-workspace start --spec .\examples\investigation\synthetic-spec.json --runtime .\examples\investigation\synthetic-runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 rh investigate --workspace .local/d19-workspace tasks RUN_ID
 rh investigate --workspace .local/d19-workspace submit RUN_ID TASK_ID --result result.json --task-version 1
 rh investigate --workspace .local/d19-workspace work RUN_ID
@@ -48,6 +48,8 @@ rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision relevant 
 ```powershell
 python scripts/investigation_replay.py --pending pending.json --output replay-result.json
 ```
+
+PowerShell では先にソースパスを設定します: `$env:PYTHONPATH='C:\path\to\terra\src'`。
 
 軽量 host 依存関係は `pip install -e .[investigation]` でインストールします。
 

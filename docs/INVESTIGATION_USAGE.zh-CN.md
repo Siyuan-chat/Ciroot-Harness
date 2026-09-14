@@ -5,7 +5,7 @@
 
 ```powershell
 rh investigate --workspace .local/d19-workspace doctor
-rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
+rh investigate --workspace .local/d19-workspace start --spec .\examples\investigation\synthetic-spec.json --runtime .\examples\investigation\synthetic-runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 rh investigate --workspace .local/d19-workspace tasks RUN_ID
 ```
 
@@ -19,10 +19,10 @@ rh monitor --workspace .local/d19-workspace validate --profile profile.json --sp
 rh monitor --workspace .local/d19-workspace status MONITOR_ID
 rh monitor --workspace .local/d19-workspace create --profile profile.json --spec monitor.json --runtime runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 ```
-完整一次调查流程：安装项目（例如 `pip install -e .[investigation]`），准备 spec.json/runtime.json；`start` 返回 RUN_ID 后领取任务、提交结构化结果、推进、恢复并导出：
+完整一次调查流程：安装项目（例如 `pip install -e .[investigation]`），准备 examples/investigation 下的 spec/runtime/scenario JSON；`start` 返回 RUN_ID 后领取任务、提交结构化结果、推进、恢复并导出：
 
 ```powershell
-rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
+rh investigate --workspace .local/d19-workspace start --spec .\examples\investigation\synthetic-spec.json --runtime .\examples\investigation\synthetic-runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 rh investigate --workspace .local/d19-workspace tasks RUN_ID
 rh investigate --workspace .local/d19-workspace submit RUN_ID TASK_ID --result result.json --task-version 1
 rh investigate --workspace .local/d19-workspace work RUN_ID
@@ -50,6 +50,8 @@ rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision relevant 
 ```powershell
 python scripts/investigation_replay.py --pending pending.json --output replay-result.json
 ```
+
+PowerShell 中先设置源码路径：`$env:PYTHONPATH='C:\path\to\terra\src'`，再执行以下命令。
 
 安装轻量宿主依赖：`pip install -e .[investigation]`。
 

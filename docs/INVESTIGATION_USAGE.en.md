@@ -5,7 +5,7 @@ Install the project's investigation dependencies, then call the local
 
 ```powershell
 rh investigate --workspace .local/d19-workspace doctor
-rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
+rh investigate --workspace .local/d19-workspace start --spec .\examples\investigation\synthetic-spec.json --runtime .\examples\investigation\synthetic-runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 rh investigate --workspace .local/d19-workspace tasks RUN_ID
 ```
 
@@ -22,10 +22,10 @@ rh monitor --workspace .local/d19-workspace validate --profile profile.json --sp
 rh monitor --workspace .local/d19-workspace status MONITOR_ID
 rh monitor --workspace .local/d19-workspace create --profile profile.json --spec monitor.json --runtime runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 ```
-A complete offline investigation flow is: install the project (for example, `pip install -e .[investigation]`), prepare `spec.json` and `runtime.json`, then:
+A complete offline investigation flow is: install the project (for example, `pip install -e .[investigation]`), prepare the spec/runtime/scenario JSON files under `examples/investigation`, then:
 
 ```powershell
-rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
+rh investigate --workspace .local/d19-workspace start --spec .\examples\investigation\synthetic-spec.json --runtime .\examples\investigation\synthetic-runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 rh investigate --workspace .local/d19-workspace tasks RUN_ID
 rh investigate --workspace .local/d19-workspace submit RUN_ID TASK_ID --result result.json --task-version 1
 rh investigate --workspace .local/d19-workspace work RUN_ID
@@ -53,6 +53,8 @@ The adapter calls the application service only. It does not install an OS watche
 ```powershell
 python scripts/investigation_replay.py --pending pending.json --output replay-result.json
 ```
+
+In PowerShell, first set the source path: `$env:PYTHONPATH='C:\path\to\terra\src'`.
 
 Install the lightweight host extras with `pip install -e .[investigation]`.
 

@@ -24,6 +24,10 @@ $env:PYTHONPATH='C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-worktrees\t
 
 结果：host tests `10 passed`；公共 `InvestigationService` 使用 `result_for` 实际完成 planning、paper_search、patent_search、evidence_analysis、business_judgment、synthesis、writing、verification 八角色，状态为 `completed`，并导出 technical_report/literature_review 各 zh/en/ja 的 Markdown/HTML 双报告；对象 target `technical_report` 且 languages=`["en"]` 仅导出英文；无 evidence 分支返回空 claims 与 verification `insufficient`；replay 输出 `.local/replay-result.json`；planning result schema errors `0`；wheel `research_harness-0.1.0-py3-none-any.whl` 构建成功，检查到 schemas 5、investigation prompts 9、investigation examples 5。
 
+## PowerShell 实调
+
+按交接要求设置 `PYTHONPATH=<Terra worktree>\src` 后，实际执行 `investigation.ps1` 的 `doctor`、带 `RunId` 的 `status` 和 `-Monitor profile-update` 均成功：doctor 返回 offline/synthetic，status 返回对应 run，profile-update 返回 monitor active/profile_revision。未设置 PYTHONPATH 时的失败属于调用环境未加载源码路径。
+
 ## 边界
 
 这些是 code/integration 层证据。真实 API、真实模型质量、无人值守调度和独立验收仍为 pending，由根任务按 D19-P1 acceptance 执行。
