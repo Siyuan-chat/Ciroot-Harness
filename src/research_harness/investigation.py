@@ -7,6 +7,7 @@ from jsonschema import Draft202012Validator
 from langgraph.graph import StateGraph, START, END
 from .errors import HarnessError, NotFoundError, ValidationError
 from .investigation_sources import SourceError, SyntheticTransport, baseline_snapshot, normalize, policy_allows, canonical_identity
+from .investigation_contracts import get_task_schema, validate_spec, validate_runtime
 
 ROLES = ("planning", "paper_search", "patent_search", "evidence_analysis", "business_judgment", "synthesis", "writing", "verification")
 
@@ -65,11 +66,13 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             raise InvestigationError("RH_WORKSPACE_BUSY","another investigation service owns this workspace")
     def doctor(self): return {"ok":True,"mode":"offline","network":"disabled","data_mode":"synthetic","missing":[],"capabilities":{"langgraph":True,"model_api":False,"sources":"synthetic_only"}}
     def validate_plan(self, plan):
+        validate_spec(plan)
         if not isinstance(plan,dict) or not isinstance(plan.get("research_question"),str) or not plan["research_question"].strip(): raise ValidationError()
         if plan.get("status") not in (None,"ready"): raise InvestigationError("RH_PLAN_STATUS","plan must be ready")
         return {"valid":True,"mode":"offline","sources":plan.get("sources",[]),"budget":plan.get("budget",{})}
     def create_investigation(self,spec,runtime,scenario=None):
         self.validate_plan(spec)
+        validate_runtime(runtime)
         if spec.get("status")!="ready" or runtime.get("mode")!="host" or runtime.get("data_mode")!="synthetic": raise InvestigationError("RH_PRECONDITION","ready synthetic host inputs are required")
         scenario=scenario or {}
         if not isinstance(scenario,dict) or not isinstance(scenario.get("sources",[]),list): raise InvestigationError("RH_SCENARIO","scenario.sources must be a list")
