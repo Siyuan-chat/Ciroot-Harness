@@ -66,11 +66,19 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             if row["result_hash"]==digest:return {"status":"reused","task_id":task_id}
             raise InvestigationError("RH_TASK_CONFLICT","different task result was submitted")
         errors=list(Draft202012Validator(json.loads(row["output_schema"])).iter_errors(result))
-        if errors: raise InvestigationError("RH_MODEL_RESULT_INVALID",errors[0].message)
+        if errors: raise InvestigationError("RH_MODEL_RESULT_INVALID","model result failed schema validation")
         self._refs(row,result); self.db.execute("UPDATE model_tasks SET status='completed',result=?,result_hash=? WHERE id=?",(raw,digest,task_id)); self.db.commit()
         return {"status":"accepted","task_id":task_id}
     def advance_investigation(self,run_id):
-        self._run(run_id); self.graph.invoke({"run_id":run_id}); s=self.status(run_id)
+        self._run(run_id)
+        try: self.graph.invoke({"run_id":run_id})
+        except InvestigationError as error:
+            if error.code != "RH_MODEL_BUDGET": raise
+            extracted=self._done(run_id,"evidence_analysis","extract")
+            evidence_row=self.db.execute("SELECT payload FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract'",(run_id,)).fetchone()
+            result={"run_id":run_id,"synthetic":True,"outcome":"partial","conclusion":"Model task budget exhausted before the next stage.","verification":None,"findings":extracted[0]["findings"] if extracted else [],"evidence":json.loads(evidence_row["payload"])["evidence"] if evidence_row else [],"artifacts":[],"issues":[{"code":"RH_MODEL_BUDGET","status":"open"}]}
+            self.db.execute("UPDATE investigations SET status='partial',stage='budget_exhausted',result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run_id)); self.db.commit()
+        s=self.status(run_id)
         if s["status"] in ("completed","partial"): return {"run_id":run_id,"outcome":s["status"],"stage":"completed"}
         return {"run_id":run_id,"outcome":"waiting","waiting_reason":"model_task","stage":s["stage"]}
     def resume_investigation(self,run_id): return self.advance_investigation(run_id)

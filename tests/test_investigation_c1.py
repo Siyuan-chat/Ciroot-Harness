@@ -52,16 +52,15 @@ def test_c1_budget_is_reserved_before_task_creation(tmp_path):
     service = InvestigationService(tmp_path); run = service.create_investigation(SPEC, runtime, SCENARIO)["run_id"]
     task = service.get_pending_tasks(run)[0]
     service.submit_model_result(run, task["task_id"], answer(task), task["task_version"])
-    with pytest.raises(InvestigationError) as error: service.advance_investigation(run)
-    assert error.value.code == "RH_MODEL_BUDGET"
+    assert service.advance_investigation(run)["outcome"] == "partial"
     assert service.status(run)["budget"]["reserved_tasks"] == 1
 
 def test_c1_two_source_reservation_is_atomic(tmp_path):
     runtime = {"mode": "host", "data_mode": "synthetic", "budget": {"max_tasks": 2}}
     service = InvestigationService(tmp_path); run = service.create_investigation(SPEC, runtime, SCENARIO)["run_id"]
     task = service.get_pending_tasks(run)[0]; service.submit_model_result(run, task["task_id"], answer(task), task["task_version"])
-    with pytest.raises(InvestigationError): service.advance_investigation(run)
-    assert service.status(run)["stage"] == "planning"
+    assert service.advance_investigation(run)["outcome"] == "partial"
+    assert service.status(run)["stage"] == "budget_exhausted"
     assert service.status(run)["budget"]["reserved_tasks"] == 1
     assert service.get_pending_tasks(run) == []
 
