@@ -35,6 +35,7 @@
 | status(run_id=None), get_result(run_id), get_artifacts(run_id) | 真实阶段、waiting_reason、outcome、coverage、budget、结果与受管文件描述；不暴露DB对象 |
 | export_report(run_id, languages=None) | 从冻结ReportData导出/重试，不重搜；三类产物type、version、language、format、path |
 | create_monitor(profile, monitor_spec, runtime, scenario=None) | profile/查询/外发策略版本化；返回monitor_id，配置不等于自动启用OS调度 |
+| validate_monitor(profile, monitor_spec, runtime), monitor_status(monitor_id=None) | 前者只验证、不建库或触发周期；后者返回逻辑监测状态，独立于调查run状态 |
 | run_monitor_once(monitor_id, scenario=None) | 合成新周期可注入不同来源页；返回run_id/监测状态；重复触发/恢复不损坏已有进度 |
 | pause_monitor(monitor_id), resume_monitor(monitor_id) | 显式控制逻辑监测状态；resume不暗装定时任务 |
 | review_list(monitor_id=None), review_decide(issue_id, decision, note='') | 保留稳定issue与事件；显式人工决定，不隐式改全局规则 |
@@ -80,3 +81,11 @@ investigation_mcp为独立STDIO入口，复用服务，不改变aem_rag已注册
 设计者使用实现者未见的合成输入、故障及变化，通过公共接口、CLI和MCP验收。自测通过不是独立验收。F01–F12及相关O/M离线控制均有证据，D2/D18受影响的回归通过，安装包可用，无当前启用路径阻断缺陷，才标P1完成。
 
 真实宿主科学质量、OpenAlex/EPO在线、公司真实资料、无人值守调度与API生成模型均留后续阶段。发现离线无法证明的事项如实标pending，不为凑通过调用真实来源。达到P1门槛后停止并汇报，等待P2授权。
+
+## 8. P1实施中的并行拆分
+
+为避免核心串行承担独立模块，报告渲染由Terra报告子任务独占investigation_reporting.py/test_investigation_reporting.py；调查核心负责证据核查和冻结ReportData后接线。Luna完成入口后，追加独占investigation_review.py/test_investigation_review.py，提供ReviewStore(workspace)：record_judgment(monitor_id, company_id, document_id, document_version, rule_version, judgment, evidence_refs, forced_reasons=None)、review_list(monitor_id=None)、review_decide(issue_id, decision, note='')、close。核心负责调用，不重复实现队列。
+
+人工问题按monitor/company/document保持稳定身份；文档/规则版本、原模型判定、程序升级和人工决定均保留事件。uncertain及强制规则升级为人工；模型false不关闭既有open项。人工relevant/irrelevant关闭当前问题，uncertain/defer保留open；新证据/规则需要人工时可重开，同版本重交不抹人工决定。此拆分实现已有P1范围，不新增监测服务或外部动作。
+
+Terra报告子任务完成渲染后，追加独占investigation_monitoring.py/test_investigation_monitoring.py，实现纯持久化MonitorStore；调查图和公共service桥接仍由核心Terra负责。该store持久化profile/规则版本、周期、采集水位、候选版本、判定积压与跨周期预留；不执行网络/模型、不新增agent状态机。采集已完成而判定积压未清不阻止新周期采集。
