@@ -121,17 +121,19 @@ def _trace_markdown(claim_ids: list[Any], claims: dict[str, dict[str, Any]], evi
     return "\n".join(lines)
 
 
-def _render_markdown(kind: str, sections: list[dict[str, Any]], claims: dict[str, dict[str, Any]], evidence: dict[str, dict[str, Any]], synthetic: bool) -> str:
+def _render_markdown(kind: str, sections: list[dict[str, Any]], claims: dict[str, dict[str, Any]], evidence: dict[str, dict[str, Any]], synthetic: bool, monitor: dict[str, Any] | None = None) -> str:
     parts = [f"# {kind}"]
     if synthetic:
         parts.append("> **SYNTHETIC REPORT — test/replay data only.**")
+    if kind == "patent_monitor_digest" and monitor:
+        parts.append("## Monitor facts\n```json\n" + json.dumps(monitor, ensure_ascii=False, sort_keys=True) + "\n```")
     for section in sections:
         parts.extend((f"## {section['title']}", section["body"]))
     parts.append(_trace_markdown([claim for section in sections for claim in section.get("claim_ids", [])], claims, evidence))
     return "\n\n".join(parts) + "\n"
 
 
-def _render_html(kind: str, language: str, sections: list[dict[str, Any]], claims: dict[str, dict[str, Any]], evidence: dict[str, dict[str, Any]], synthetic: bool) -> str:
+def _render_html(kind: str, language: str, sections: list[dict[str, Any]], claims: dict[str, dict[str, Any]], evidence: dict[str, dict[str, Any]], synthetic: bool, monitor: dict[str, Any] | None = None) -> str:
     notice = "<p><strong>SYNTHETIC REPORT — test/replay data only.</strong></p>" if synthetic else ""
     body = "".join(f"<section><h2>{html.escape(section['title'])}</h2><p>{'<br>'.join(html.escape(line) for line in section['body'].splitlines())}</p></section>" for section in sections)
     trace = []
@@ -140,7 +142,8 @@ def _render_html(kind: str, language: str, sections: list[dict[str, Any]], claim
             evidence_id = ref if isinstance(ref, str) else ref["evidence_id"]
             item = evidence[str(evidence_id)]
             trace.append(f"<li>claim <code>{html.escape(str(claim_id))}</code>; evidence <code>{html.escape(str(evidence_id))}</code>; document <code>{html.escape(str(item['document_id']))}</code>; version <code>{html.escape(str(item['version_id']))}</code>; locator <code>{html.escape(str(item['locator']))}</code></li>")
-    return f"<!doctype html><html lang=\"{html.escape(language, quote=True)}\"><body><h1>{html.escape(kind)}</h1>{notice}{body}<h2>Evidence trace</h2><ul>{''.join(trace)}</ul></body></html>"
+    facts = f"<h2>Monitor facts</h2><pre>{html.escape(json.dumps(monitor, ensure_ascii=False, sort_keys=True))}</pre>" if kind == "patent_monitor_digest" and monitor else ""
+    return f"<!doctype html><html lang=\"{html.escape(language, quote=True)}\"><body><h1>{html.escape(kind)}</h1>{notice}{facts}{body}<h2>Evidence trace</h2><ul>{''.join(trace)}</ul></body></html>"
 
 
 def _csv_text(rows: list[list[Any]]) -> str:
@@ -261,7 +264,7 @@ def export_reports(workspace: str | Path, run_id: str, report_data: dict[str, An
                 issues.append({"code": "RH_REPORT_CITATION_INVALID", "type": kind, "language": language, "sections": invalid})
                 continue
             markdown_path, html_path = target / f"{kind}.{language}.md", target / f"{kind}.{language}.html"
-            artifacts.append(_artifact(markdown_path, root, kind, version, language, "markdown", _ensure(markdown_path, _render_markdown(kind, matching, claims, evidence, bool(report_data["synthetic"])))) )
+            artifacts.append(_artifact(markdown_path, root, kind, version, language, "markdown", _ensure(markdown_path, _render_markdown(kind, matching, claims, evidence, bool(report_data["synthetic"]), report_data.get("monitor")))) )
             artifacts.append(_artifact(html_path, root, kind, version, language, "html", _ensure(html_path, _render_html(kind, language, matching, claims, evidence, bool(report_data["synthetic"])))) )
 
     comparison_rows = [["finding_id", "value", "unit", "conditions", "evidence_refs"]]
