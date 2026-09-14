@@ -54,7 +54,5 @@ The adapter calls the application service only. It does not install an OS watche
 python scripts/investigation_replay.py --pending pending.json --output replay-result.json
 ```
 
-In PowerShell, first set the source path: `$env:PYTHONPATH='C:\path\to\terra\src'`.
-
-Install the lightweight host extras with `pip install -e .[investigation]`.
+An installed package does not require `PYTHONPATH`. First install with the same interpreter used by PowerShell: `python -m pip install .[investigation]`, then run the commands below; set `PYTHONPATH=<worktree>\src` only for source-tree development checks.
 

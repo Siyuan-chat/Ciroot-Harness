@@ -26,7 +26,7 @@ $env:PYTHONPATH='C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-worktrees\t
 
 ## PowerShell 实调
 
-按交接要求设置 `PYTHONPATH=<Terra worktree>\src` 后，实际执行 `investigation.ps1` 的 `doctor`、带 `RunId` 的 `status` 和 `-Monitor profile-update` 均成功：doctor 返回 offline/synthetic，status 返回对应 run，profile-update 返回 monitor active/profile_revision。未设置 PYTHONPATH 时的失败属于调用环境未加载源码路径。
+在已安装项目（或 wheel 安装）并使用同一 Python 解释器时，无需设置 `PYTHONPATH`，即可实际执行 `investigation.ps1` 的 `doctor`、带 `RunId` 的 `status` 和 `-Monitor profile-update`：doctor 返回 offline/synthetic，status 返回对应 run，profile-update 返回 monitor active/profile_revision。源码树开发自测时可选设置 PYTHONPATH；此前未安装项目且未设置 PYTHONPATH 的失败仅属于临时开发环境。
 
 ## 边界
 

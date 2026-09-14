@@ -51,7 +51,5 @@ rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision relevant 
 python scripts/investigation_replay.py --pending pending.json --output replay-result.json
 ```
 
-PowerShell 中先设置源码路径：`$env:PYTHONPATH='C:\path\to\terra\src'`，再执行以下命令。
-
-安装轻量宿主依赖：`pip install -e .[investigation]`。
+已安装产品无需设置 `PYTHONPATH`。先用与 PowerShell 相同的解释器安装：`python -m pip install .[investigation]`，再执行以下命令；源码开发自测时才可选设置 `PYTHONPATH=<worktree>\src`。
 

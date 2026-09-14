@@ -49,7 +49,5 @@ rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision relevant 
 python scripts/investigation_replay.py --pending pending.json --output replay-result.json
 ```
 
-PowerShell では先にソースパスを設定します: `$env:PYTHONPATH='C:\path\to\terra\src'`。
-
-軽量 host 依存関係は `pip install -e .[investigation]` でインストールします。
+インストール済みの製品では `PYTHONPATH` は不要です。PowerShell と同じ Python で `python -m pip install .[investigation]` を実行してからコマンドを実行します。`PYTHONPATH=<worktree>\src` はソース開発時の自測でのみ任意に設定します。
 
