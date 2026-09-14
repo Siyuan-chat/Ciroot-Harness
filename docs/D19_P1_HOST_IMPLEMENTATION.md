@@ -31,3 +31,7 @@ $env:PYTHONPATH='C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-worktrees\t
 ## 边界
 
 这些是 code/integration 层证据。真实 API、真实模型质量、无人值守调度和独立验收仍为 pending，由根任务按 D19-P1 acceptance 执行。
+
+## 最终独立验收
+
+2026-09-14：设计任务已完成8f0895f的非editable wheel验收。native rh、模块CLI、PowerShell doctor/status/report/profile-update、真实SDK STDIO及进程恢复通过；项目从独立安装目录导入且未设置PYTHONPATH。依赖共享与Windows pywin32初始化条件、完整结果见[D19_P1_ACCEPTANCE](D19_P1_ACCEPTANCE.md)。前文为实现者自测历史，最终状态以独立记录为准。
