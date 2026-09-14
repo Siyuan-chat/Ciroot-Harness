@@ -8,6 +8,8 @@ from langgraph.graph import StateGraph, START, END
 from .errors import HarnessError, NotFoundError, ValidationError
 from .investigation_sources import SourceError, SyntheticTransport, baseline_snapshot, normalize, policy_allows, canonical_identity
 from .investigation_contracts import get_task_schema, validate_spec, validate_runtime
+from .investigation_monitoring import MonitorStore
+from .investigation_review import ReviewStore
 from filelock import FileLock, Timeout
 
 ROLES = ("planning", "paper_search", "patent_search", "evidence_analysis", "business_judgment", "synthesis", "writing", "verification")
@@ -51,9 +53,11 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.execute("CREATE TABLE IF NOT EXISTS source_queries(run_id TEXT,query_id TEXT,source TEXT,query TEXT,parent_query_id TEXT,input_refs TEXT,status TEXT,reason TEXT,PRIMARY KEY(run_id,query_id))")
         self.db.execute("CREATE TABLE IF NOT EXISTS discovery_evidence(evidence_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,document_id TEXT NOT NULL,version_id TEXT NOT NULL,payload TEXT NOT NULL,visibility TEXT NOT NULL,company_id TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS frozen_reports(run_id TEXT PRIMARY KEY,payload TEXT NOT NULL,created REAL NOT NULL)")
-        self.db.commit(); self.graph=self._graph()
+        self.db.execute("CREATE TABLE IF NOT EXISTS monitor_runs(run_id TEXT PRIMARY KEY,monitor_id TEXT NOT NULL,cycle_id TEXT NOT NULL,profile TEXT NOT NULL)")
+        self.db.commit(); self.monitors=MonitorStore(self.root); self.reviews=ReviewStore(self.root); self.graph=self._graph()
     def close(self):
         self.db.close()
+        self.monitors.close(); self.reviews.close()
         self._lock.release()
     def __enter__(self): return self
     def __exit__(self,*_): self.close()
@@ -103,6 +107,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         errors=list(Draft202012Validator(json.loads(row["output_schema"])).iter_errors(result))
         if errors: raise InvestigationError("RH_MODEL_RESULT_INVALID","model result failed schema validation")
         self._refs(row,result); self.db.execute("UPDATE model_tasks SET status='completed',result=?,result_hash=? WHERE id=?",(raw,digest,task_id)); self.db.commit()
+        if row["role"] == "business_judgment": self._record_monitor_judgments(row,result)
         return {"status":"accepted","task_id":task_id}
     def advance_investigation(self,run_id):
         self._run(run_id)
@@ -145,6 +150,40 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         data=self.build_report_data(run_id); exported=export_reports(self.root,run_id,data,languages)
         row=self._run(run_id); result=json.loads(row["result"]); result["artifacts"]=exported["artifacts"]
         self.db.execute("UPDATE investigations SET result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run_id));self.db.commit();return exported
+    def validate_monitor(self,profile,monitor_spec,runtime):
+        validate_runtime(runtime)
+        if not isinstance(profile,dict) or not profile.get("company_id") or not profile.get("rule_version") or not isinstance(monitor_spec,dict) or not monitor_spec.get("name"): raise ValidationError("monitor profile, rule_version, and name are required")
+        if profile.get("visibility","public") != "public" and not policy_allows(profile,runtime): raise InvestigationError("RH_POLICY_BLOCKED","monitor profile is not authorized for this runtime")
+        return {"valid":True,"mode":"offline","scheduler":"disabled"}
+    def create_monitor(self,profile,monitor_spec,runtime,scenario=None):
+        self.validate_monitor(profile,monitor_spec,runtime)
+        state=self.monitors.create(profile,monitor_spec,runtime)
+        return {"monitor_id":state["monitor_id"],"status":state["status"],"scheduler":"disabled"}
+    def update_monitor_profile(self,monitor_id,profile):
+        return self.monitors.update_profile(monitor_id,profile)
+    def monitor_status(self,monitor_id=None): return self.monitors.status(monitor_id)
+    def pause_monitor(self,monitor_id): return self.monitors.pause(monitor_id)
+    def resume_monitor(self,monitor_id): return self.monitors.resume(monitor_id)
+    def review_list(self,monitor_id=None): return self.reviews.review_list(monitor_id)
+    def review_decide(self,issue_id,decision,note=""): return self.reviews.review_decide(issue_id,decision,note)
+    def run_monitor_once(self,monitor_id,scenario=None):
+        scenario=scenario or {}
+        required=("cycle_key","window_start","window_end")
+        if not isinstance(scenario,dict) or any(not scenario.get(key) for key in required): raise InvestigationError("RH_MONITOR_SCENARIO","cycle_key and explicit window are required")
+        cycle=self.monitors.begin_cycle(monitor_id,scenario["cycle_key"],scenario["window_start"],scenario["window_end"])
+        if cycle["reused"]:
+            state=self.monitors.status(monitor_id); prior=next(item for item in state["cycles"] if item["cycle_id"]==cycle["cycle_id"])
+            if prior["run_id"]: return {"monitor_id":monitor_id,"run_id":prior["run_id"],"reused":True}
+        config=self.monitors.get_configuration(monitor_id)
+        docs=list(scenario.get("sources",[])); failed=any(page.get("error") for page in scenario.get("transport_pages",[]) if isinstance(page,dict))
+        stored=[]
+        for doc in docs:
+            item=dict(doc); item["content_sha256"]=hashlib.sha256((str(item.get("text",""))+str(item.get("base64_bytes",""))).encode()).hexdigest(); stored.append(item)
+        self.monitors.record_collection(cycle["cycle_id"],stored,not failed,{"source_status":"partial" if failed else "complete","cycle_key":scenario["cycle_key"]})
+        spec={"status":"ready","project_id":"monitor-"+monitor_id,"revision":config["profile_revision"],"research_question":config["profile"].get("scope",monitor_id),"report_targets":[{"deliverable_type":"patent_monitor_digest","languages":config["monitor_spec"].get("report_languages",[])}],"references":scenario.get("references",[])}
+        run=self.create_investigation(spec,config["runtime"],scenario)["run_id"]
+        self.monitors.bind_run(cycle["cycle_id"],run); self.db.execute("INSERT INTO monitor_runs VALUES (?,?,?,?)",(run,monitor_id,cycle["cycle_id"],json.dumps(config["profile"]))); self.db.commit(); self.monitors.reserve_tasks(monitor_id,1)
+        return {"monitor_id":monitor_id,"run_id":run,"cycle_id":cycle["cycle_id"],"reused":False}
 
     def _graph(self):
         g=StateGraph(dict)
@@ -211,8 +250,11 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.commit()
         baseline=json.loads(r["scenario"]).get("baseline_snapshot",[])
         self._reserve_available(s["run_id"],2)
-        payload={"input_refs":["stage:acquire_normalize"],"evidence":evidence,"discovery_evidence":evidence,"baseline_evidence":baseline,"acquisition_issues":acquisition_issues,"report_targets":json.loads(r["spec"]).get("report_targets",[])}
-        self._task(s["run_id"],"evidence_analysis","extract",payload); self._task(s["run_id"],"business_judgment","judge",{**payload,"documents":[{"document_id":e["document_id"],"evidence_id":e["evidence_id"]} for e in evidence]})
+        monitor=self._monitor_context(s["run_id"])
+        payload={"input_refs":["stage:acquire_normalize"],"evidence":evidence,"discovery_evidence":evidence,"baseline_evidence":baseline,"acquisition_issues":acquisition_issues,"report_targets":json.loads(r["spec"]).get("report_targets",[]),**({"monitor":monitor} if monitor else {})}
+        self._task(s["run_id"],"evidence_analysis","extract",payload)
+        judge_evidence=[item for item in evidence if not monitor or self._monitor_needs_judgment(monitor,item)]
+        if judge_evidence:self._task(s["run_id"],"business_judgment","judge",{**payload,"documents":[{"document_id":e["document_id"],"evidence_id":e["evidence_id"]} for e in judge_evidence]})
         self._set(s["run_id"],stage="analysis",status="waiting_model");self._trace(s["run_id"],"acquire_normalize","normalized",{"evidence_count":len(evidence)});return {"run_id":s["run_id"],"next":"end"}
     def _analysis(self,s):
         r=self._run(s["run_id"])
@@ -245,7 +287,28 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
     def _task(self,run,role,typ,payload):
         b=json.loads(self._run(run)["budget"])
         if b["reserved_tasks"]>=b["max_tasks"]:raise InvestigationError("RH_MODEL_BUDGET","model task budget exhausted")
+        monitor=self._monitor_context(run)
+        if monitor:self.monitors.reserve_tasks(monitor["monitor_id"],1)
         p={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}; self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,typ,json.dumps(p),json.dumps(get_task_schema(role)),"pending",None,None,time.time()));b["reserved_tasks"]+=1;self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(b),time.time(),run));self.db.commit()
+    def _monitor_context(self,run):
+        row=self.db.execute("SELECT monitor_id,cycle_id,profile FROM monitor_runs WHERE run_id=?",(run,)).fetchone()
+        return {"monitor_id":row["monitor_id"],"cycle_id":row["cycle_id"],"profile":json.loads(row["profile"])} if row else None
+    def _monitor_needs_judgment(self,monitor,evidence):
+        state=self.monitors.status(monitor["monitor_id"]); current=monitor["cycle_id"]
+        for cycle in state["cycles"]:
+            if cycle["cycle_id"] == current or cycle["rule_version"] != monitor["profile"]["rule_version"]: continue
+            for document in cycle["documents"]:
+                if document["document_id"] == evidence["document_id"] and document["document_version"] == evidence["version_id"]:
+                    return any(item["document_id"] == evidence["document_id"] and item["document_version"] == evidence["version_id"] for item in cycle["judgment_backlog"])
+        return True
+    def _record_monitor_judgments(self,row,result):
+        payload=json.loads(row["payload"]); monitor=payload.get("monitor")
+        if not monitor:return
+        evidence={item["document_id"]:item for item in payload["evidence"]}
+        for judgment in result["judgments"]:
+            item=evidence[judgment["document_id"]]
+            saved=self.reviews.record_judgment(monitor["monitor_id"],monitor["profile"]["company_id"],item["document_id"],item["version_id"],monitor["profile"]["rule_version"],judgment,[item["evidence_id"]])
+            self.monitors.mark_judged(monitor["cycle_id"],item["document_id"],item["version_id"],saved["issue_id"])
     def _validate_queries(self,queries,reference_ids=None,evidence_ids=None):
         errors=list(Draft202012Validator(get_task_schema("planning")).iter_errors({"search_plan":{"queries":queries}}))
         if errors: raise InvestigationError("RH_QUERY_IDENTITY","query plan failed schema validation")

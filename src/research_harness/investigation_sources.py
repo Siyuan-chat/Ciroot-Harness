@@ -57,7 +57,9 @@ def normalize(document):
             from pypdf import PdfReader
             reader=PdfReader(BytesIO(blob)); parts=[(str(i+1),page.extract_text() or "") for i,page in enumerate(reader.pages)]
         except Exception as exc: raise SourceError("RH_NORMALIZE_PDF","PDF extraction failed") from exc
-        return [_evidence(document,text,{"kind":"pdf_page","value":page},blob) for page,text in parts if text.strip()]
+        evidence=[_evidence(document,text,{"kind":"pdf_page","value":page},blob) for page,text in parts if text.strip()]
+        if not evidence: raise SourceError("RH_NORMALIZE_EMPTY","PDF has no extractable text")
+        return evidence
     elif content_type=="text/plain": text=raw; locator=document.get("locator") or {"kind":"paragraph","value":"1"}
     else: raise SourceError("RH_NORMALIZE_TYPE","unsupported synthetic content type")
     if not isinstance(text,str) or not text.strip(): raise SourceError("RH_NORMALIZE_EMPTY","source body is empty")
