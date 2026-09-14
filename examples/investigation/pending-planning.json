@@ -1,0 +1,13 @@
+{
+  "task_id": "task-replay-planning",
+  "task_version": 1,
+  "role": "planning",
+  "task_type": "plan",
+  "payload": {
+    "input_refs": [],
+    "report_targets": [
+      "technical_report",
+      "literature_review"
+    ]
+  }
+}

@@ -34,3 +34,19 @@ rh monitor --workspace .local/d19-workspace run-once MONITOR_ID --scenario cycle
 rh monitor --workspace .local/d19-workspace review --monitor-id MONITOR_ID
 rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision accept --note note
 ```
+## 監視フィールドと deterministic replay
+
+`profile.json` には `company_id`、`rule_version`、`scope` を、monitor spec には `name`、`report_languages` を必ず指定します。synthetic 周期の scenario には `cycle_key`、`window_start`、`window_end` を明示し、host はシステム時刻から期間を推定しません。profile 更新は次のように行います。
+
+```powershell
+./scripts/investigation.ps1 -Monitor -Command profile-update -Workspace .local/d19-workspace -RunId MONITOR_ID -Profile profile-v2.json
+```
+
+この adapter はアプリケーションサービスを呼ぶだけで、OS 監視やスケジューラをインストールせず、実際の API に接続しません。`scripts/investigation_replay.py` は `get_pending_tasks` の JSON を読み、`synthetic=true` と明記した zh/en/ja の決定的な構造化結果を生成します。これはテスト用 replay であり、実際のモデル推論や科学的効果を示しません。
+
+```powershell
+python scripts/investigation_replay.py --pending pending.json --output replay-result.json
+```
+
+軽量 host 依存関係は `pip install -e .[investigation]` でインストールします。
+

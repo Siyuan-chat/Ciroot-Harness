@@ -36,3 +36,19 @@ rh monitor --workspace .local/d19-workspace run-once MONITOR_ID --scenario cycle
 rh monitor --workspace .local/d19-workspace review --monitor-id MONITOR_ID
 rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision accept --note note
 ```
+## 监测字段与确定性 replay
+
+`profile.json` 至少包含 `company_id`、`rule_version`、`scope`；监测规范至少包含 `name`、`report_languages`。每个 synthetic 周期的 scenario 必须显式提供 `cycle_key`、`window_start`、`window_end`，时间窗不会从系统时钟推断。更新 profile 使用：
+
+```powershell
+./scripts/investigation.ps1 -Monitor -Command profile-update -Workspace .local/d19-workspace -RunId MONITOR_ID -Profile profile-v2.json
+```
+
+该脚本只转发到应用服务，不安装 OS 监测、不启用计划任务，也不访问真实 API。`scripts/investigation_replay.py` 可消费 `get_pending_tasks` 保存的 JSON，生成标记为 `synthetic=true` 的中英日结构化结果；它是确定性测试驱动，不代表真实模型或科学效果：
+
+```powershell
+python scripts/investigation_replay.py --pending pending.json --output replay-result.json
+```
+
+安装轻量宿主依赖：`pip install -e .[investigation]`。
+

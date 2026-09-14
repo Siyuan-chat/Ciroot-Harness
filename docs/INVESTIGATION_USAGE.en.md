@@ -39,3 +39,19 @@ rh monitor --workspace .local/d19-workspace run-once MONITOR_ID --scenario cycle
 rh monitor --workspace .local/d19-workspace review --monitor-id MONITOR_ID
 rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision accept --note note
 ```
+## Monitor fields and deterministic replay
+
+`profile.json` must include `company_id`, `rule_version`, and `scope`; a monitor spec must include `name` and `report_languages`. Every synthetic cycle scenario must explicitly provide `cycle_key`, `window_start`, and `window_end`; the host never infers the window from the system clock. Update a profile with:
+
+```powershell
+./scripts/investigation.ps1 -Monitor -Command profile-update -Workspace .local/d19-workspace -RunId MONITOR_ID -Profile profile-v2.json
+```
+
+The adapter calls the application service only. It does not install an OS watcher or scheduler and does not access live APIs. `scripts/investigation_replay.py` consumes JSON saved from `get_pending_tasks` and emits deterministic zh/en/ja structured results marked `synthetic=true`; this is a test/replay driver, not real model reasoning or scientific evidence:
+
+```powershell
+python scripts/investigation_replay.py --pending pending.json --output replay-result.json
+```
+
+Install the lightweight host extras with `pip install -e .[investigation]`.
+

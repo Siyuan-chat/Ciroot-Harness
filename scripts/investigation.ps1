@@ -1,18 +1,21 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory=$true)][ValidateSet('doctor','plan-validate','start','tasks','submit','work','resume','status','result','report')][string]$Command,
+  [Parameter(Mandatory=$true)][ValidateSet('doctor','plan-validate','start','tasks','submit','work','resume','status','result','report','profile-update')][string]$Command,
   [Parameter(Mandatory=$true)][string]$Workspace,
   [string]$PythonExecutable='python',
-  [string]$Spec, [string]$Runtime, [string]$Scenario, [string]$RunId,
-  [string]$TaskId, [string]$Result, [int]$TaskVersion, [string]$Languages='zh,en,ja'
+  [string]$Spec, [string]$Runtime, [string]$Scenario, [string]$RunId, [Alias("MonitorId")][string]$ProfileMonitorId, [string]$Profile,
+  [string]$TaskId, [string]$Result, [int]$TaskVersion, [string]$Languages, [switch]$Monitor
 )
 $ErrorActionPreference='Stop'
 $python = $PythonExecutable
-$argsList = @('-m','research_harness.investigation_cli','--workspace',$Workspace,$Command)
+$argsList = @('-m','research_harness.investigation_cli','--workspace',$Workspace)
+if ($Monitor) { $argsList += 'monitor' }
+$argsList += $Command
 if ($Command -eq 'plan-validate') { $argsList += @('--plan',$Spec) }
 if ($Command -eq 'start') { $argsList += @('--spec',$Spec,'--runtime',$Runtime); if ($Scenario) {$argsList += @('--scenario',$Scenario)} }
-if ($Command -in @('tasks','work','resume','result','report')) { $argsList += $RunId }
+if ($Command -in @('tasks','work','resume','result','report') -and $RunId) { $argsList += $RunId }
 if ($Command -eq 'submit') { $argsList += @($RunId,$TaskId,'--result',$Result,'--task-version',$TaskVersion) }
-if ($Command -eq 'report') { $argsList += @('--languages',$Languages) }
+if ($Command -eq 'report' -and $Languages) { $argsList += @('--languages',$Languages) }
+if ($Command -eq 'profile-update') { $monitorId = if ($ProfileMonitorId) { $ProfileMonitorId } else { $RunId }; $argsList += @($monitorId,'--profile',$Profile) }
 & $python @argsList
 exit $LASTEXITCODE
