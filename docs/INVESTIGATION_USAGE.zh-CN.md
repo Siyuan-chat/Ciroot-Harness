@@ -17,8 +17,9 @@ MCP 只支持离线 host 模式和显式 synthetic/replay 输入，不调用实�
 ```powershell
 rh monitor --workspace .local/d19-workspace validate --profile profile.json --spec monitor.json --runtime runtime.json
 rh monitor --workspace .local/d19-workspace status MONITOR_ID
+rh monitor --workspace .local/d19-workspace create --profile profile.json --spec monitor.json --runtime runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 ```
-完整一次调查流程：安装项目（例如 `pip install -e .[test,mcp]`），准备 spec.json/runtime.json；`start` 返回 RUN_ID 后领取任务、提交结构化结果、推进、恢复并导出：
+完整一次调查流程：安装项目（例如 `pip install -e .[investigation]`），准备 spec.json/runtime.json；`start` 返回 RUN_ID 后领取任务、提交结构化结果、推进、恢复并导出：
 
 ```powershell
 rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
@@ -32,9 +33,9 @@ rh investigate --workspace .local/d19-workspace report RUN_ID
 `spec.json`、`runtime.json` 和 synthetic scenario 是用户提供的离线输入；本入口不会访问实时来源或生成模型。监测单轮执行和人工分流：
 
 ```powershell
-rh monitor --workspace .local/d19-workspace run-once MONITOR_ID --scenario cycle.json
+rh monitor --workspace .local/d19-workspace run-once MONITOR_ID --scenario .\examples\investigation\synthetic-scenario.json
 rh monitor --workspace .local/d19-workspace review --monitor-id MONITOR_ID
-rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision accept --note note
+rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision relevant --note note
 ```
 ## 监测字段与确定性 replay
 

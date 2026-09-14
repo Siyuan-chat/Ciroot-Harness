@@ -1,10 +1,49 @@
 {
   "sources": [
-    {"source": "synthetic-paper", "document_id": "paper-001", "version": "v1", "locator": {"kind": "paragraph", "value": "2"}, "text": "Synthetic crosslinking reduced swelling under the stated condition."},
-    {"source": "synthetic-patent", "document_id": "patent-001", "version": "A1", "locator": {"kind": "claim", "value": "1"}, "text": "A synthetic membrane includes a crosslinked polymer network."}
+    {
+      "source": "synthetic-paper",
+      "document_id": "paper-001",
+      "version": "v1",
+      "locator": {
+        "kind": "paragraph",
+        "value": "2"
+      },
+      "text": "Synthetic crosslinking reduced swelling under the stated condition."
+    },
+    {
+      "source": "synthetic-patent",
+      "document_id": "patent-001",
+      "version": "A1",
+      "locator": {
+        "kind": "claim",
+        "value": "1"
+      },
+      "text": "A synthetic membrane includes a crosslinked polymer network."
+    }
   ],
   "transport_pages": [
-    {"source": "synthetic-paper", "candidates": [{"document_id": "paper-001", "title": "Synthetic paper"}]},
-    {"source": "synthetic-patent", "candidates": [{"document_id": "patent-001", "title": "Synthetic patent"}]}
-  ]
+    {
+      "source": "synthetic-paper",
+      "candidates": [
+        {
+          "document_id": "paper-001",
+          "title": "Synthetic paper"
+        }
+      ],
+      "query_id": "paper-query"
+    },
+    {
+      "source": "synthetic-patent",
+      "candidates": [
+        {
+          "document_id": "patent-001",
+          "title": "Synthetic patent"
+        }
+      ],
+      "query_id": "patent-query"
+    }
+  ],
+  "cycle_key": "cycle-001",
+  "window_start": "2026-01-01",
+  "window_end": "2026-02-01"
 }

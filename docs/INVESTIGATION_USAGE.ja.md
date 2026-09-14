@@ -15,8 +15,9 @@ MCP は `python -m research_harness.investigation_mcp --workspace PATH` で起�
 ```powershell
 rh monitor --workspace .local/d19-workspace validate --profile profile.json --spec monitor.json --runtime runtime.json
 rh monitor --workspace .local/d19-workspace status MONITOR_ID
+rh monitor --workspace .local/d19-workspace create --profile profile.json --spec monitor.json --runtime runtime.json --scenario .\examples\investigation\synthetic-scenario.json
 ```
-完全なオフライン調査の流れは、依存関係（例: `pip install -e .[test,mcp]`）をインストールし、`spec.json` と `runtime.json` を用意して次を実行します。
+完全なオフライン調査の流れは、依存関係（例: `pip install -e .[investigation]`）をインストールし、`spec.json` と `runtime.json` を用意して次を実行します。
 
 ```powershell
 rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
@@ -30,9 +31,9 @@ rh investigate --workspace .local/d19-workspace report RUN_ID
 入力は利用者が用意するオフライン JSON と明示した synthetic シナリオです。実際の情報源や生成モデル API は呼び出しません。監視は `run-once` の後に `review` と明示的な `decide` を実行します。
 
 ```powershell
-rh monitor --workspace .local/d19-workspace run-once MONITOR_ID --scenario cycle.json
+rh monitor --workspace .local/d19-workspace run-once MONITOR_ID --scenario .\examples\investigation\synthetic-scenario.json
 rh monitor --workspace .local/d19-workspace review --monitor-id MONITOR_ID
-rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision accept --note note
+rh monitor --workspace .local/d19-workspace decide ISSUE_ID --decision relevant --note note
 ```
 ## 監視フィールドと deterministic replay
 

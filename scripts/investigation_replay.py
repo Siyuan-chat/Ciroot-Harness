@@ -15,8 +15,8 @@ def result_for(task: dict[str, Any]) -> dict[str, Any]:
     role, p = task["role"], task.get("payload", {})
     if role == "planning":
         return {"search_plan": {"queries": [
-            {"query_id": "replay-paper", "source": "synthetic-paper", "query": "synthetic membrane", "input_refs": [], "parent_query_id": None},
-            {"query_id": "replay-patent", "source": "synthetic-patent", "query": "synthetic membrane", "input_refs": [], "parent_query_id": None}]}}
+            {"query_id": "paper-query", "source": "synthetic-paper", "query": "synthetic membrane", "input_refs": [], "parent_query_id": None},
+            {"query_id": "patent-query", "source": "synthetic-patent", "query": "synthetic membrane", "input_refs": [], "parent_query_id": None}]}}
     if role in {"paper_search", "patent_search"}:
         return {"candidates": [{"document_id": x["document_id"], "relevance": "relevant", "reason": "Synthetic replay candidate."} for x in p.get("candidates", [])]}
     if role == "evidence_analysis":
@@ -24,12 +24,33 @@ def result_for(task: dict[str, Any]) -> dict[str, Any]:
     if role == "business_judgment":
         return {"judgments": [{"document_id": x["document_id"], "relevance": "relevant", "human_review_required": False, "reason": "Synthetic replay judgment."} for x in p.get("documents", [])]}
     if role == "synthesis":
-        e = (p.get("evidence") or [{}])[0]
+        evidence = p.get("evidence") or []
+        if not evidence:
+            return {"claims": []}
+        e = evidence[0]
         return {"claims": [{"claim_id": "replay-claim-1", "claim": "The synthetic source describes a membrane route.", "finding_refs": [0], "evidence_refs": [e["evidence_id"]], "quote": e.get("text", "Synthetic replay evidence."), "document_id": e.get("document_id", "synthetic-unknown"), "version_id": e.get("version_id", e.get("version", "v1"))}]}
     if role == "writing":
         targets = p.get("report_targets") or ["technical_report", "literature_review"]
-        return {"sections": [{"deliverable_type": t, "language": lang, "section_id": f"replay-{t}-{lang}", "title": "Synthetic replay", "body": LANGS[lang], "claim_ids": ["replay-claim-1"]} for t in targets for lang in ("zh", "en", "ja")]}
+        sections = []
+        for target in targets:
+            if isinstance(target, str):
+                dtype, languages = target, ("zh", "en", "ja")
+            elif isinstance(target, dict):
+                dtype = target.get("deliverable_type") or target.get("type")
+                languages = target.get("languages") or target.get("report_languages") or ("zh", "en", "ja")
+            else:
+                continue
+            if not isinstance(dtype, str):
+                continue
+            if isinstance(languages, str): languages = [languages]
+            for lang in languages:
+                if lang in LANGS:
+                    sections.append({"deliverable_type": dtype, "language": lang, "section_id": f"replay-{dtype}-{lang}", "title": "Synthetic replay", "body": LANGS[lang], "claim_ids": ["replay-claim-1"] if p.get("claims") else []})
+        return {"sections": sections}
     if role == "verification":
+        claims = p.get("claims") or []
+        if not claims:
+            return {"verification": {"status": "insufficient", "conclusion": "No evidence-backed claims were supplied in this synthetic replay.", "supported_claim_refs": []}}
         return {"verification": {"status": "supported", "conclusion": "Synthetic replay claims are structurally supported by the supplied fixture.", "supported_claim_refs": [0]}}
     raise ValueError(f"unsupported role: {role}")
 

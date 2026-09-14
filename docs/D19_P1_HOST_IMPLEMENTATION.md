@@ -22,7 +22,7 @@ $env:PYTHONPATH='C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-worktrees\t
 & 'C:\Users\Siyuan_ye\Documents\ChatGPT\AEM\.local\d19-runtime\venv\Scripts\python.exe' -m pip wheel . --no-deps --no-build-isolation --wheel-dir .local/wheel
 ```
 
-结果：host tests `8 passed`；replay 输出 `.local/replay-result.json`；planning result schema errors `0`；wheel `research_harness-0.1.0-py3-none-any.whl` 构建成功，检查到 schemas 5、investigation prompts 9、investigation examples 5。
+结果：host tests `10 passed`；公共 `InvestigationService` 使用 `result_for` 实际完成 planning、paper_search、patent_search、evidence_analysis、business_judgment、synthesis、writing、verification 八角色，状态为 `completed`，并导出 technical_report/literature_review 各 zh/en/ja 的 Markdown/HTML 双报告；对象 target `technical_report` 且 languages=`["en"]` 仅导出英文；无 evidence 分支返回空 claims 与 verification `insufficient`；replay 输出 `.local/replay-result.json`；planning result schema errors `0`；wheel `research_harness-0.1.0-py3-none-any.whl` 构建成功，检查到 schemas 5、investigation prompts 9、investigation examples 5。
 
 ## 边界
 
