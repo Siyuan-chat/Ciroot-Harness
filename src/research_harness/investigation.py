@@ -6,7 +6,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from langgraph.graph import StateGraph, START, END
 from .errors import HarnessError, NotFoundError, ValidationError
-from .investigation_sources import SourceError, baseline_snapshot, normalize, policy_allows
+from .investigation_sources import SourceError, SyntheticTransport, baseline_snapshot, normalize, policy_allows
 
 ROLES = ("planning", "paper_search", "patent_search", "evidence_analysis", "business_judgment", "synthesis", "writing", "verification")
 
@@ -35,6 +35,7 @@ TASK_SCHEMAS = {
 TASK_SCHEMAS["evidence_analysis"]["properties"]["findings"]["items"]["properties"].update({"finding_id":{"type":"string"},"value":{"type":["string","number","null"]},"unit":{"type":["string","null"]},"conditions":{"type":["string","null"]}})
 TASK_SCHEMAS["synthesis"]["properties"]["claims"]["items"]["properties"].update({"claim_id":{"type":"string"},"evidence_refs":{"type":"array","items":{"type":"string"}},"quote":{"type":"string"},"document_id":{"type":"string"},"version_id":{"type":"string"}})
 TASK_SCHEMAS["writing"]["properties"]["sections"]["items"]["properties"].update({"deliverable_type":{"enum":["technical_report","literature_review","patent_monitor_digest"]},"language":{"type":"string"},"section_id":{"type":"string"},"body":{"type":"string"},"claim_ids":{"type":"array","items":{"type":"string"}}})
+TASK_SCHEMAS["planning"]["properties"]["search_plan"]["properties"]["queries"]["items"]["properties"].update({"query_id":{"type":"string"},"parent_query_id":{"type":["string","null"]},"input_refs":{"type":"array","items":{"type":"string"}}})
 
 class InvestigationService:
     def __init__(self, workspace):
@@ -42,6 +43,7 @@ class InvestigationService:
         self.db=sqlite3.connect(self.root/"investigation.sqlite"); self.db.row_factory=sqlite3.Row
         self.db.executescript("""CREATE TABLE IF NOT EXISTS investigations(id TEXT PRIMARY KEY,spec TEXT NOT NULL,runtime TEXT NOT NULL,scenario TEXT NOT NULL,status TEXT NOT NULL,stage TEXT NOT NULL,budget TEXT NOT NULL,created REAL NOT NULL,updated REAL NOT NULL,result TEXT,trace TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,task_version INTEGER NOT NULL,role TEXT NOT NULL,task_type TEXT NOT NULL,payload TEXT NOT NULL,output_schema TEXT NOT NULL,status TEXT NOT NULL,result TEXT,result_hash TEXT,created REAL NOT NULL, UNIQUE(run_id,role,task_type,task_version));""")
+        self.db.execute("CREATE TABLE IF NOT EXISTS source_attempts(run_id TEXT,query_id TEXT,cursor TEXT,attempt INTEGER,status TEXT,result TEXT,PRIMARY KEY(run_id,query_id,cursor,attempt))")
         self.db.commit(); self.graph=self._graph()
     def close(self): self.db.close()
     def __enter__(self): return self
@@ -57,7 +59,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         scenario=scenario or {}
         if not isinstance(scenario,dict) or not isinstance(scenario.get("sources",[]),list): raise InvestigationError("RH_SCENARIO","scenario.sources must be a list")
         scenario=dict(scenario); scenario["baseline_snapshot"]=baseline_snapshot(scenario.get("references",[]),runtime)
-        run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=dict(runtime.get("budget",{})); budget.setdefault("max_tasks",8); budget["reserved_tasks"]=0
+        run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=dict(runtime.get("budget",{})); budget.setdefault("max_tasks",8); budget.setdefault("max_source_calls",32); budget["reserved_tasks"]=0; budget["reserved_source_calls"]=0
         self.db.execute("INSERT INTO investigations VALUES (?,?,?,?,?,?,?,?,?,?,?)",(run,json.dumps(spec),json.dumps(runtime),json.dumps(scenario),"running","planning",json.dumps(budget),now,now,None,"[]")); self.db.commit()
         self._task(run,"planning","plan",{"spec":spec,"scenario_refs":["scenario:sources"],"baseline_evidence":scenario["baseline_snapshot"]}); self._set(run,status="waiting_model",stage="planning")
         return {"run_id":run,"stage":"planning","status":"waiting_model"}
@@ -122,11 +124,15 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         r=self._run(s["run_id"])
         if r["stage"]!="planning":return {"run_id":s["run_id"],"next":"source_task"}
         if self._pending(s["run_id"]):return {"run_id":s["run_id"],"next":"end"}
-        plan=self._done(s["run_id"],"planning","plan")[0]["search_plan"]; q={x["source"]:x["query"] for x in plan["queries"]}
-        sources=[(source,role) for source,role in (("synthetic-paper","paper_search"),("synthetic-patent","patent_search")) if source in q]
+        plan=self._done(s["run_id"],"planning","plan")[0]["search_plan"]; q=plan["queries"]
+        sources=[(item,"paper_search" if item["source"]=="synthetic-paper" else "patent_search") for item in q]
         self._reserve_available(s["run_id"],len(sources))
-        for source,role in sources:
-            self._task(s["run_id"],role,"screen",{"input_refs":["task:planning"],"query":q[source],"candidates":[{"document_id":x["document_id"],"title":x.get("title","")} for x in self._sources(r) if x.get("source")==source]})
+        runtime=json.loads(r["runtime"])
+        for item,role in sources:
+            source=item["source"]; query_id=item.get("query_id") or "q-"+hashlib.sha256((source+item["query"]+str(item.get("parent_query_id",""))).encode()).hexdigest()[:12]
+            candidates=self._search_pages(s["run_id"],source,query_id,runtime,r)
+            visible=[{"document_id":x["document_id"],"title":x.get("title","")} for x in candidates if policy_allows(x,runtime)]
+            self._task(s["run_id"],role,"screen",{"input_refs":["task:planning",*item.get("input_refs",[])],"query":item["query"],"query_id":query_id,"parent_query_id":item.get("parent_query_id"),"candidates":visible})
         self._set(s["run_id"],stage="source",status="waiting_model"); self._trace(s["run_id"],"planning_gate","planned"); return {"run_id":s["run_id"],"next":"end"}
     def _source(self,s):
         r=self._run(s["run_id"])
@@ -198,6 +204,24 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if not x:raise NotFoundError()
         return x
     def _sources(self,run):return json.loads(run["scenario"]).get("sources",[])
+    def _search_pages(self,run_id,source,query_id,runtime,run):
+        transport=SyntheticTransport(json.loads(run["scenario"]).get("transport_pages",[])); cursor=None; found=[]
+        while True:
+            done=self.db.execute("SELECT result FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND status='success' ORDER BY attempt DESC LIMIT 1",(run_id,query_id,cursor)).fetchone()
+            if done: page=json.loads(done["result"])
+            else:
+                budget=json.loads(self._run(run_id)["budget"])
+                if budget["reserved_source_calls"]>=budget["max_source_calls"]: raise InvestigationError("RH_SOURCE_BUDGET","source call budget exhausted")
+                attempt=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ?",(run_id,query_id,cursor)).fetchone()[0]+1
+                budget["reserved_source_calls"]+=1;self.db.execute("UPDATE investigations SET budget=? WHERE id=?",(json.dumps(budget),run_id));self.db.commit()
+                try: page=transport.search(source,query_id,cursor)
+                except SourceError as error:
+                    self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,query_id,cursor,attempt,error.code,"{}"));self.db.commit()
+                    if error.code in {"RH_SOURCE_RATE_LIMIT","RH_SOURCE_TIMEOUT","RH_SOURCE_SERVER_ERROR"} and attempt<3: continue
+                    self._trace(run_id,"source_task","source_partial",{"query_id":query_id,"code":error.code}); return found
+                self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,query_id,cursor,attempt,"success",json.dumps(page)));self.db.commit()
+            found.extend(page["candidates"]); cursor=page["next_cursor"]
+            if cursor is None:return found
     def _set(self,run,**kw):
         kw["updated"]=time.time();self.db.execute("UPDATE investigations SET "+",".join(f"{k}=?" for k in kw)+" WHERE id=?",(*kw.values(),run));self.db.commit()
     def _trace(self,run,node,event,extra=None):
