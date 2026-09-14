@@ -6,6 +6,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from langgraph.graph import StateGraph, START, END
 from .errors import HarnessError, NotFoundError, ValidationError
+from .investigation_sources import SourceError, baseline_snapshot, normalize, policy_allows
 
 ROLES = ("planning", "paper_search", "patent_search", "evidence_analysis", "business_judgment", "synthesis", "writing", "verification")
 
@@ -50,9 +51,10 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if spec.get("status")!="ready" or runtime.get("mode")!="host" or runtime.get("data_mode")!="synthetic": raise InvestigationError("RH_PRECONDITION","ready synthetic host inputs are required")
         scenario=scenario or {}
         if not isinstance(scenario,dict) or not isinstance(scenario.get("sources",[]),list): raise InvestigationError("RH_SCENARIO","scenario.sources must be a list")
+        scenario=dict(scenario); scenario["baseline_snapshot"]=baseline_snapshot(scenario.get("references",[]),runtime)
         run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=dict(runtime.get("budget",{})); budget.setdefault("max_tasks",8); budget["reserved_tasks"]=0
         self.db.execute("INSERT INTO investigations VALUES (?,?,?,?,?,?,?,?,?,?,?)",(run,json.dumps(spec),json.dumps(runtime),json.dumps(scenario),"running","planning",json.dumps(budget),now,now,None,"[]")); self.db.commit()
-        self._task(run,"planning","plan",{"spec":spec,"scenario_refs":["scenario:sources"]}); self._set(run,status="waiting_model",stage="planning")
+        self._task(run,"planning","plan",{"spec":spec,"scenario_refs":["scenario:sources"],"baseline_evidence":scenario["baseline_snapshot"]}); self._set(run,status="waiting_model",stage="planning")
         return {"run_id":run,"stage":"planning","status":"waiting_model"}
     def get_pending_tasks(self,run_id):
         self._run(run_id); rows=self.db.execute("SELECT * FROM model_tasks WHERE run_id=? AND status='pending' ORDER BY created,id",(run_id,))
@@ -117,11 +119,13 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         r=self._run(s["run_id"])
         if r["stage"]!="acquire_normalize":return {"run_id":s["run_id"],"next":"analysis_task"}
         selected={x["document_id"] for task in self._done(s["run_id"],None,"screen") for x in task["candidates"] if x["relevance"]!="irrelevant"}; evidence=[]
+        runtime=json.loads(r["runtime"])
         for doc in self._sources(r):
-            if doc.get("document_id") not in selected or not isinstance(doc.get("text"),str) or not doc["text"]:continue
-            locator=doc.get("locator") or {"kind":"paragraph","value":"1"}
-            if not isinstance(locator,dict) or not locator.get("kind") or not locator.get("value"):raise InvestigationError("RH_SCENARIO_LOCATOR","synthetic source requires a locator")
-            evidence.append({"evidence_id":"ev-"+hashlib.sha256((doc["document_id"]+doc["text"]).encode()).hexdigest()[:12],"document_id":doc["document_id"],"version_id":str(doc.get("version","synthetic-v1")),"document_version":str(doc.get("version","synthetic-v1")),"text":doc["text"],"quote":doc["text"],"locator":locator})
+            if doc.get("document_id") not in selected: continue
+            if not policy_allows(doc,runtime):
+                self._trace(s["run_id"],"acquire_normalize","blocked",{"waiting_reason":{"code":"RH_POLICY_BLOCKED","scope":"model_payload","detail":"restricted"}}); continue
+            try: evidence.append(normalize(doc))
+            except SourceError as error: self._trace(s["run_id"],"acquire_normalize","source_failure",{"code":error.code})
         self._reserve_available(s["run_id"],2)
         self._task(s["run_id"],"evidence_analysis","extract",{"input_refs":["stage:acquire_normalize"],"evidence":evidence}); self._task(s["run_id"],"business_judgment","judge",{"input_refs":["stage:acquire_normalize"],"documents":[{"document_id":e["document_id"],"evidence_id":e["evidence_id"]} for e in evidence]})
         self._set(s["run_id"],stage="analysis",status="waiting_model");self._trace(s["run_id"],"acquire_normalize","normalized",{"evidence_count":len(evidence)});return {"run_id":s["run_id"],"next":"end"}
