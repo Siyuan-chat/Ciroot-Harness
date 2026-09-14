@@ -4,9 +4,9 @@
 `InvestigationService`。例如：
 
 ```powershell
-rh investigate doctor --workspace .local/d19-workspace
-rh investigate start --workspace .local/d19-workspace --spec spec.json --runtime runtime.json
-rh investigate tasks --workspace .local/d19-workspace RUN_ID
+rh investigate --workspace .local/d19-workspace doctor
+rh investigate --workspace .local/d19-workspace start --spec spec.json --runtime runtime.json
+rh investigate --workspace .local/d19-workspace tasks RUN_ID
 ```
 
 也可启动 MCP：`python -m research_harness.investigation_mcp --workspace PATH`。

@@ -14,6 +14,5 @@ if ($Command -eq 'start') { $argsList += @('--spec',$Spec,'--runtime',$Runtime);
 if ($Command -in @('tasks','work','resume','result','report')) { $argsList += $RunId }
 if ($Command -eq 'submit') { $argsList += @($RunId,$TaskId,'--result',$Result,'--task-version',$TaskVersion) }
 if ($Command -eq 'report') { $argsList += @('--languages',$Languages) }
-$env:PYTHONPATH = Join-Path $root 'src'
 & $python @argsList
 exit $LASTEXITCODE

@@ -1,4 +1,6 @@
 import asyncio
+import sys
+from pathlib import Path
 
 from research_harness.investigation_mcp import InvestigationMCPServer, _call, create_mcp_server
 
@@ -33,3 +35,33 @@ def test_async_handler_keeps_direct_service_call():
     handler = getattr(server, "_tool_manager")._tools["doctor"].fn
     assert asyncio.run(handler()) == {"ok": True}
     assert fake.calls == ["doctor"]
+
+
+def test_real_stdio_initialize_list_and_call(tmp_path: Path):
+    """Exercise the actual SDK stdio client/server boundary with fake service."""
+    script = tmp_path / "server.py"
+    source = r'''
+import sys
+sys.path.insert(0, sys.argv[1])
+from research_harness.investigation_mcp import InvestigationMCPServer, create_mcp_server
+class F:
+    def doctor(self): return {"ok": True, "mode": "synthetic"}
+    def close(self): pass
+create_mcp_server(InvestigationMCPServer(".", service=F())).run(transport="stdio")
+'''
+    script.write_text(source, encoding="utf-8")
+
+    async def check():
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        params = StdioServerParameters(command=sys.executable, args=[str(script), str(Path(__file__).parents[1] / "src")])
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                listed = await session.list_tools()
+                names = {item.name for item in listed.tools}
+                assert "doctor" in names and "review_decide" in names
+                result = await session.call_tool("doctor", {})
+                assert result.is_error is False
+                assert '"ok": true' in str(result.content[0].text).lower()
+    asyncio.run(check())
