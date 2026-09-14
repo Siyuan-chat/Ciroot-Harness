@@ -1,6 +1,6 @@
 """Injectable offline source, normalization, and policy boundary for D19."""
 from __future__ import annotations
-import base64, hashlib
+import base64, hashlib, re, json
 from io import BytesIO
 from xml.etree import ElementTree
 from dataclasses import dataclass
@@ -12,12 +12,18 @@ class SourceError(Exception):
 @dataclass
 class SyntheticTransport:
     pages: list[dict[str, Any]]
-    def search(self, source, query_id, cursor=None):
-        for page in self.pages:
-            if page.get("source")==source and page.get("query_id",query_id)==query_id and page.get("cursor")==cursor:
-                if page.get("error"): raise SourceError("RH_SOURCE_"+str(page["error"]).upper(),"offline source response failed")
-                return {"candidates":list(page.get("candidates",[])),"next_cursor":page.get("next_cursor"),"complete":not bool(page.get("next_cursor"))}
-        return {"candidates":[],"next_cursor":None,"complete":True}
+    def search(self, source, query_id, cursor=None, attempt=1):
+        matches=[page for page in self.pages if page.get("source")==source and page.get("query_id",query_id)==query_id and page.get("cursor")==cursor]
+        for page in matches:
+            if page.get("attempt",1) != attempt:
+                continue
+            if page.get("error"): raise SourceError("RH_SOURCE_"+str(page["error"]).upper(),"offline source response failed")
+            if "candidates" not in page or not isinstance(page["candidates"],list):
+                raise SourceError("RH_SOURCE_INVALID_RESPONSE","offline response lacks candidates")
+            return {"candidates":list(page["candidates"]),"next_cursor":page.get("next_cursor"),"complete":not bool(page.get("next_cursor"))}
+        if matches:
+            raise SourceError("RH_SOURCE_INVALID_RESPONSE","offline response sequence ended")
+        raise SourceError("RH_SOURCE_INVALID_RESPONSE","offline response page is missing")
 
 def policy_allows(item, runtime, *, query=False):
     policy=runtime.get("data_policy",{}); visibility=item.get("visibility","public")
@@ -25,6 +31,16 @@ def policy_allows(item, runtime, *, query=False):
     if query and not policy.get("allow_query_egress",False): return False
     if item.get("company_id")!=policy.get("company_id"): return False
     return runtime.get("model_id",runtime.get("executor_id","host-synthetic")) in policy.get("allowed_models",[])
+
+def canonical_identity(item):
+    """Stable discovery identity: DOI merges papers; patent publications never merge by family."""
+    if item.get("publication_number") or item.get("publication_id"):
+        return "patent:"+str(item.get("publication_id") or item.get("publication_number"))
+    doi=item.get("doi")
+    if isinstance(doi,str) and doi.strip():
+        doi=re.sub(r"^https?://(dx\.)?doi\.org/", "", doi.strip(), flags=re.I).rstrip(" .;,").casefold()
+        return "doi:"+doi
+    return "document:"+str(item.get("document_id"))
 
 def normalize(document):
     content_type=document.get("content_type","text/plain"); raw=document.get("text")
@@ -49,7 +65,7 @@ def normalize(document):
     return [_evidence(document,text,locator,blob)]
 
 def _evidence(document,text,locator,blob):
-    version=str(document.get("version","synthetic-v1")); identity=document["document_id"]+version+str(locator)+text
+    version=str(document.get("version","synthetic-v1")); identity=json.dumps([document["document_id"],version,locator,text],ensure_ascii=False,sort_keys=True,separators=(",",":"))
     return {"evidence_id":"ev-"+hashlib.sha256(identity.encode()).hexdigest()[:12],"document_id":document["document_id"],"version_id":version,"text":text,"quote":text,"locator":locator,"content_type":document.get("content_type","text/plain"),"content_sha256":hashlib.sha256(blob if blob is not None else text.encode()).hexdigest()}
 
 def baseline_snapshot(references, runtime):

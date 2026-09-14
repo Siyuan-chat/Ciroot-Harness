@@ -18,3 +18,15 @@ def test_baseline_freezes_authorized_versions_only():
     references=[{"document_id":"base","version":"v1","text":"baseline v1","visibility":"public"},{"document_id":"secret","version":"v1","text":"hidden","visibility":"confidential","company_id":"other"}]
     snap=baseline_snapshot(references,{"executor_id":"host-synthetic"})
     assert [(x["document_id"],x["version_id"]) for x in snap]==[("base","v1")]
+
+def test_transport_attempt_sequence_and_evidence_identity_are_explicit():
+    transport=SyntheticTransport([
+        {"source":"synthetic-paper","query_id":"q1","attempt":1,"error":"rate_limit"},
+        {"source":"synthetic-paper","query_id":"q1","attempt":2,"candidates":[]},
+    ])
+    with pytest.raises(SourceError) as error: transport.search("synthetic-paper","q1",attempt=1)
+    assert error.value.code=="RH_SOURCE_RATE_LIMIT"
+    assert transport.search("synthetic-paper","q1",attempt=2)["candidates"]==[]
+    first=normalize({"document_id":"ab","version":"c","text":"same"})[0]
+    second=normalize({"document_id":"a","version":"bc","text":"same"})[0]
+    assert first["evidence_id"] != second["evidence_id"]
