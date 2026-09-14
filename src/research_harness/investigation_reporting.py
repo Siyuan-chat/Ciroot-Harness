@@ -120,13 +120,24 @@ def _trace_markdown(claim_ids: list[Any], claims: dict[str, dict[str, Any]], evi
             lines.append(f"- claim `{claim_id}`; evidence `{evidence_id}`; document `{item['document_id']}`; version `{item['version_id']}`; locator `{item['locator']}`")
     return "\n".join(lines)
 
+def _monitor_rows(monitor: dict[str, Any] | None) -> tuple[list[str], list[list[str]]]:
+    if not monitor: return [], []
+    cycle=monitor.get("cycle", {}); profile=monitor.get("profile", {}); coverage=cycle.get("coverage", {})
+    summary=[f"Window: {cycle.get('window_start','')} to {cycle.get('window_end','')}", f"Rule: {cycle.get('rule_version',profile.get('rule_version',''))}", f"Collection: {cycle.get('status','')}; complete={cycle.get('complete',False)}; backlog={len(cycle.get('judgment_backlog',[]))}; coverage={json.dumps(coverage,ensure_ascii=False,sort_keys=True)}"]
+    rows=[]
+    for issue in monitor.get("review_issues", []):
+        effective=issue.get("effective_judgment", {})
+        rows.append([str(issue.get("document_id","")), str(next((d.get("document_version","") for d in cycle.get("documents",[]) if d.get("document_id")==issue.get("document_id")),"")), str(effective.get("relevance","")), str(effective.get("human_review_required",False)), str(effective.get("reason","")), str(issue.get("status",""))])
+    return summary, rows
+
 
 def _render_markdown(kind: str, sections: list[dict[str, Any]], claims: dict[str, dict[str, Any]], evidence: dict[str, dict[str, Any]], synthetic: bool, monitor: dict[str, Any] | None = None) -> str:
     parts = [f"# {kind}"]
     if synthetic:
         parts.append("> **SYNTHETIC REPORT — test/replay data only.**")
     if kind == "patent_monitor_digest" and monitor:
-        parts.append("## Monitor facts\n```json\n" + json.dumps(monitor, ensure_ascii=False, sort_keys=True) + "\n```")
+        summary, rows=_monitor_rows(monitor); table=["| document | version | relevance | human review | reason | status |","|---|---|---|---|---|---|"] + ["| " + " | ".join(row) + " |" for row in rows]
+        parts.append("## Monitor facts\n" + "\n".join(summary + table))
     for section in sections:
         parts.extend((f"## {section['title']}", section["body"]))
     parts.append(_trace_markdown([claim for section in sections for claim in section.get("claim_ids", [])], claims, evidence))
@@ -142,7 +153,9 @@ def _render_html(kind: str, language: str, sections: list[dict[str, Any]], claim
             evidence_id = ref if isinstance(ref, str) else ref["evidence_id"]
             item = evidence[str(evidence_id)]
             trace.append(f"<li>claim <code>{html.escape(str(claim_id))}</code>; evidence <code>{html.escape(str(evidence_id))}</code>; document <code>{html.escape(str(item['document_id']))}</code>; version <code>{html.escape(str(item['version_id']))}</code>; locator <code>{html.escape(str(item['locator']))}</code></li>")
-    facts = f"<h2>Monitor facts</h2><pre>{html.escape(json.dumps(monitor, ensure_ascii=False, sort_keys=True))}</pre>" if kind == "patent_monitor_digest" and monitor else ""
+    if kind == "patent_monitor_digest" and monitor:
+        summary, rows=_monitor_rows(monitor); facts="<h2>Monitor facts</h2><p>"+"<br>".join(html.escape(item) for item in summary)+"</p><table><tr><th>document</th><th>version</th><th>relevance</th><th>human review</th><th>reason</th><th>status</th></tr>"+"".join("<tr>"+"".join(f"<td>{html.escape(value)}</td>" for value in row)+"</tr>" for row in rows)+"</table>"
+    else: facts=""
     return f"<!doctype html><html lang=\"{html.escape(language, quote=True)}\"><body><h1>{html.escape(kind)}</h1>{notice}{facts}{body}<h2>Evidence trace</h2><ul>{''.join(trace)}</ul></body></html>"
 
 
@@ -272,7 +285,10 @@ def export_reports(workspace: str | Path, run_id: str, report_data: dict[str, An
         if isinstance(item, dict): comparison_rows.append([item.get("finding_id", ""), item.get("value", ""), item.get("unit", ""), item.get("conditions", ""), json.dumps(item.get("evidence_refs", []), ensure_ascii=False)])
     comparison_path = target / "comparison.csv"
     artifacts.append(_artifact(comparison_path, root, "comparison", version, None, "comparison_csv", _ensure(comparison_path, _csv_text(comparison_rows))))
-    review_rows = [["issue_id", "status", "reason", "claim_ids"]]
+    review_rows = [["issue_id", "document_id", "status", "relevance", "human_review_required", "reason"]]
+    for item in report_data.get("monitor", {}).get("review_issues", []):
+        effective=item.get("effective_judgment", {})
+        review_rows.append([item.get("issue_id", ""), item.get("document_id", ""), item.get("status", ""), effective.get("relevance", ""), effective.get("human_review_required", ""), effective.get("reason", "")])
     for item in issues:
         if isinstance(item, dict): review_rows.append([item.get("issue_id", ""), item.get("status", "open"), item.get("message", item.get("reason", "")), json.dumps(item.get("claim_ids", item.get("claims", [])), ensure_ascii=False)])
     review_path = target / "human-review.csv"
