@@ -265,7 +265,7 @@ def export_reports(workspace: str | Path, run_id: str, report_data: dict[str, An
                 continue
             markdown_path, html_path = target / f"{kind}.{language}.md", target / f"{kind}.{language}.html"
             artifacts.append(_artifact(markdown_path, root, kind, version, language, "markdown", _ensure(markdown_path, _render_markdown(kind, matching, claims, evidence, bool(report_data["synthetic"]), report_data.get("monitor")))) )
-            artifacts.append(_artifact(html_path, root, kind, version, language, "html", _ensure(html_path, _render_html(kind, language, matching, claims, evidence, bool(report_data["synthetic"])))) )
+            artifacts.append(_artifact(html_path, root, kind, version, language, "html", _ensure(html_path, _render_html(kind, language, matching, claims, evidence, bool(report_data["synthetic"]), report_data.get("monitor")))) )
 
     comparison_rows = [["finding_id", "value", "unit", "conditions", "evidence_refs"]]
     for item in report_data.get("findings", []):

@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             state=self.monitors.status(monitor_id); prior=next(item for item in state["cycles"] if item["cycle_id"]==cycle["cycle_id"])
             if prior["run_id"]: return {"monitor_id":monitor_id,"run_id":prior["run_id"],"reused":True}
         config=self.monitors.get_configuration(monitor_id)
+        self.validate_monitor(config["profile"],config["monitor_spec"],config["runtime"])
         self.db.execute("INSERT OR IGNORE INTO monitor_cycle_facts VALUES (?,?,?)",(monitor_id,scenario["cycle_key"],fingerprint)); self.db.commit()
         spec={"status":"ready","project_id":"monitor-"+monitor_id,"revision":config["profile_revision"],"research_question":config["profile"].get("scope",monitor_id),"report_targets":[{"deliverable_type":"patent_monitor_digest","languages":config["monitor_spec"].get("report_languages",[])}],"references":scenario.get("references",[])}
         run=self.create_investigation(spec,config["runtime"],scenario)["run_id"]
