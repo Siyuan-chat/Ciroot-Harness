@@ -1,3 +1,6 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 from investigation_replay import result_for
 
 def test_object_target_respects_languages():
