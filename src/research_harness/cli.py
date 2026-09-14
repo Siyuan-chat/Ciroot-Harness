@@ -10,7 +10,7 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in {"investigate", "monitor"}:
         from .investigation_cli import main as investigation_main
-        return investigation_main(argv)
+        return investigation_main(argv[1:] if argv[0] == "investigate" else argv)
     p=argparse.ArgumentParser(prog="rh"); sub=p.add_subparsers(dest="cmd",required=True)
     def ws(x): x.add_argument("--workspace",required=True)
     x=sub.add_parser("validate");x.add_argument("--spec",required=True)
