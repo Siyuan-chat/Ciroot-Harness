@@ -13,6 +13,6 @@ def test_root_and_package_contract_resources_match():
 def test_public_contract_helpers_validate_d19_shapes():
     validate_spec({"status":"ready","project_id":"p","revision":1,"research_question":"q","report_targets":["technical_report"],"references":[],"criteria":[{"value":1,"unit":"m"}]})
     validate_runtime({"mode":"host","data_mode":"synthetic","budget":{"max_tasks":1}})
-    assert get_task_schema("verification")["properties"]["status"]["enum"] == ["supported","partial","insufficient","contradicted"]
+    assert get_task_schema("verification")["properties"]["verification"]["properties"]["status"]["enum"] == ["supported","partial","insufficient","contradicted"]
     with pytest.raises(HarnessError): validate_runtime({"mode":"host","data_mode":"synthetic","budget":{"max_tasks":True}})
     with pytest.raises(HarnessError): validate_spec({"status":"ready","project_id":"p","revision":1,"research_question":"q","report_targets":[],"references":[]})
