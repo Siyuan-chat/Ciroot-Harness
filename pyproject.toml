@@ -27,4 +27,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-research_harness = ["schemas/*.json", "fixtures/*.json", "fixtures/*.txt"]
+research_harness = ["schemas/*.json", "fixtures/*.json", "fixtures/*.txt", "prompts/investigation/*.md", "examples/investigation/*.json"]
