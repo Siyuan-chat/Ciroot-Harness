@@ -8,7 +8,7 @@ import re
 import sqlite3
 import argparse
 import sys
-from importlib.metadata import version as package_version
+from importlib.metadata import PackageNotFoundError, version as package_version
 import uuid
 from collections import Counter
 from contextlib import AbstractContextManager
@@ -155,7 +155,11 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
     def _index_fingerprint(self) -> str:
         preprocessing = "fastembed-0.8-mean-pooling-normalized-e5-query-passage" if self.embedding_model == DEFAULT_EMBEDDING_MODEL else "fastembed-0.8-mean-pooling"
-        return json.dumps({"embedding_model": self.embedding_model, "embedding_dimension": _EMBEDDING_DIMENSION, "embedding_preprocessing": preprocessing, "fastembed": package_version("fastembed"), "docling": package_version("docling"), "llama_index_core": package_version("llama-index-core"), "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
+        try:
+            versions = {"fastembed": package_version("fastembed"), "docling": package_version("docling"), "llama_index_core": package_version("llama-index-core")}
+        except PackageNotFoundError as exc:
+            raise RagError("RH_RAG_DEPENDENCY", "RAG dependencies are not installed") from exc
+        return json.dumps({"embedding_model": self.embedding_model, "embedding_dimension": _EMBEDDING_DIMENSION, "embedding_preprocessing": preprocessing, **versions, "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
 
     def _active_collection(self) -> str:
         row = self._db.execute("SELECT value FROM rag_config WHERE key='active_collection'").fetchone()
@@ -352,12 +356,12 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             document_id = self._document_id(record, source)
             if root not in source.parents or not source.is_file():
                 failed += 1; errors.append({"document_id": document_id, **_safe_error("RH_RAG_INVALID_INPUT", "catalog file is unavailable")}); continue
-            digest = hashlib.sha256(source.read_bytes()).hexdigest()
-            old = self._db.execute("SELECT version_id FROM rag_versions WHERE document_id=? AND content_sha256=?", (document_id, digest)).fetchone()
-            self._ensure_index_config()
-            if old and self._version_is_indexed(old["version_id"]):
-                reused += 1; documents.append({"document_id": document_id, "version_id": old["version_id"], "parse_status": "reused"}); continue
             try:
+                digest = hashlib.sha256(source.read_bytes()).hexdigest()
+                old = self._db.execute("SELECT version_id FROM rag_versions WHERE document_id=? AND content_sha256=?", (document_id, digest)).fetchone()
+                self._ensure_index_config()
+                if old and self._version_is_indexed(old["version_id"]):
+                    reused += 1; documents.append({"document_id": document_id, "version_id": old["version_id"], "parse_status": "reused"}); continue
                 blocks, pages, coverage, parse_errors, _cache_reused = self._parse_with_cache(source, digest)
                 _embedder, qdrant, splitter = self._components()
                 chunks = list(self._chunks(blocks, splitter))
@@ -443,8 +447,10 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             raise
         except RuntimeError as exc:
             raise RagError("RH_RAG_BUSY", "RAG workspace index is in use") from exc
-        except Exception:
-            return False
+        except ImportError as exc:
+            raise RagError("RH_RAG_DEPENDENCY", "RAG dependencies are not installed") from exc
+        except Exception as exc:
+            raise RagError("RH_RAG_INDEX_UNAVAILABLE", "could not inspect the vector index") from exc
 
     def _copy_source(self, source: Path, version_id: str) -> Path:
         destination = self.root / "raw" / f"{version_id}{source.suffix.casefold()}"
@@ -621,10 +627,20 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
     def get_library_status(self) -> dict[str, Any]:
         documents = [dict(row) for row in self._db.execute("SELECT document_id,title,doi,document_type,year,current_version_id,parse_status FROM rag_documents ORDER BY title")]
-        indexed = sum(bool(item["current_version_id"]) and self._version_is_indexed(item["current_version_id"]) for item in documents)
         completed = sum(item["parse_status"] == "completed" for item in documents)
-        index_status = "empty" if not documents else "ready" if indexed == completed and completed else "partial"
-        return {"document_count": len(documents), "version_count": self._db.execute("SELECT COUNT(*) FROM rag_versions").fetchone()[0], "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0], "indexed_document_count": indexed, "failed_document_count": sum(item["parse_status"] == "failed" for item in documents), "embedding_model": self._stored_embedding_model(), "index_status": index_status, "documents": documents}
+        try:
+            indexed = sum(bool(item["current_version_id"]) and self._version_is_indexed(item["current_version_id"]) for item in documents)
+        except RagError as exc:
+            indexed = None
+            index_status = "unavailable"
+            index_error: dict[str, str] | None = exc.to_dict()
+        else:
+            index_status = "empty" if not documents else "ready" if indexed == completed and completed else "partial"
+            index_error = None
+        result = {"document_count": len(documents), "version_count": self._db.execute("SELECT COUNT(*) FROM rag_versions").fetchone()[0], "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0], "indexed_document_count": indexed, "failed_document_count": sum(item["parse_status"] == "failed" for item in documents), "embedding_model": self._stored_embedding_model(), "index_status": index_status, "documents": documents}
+        if index_error is not None:
+            result["index_error"] = index_error
+        return result
 
 
 def main(argv: list[str] | None = None) -> int:

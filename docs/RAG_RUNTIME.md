@@ -23,3 +23,7 @@ The default E5 model and the explicit legacy MiniLM model have been tested in th
 ## Local regression record
 
 On the bundled Python runtime, `python -m pytest -q tests/test_rag_cli.py tests/test_rag_prepare.py tests/test_rag_mcp.py` passed 7 tests on 2026-09-10. Pytest reported one non-product warning because the worktree denied creation of `.pytest_cache`. BM25Okapi has an expected two-document IDF edge case: a token present in one of two documents can receive zero IDF under the library's epsilon rule. A three-document synthetic corpus distinguished a rare token, and an 8,820-document synthetic corpus built and queried in 0.039 seconds; an all-empty token corpus uses the vector-only branch.
+
+## Index status when runtime checks are unavailable
+
+`get_library_status()` reports a confirmed empty index as `index_status="empty"` with `indexed_document_count=0`. If Qdrant or its required package metadata cannot be checked, it instead reports `index_status="unavailable"`, `indexed_document_count=null`, and a safe `index_error`. This state does not establish that vectors are absent and must not trigger a rebuild. Search and import/rebuild continue to return structured `RH_RAG_DEPENDENCY` errors for missing runtime dependencies; a missing collection remains the existing confirmed incomplete-index path.
