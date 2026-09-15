@@ -21,10 +21,14 @@ def validate_spec(spec: dict[str, Any]) -> None:
         if "value" in c and c["value"] is not None and not isinstance(c.get("unit"),str): raise ValidationError("quantitative criterion needs unit")
 def validate_runtime(runtime: dict[str, Any]) -> None:
     _validate(runtime, "investigation-runtime.schema.json")
-    b=runtime["budget"]; allowed={"max_tasks","max_source_calls","max_pages_per_query","max_cycles","max_total_tasks"}
+    b=runtime["budget"]; allowed={"max_tasks","max_source_calls","max_pages_per_query","max_cycles","max_total_tasks","max_downloads","max_download_calls","max_download_bytes"}
     if set(b)-allowed or any(type(v) is not int or v<1 for v in b.values()): raise ValidationError("invalid runtime budget")
     p=runtime.get("data_policy",{})
     if p and (not isinstance(p,dict) or "allowed_models" in p and (not isinstance(p["allowed_models"],list) or not all(isinstance(x,str) for x in p["allowed_models"])) or "allow_query_egress" in p and type(p["allow_query_egress"]) is not bool): raise ValidationError("invalid data policy")
+    if runtime.get("data_mode")=="live":
+        source=runtime.get("sources",{}).get("openalex") if isinstance(runtime.get("sources"),dict) else None
+        if runtime.get("allow_network") is not True or not isinstance(source,dict): raise ValidationError("live runtime requires explicit network opt-in and OpenAlex configuration")
+        if bool(source.get("anonymous")) == bool(source.get("api_key_env")): raise ValidationError("OpenAlex configuration requires exactly one authentication mode")
 
 def get_task_schema(role: str) -> dict[str, Any]:
     schema = _load("investigation-task.schema.json")

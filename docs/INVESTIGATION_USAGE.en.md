@@ -56,3 +56,13 @@ python scripts/investigation_replay.py --pending pending.json --output replay-re
 
 An installed package does not require `PYTHONPATH`. First install with the same interpreter used by PowerShell: `python -m pip install .[investigation]`, then run the commands below; set `PYTHONPATH=<worktree>\src` only for source-tree development checks.
 
+## Opt-in live OpenAlex (P2)
+
+Set `data_mode` to `live`, set `allow_network` to `true`, and configure only
+`sources.openalex`. Choose `anonymous: true`, or an `api_key_env` name; never
+put a key in JSON. The scenario must provide auditable, already-retrieved
+`reference_evidence`; live collection never imports the local RAG library.
+Search and download attempts, cursors, byte/count limits, full-text gaps, and
+the `synthetic: false` result flag are exposed through this same service, CLI,
+and MCP. Downloaded originals stay under the investigation workspace.
+

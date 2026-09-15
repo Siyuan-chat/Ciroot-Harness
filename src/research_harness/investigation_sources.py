@@ -5,6 +5,7 @@ from io import BytesIO
 from xml.etree import ElementTree
 from dataclasses import dataclass
 from typing import Any
+from . import literature
 
 class SourceError(Exception):
     def __init__(self, code, message): self.code, self.message=code,message
@@ -24,6 +25,46 @@ class SyntheticTransport:
         if matches:
             raise SourceError("RH_SOURCE_INVALID_RESPONSE","offline response sequence ended")
         raise SourceError("RH_SOURCE_INVALID_RESPONSE","offline response page is missing")
+
+
+class OpenAlexTransport:
+    """Small adapter over the one maintained OpenAlex collector path.
+
+    A service supplies ``on_attempt`` before each actual HTTP request so its
+    durable source-attempt ledger, rather than literature's retry loop, owns
+    the global request budget.
+    """
+    def __init__(self, runtime, on_attempt):
+        self.runtime = runtime
+        self.on_attempt = on_attempt
+
+    def search(self, source, query_id, cursor=None, attempt=1):
+        if source != "openalex":
+            raise SourceError("RH_SOURCE_UNSUPPORTED", "live source is not available")
+        config = self.runtime.get("sources", {}).get("openalex", {})
+        try:
+            result = literature.search({
+                "queries": [query_id], "year_min": config.get("year_min", 1900),
+                "review_only": False, "max_candidates": config.get("page_size", 100),
+                "max_pages_per_query": 1, "page_size": config.get("page_size", 100),
+                "sort": config.get("sort", "relevance_score:desc"),
+                "anonymous": bool(config.get("anonymous")), "api_key_env": config.get("api_key_env", "OPENALEX_API_KEY"),
+                "timeout_seconds": config.get("timeout_seconds", 30),
+                "start_cursors": {query_id: cursor} if cursor else {},
+            }, on_attempt=self.on_attempt, max_retries=0)
+        except literature.LiteratureError as error:
+            raise SourceError("RH_SOURCE_" + error.code.upper(), "OpenAlex request failed") from error
+        state = result["queries"][0]
+        if state["status"] == "failed":
+            code = result["search_status"].get("failures", [{}])[0].get("code", "source_unavailable")
+            raise SourceError("RH_SOURCE_" + str(code).upper(), "OpenAlex request failed")
+        candidates = []
+        for record in result["records"]:
+            source_id = record.get("source_id")
+            if not isinstance(source_id, str) or not source_id:
+                continue
+            candidates.append({"document_id": source_id, "version": "openalex-metadata", "source": "openalex", **record})
+        return {"candidates": candidates, "next_cursor": state.get("next_cursor"), "complete": state["status"] == "complete"}
 
 def policy_allows(item, runtime, *, query=False):
     policy=runtime.get("data_policy",{}); visibility=item.get("visibility","public")

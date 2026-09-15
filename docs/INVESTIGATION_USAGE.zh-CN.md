@@ -53,3 +53,8 @@ python scripts/investigation_replay.py --pending pending.json --output replay-re
 
 已安装产品无需设置 `PYTHONPATH`。先用与 PowerShell 相同的解释器安装：`python -m pip install .[investigation]`，再执行以下命令；源码开发自测时才可选设置 `PYTHONPATH=<worktree>\src`。
 
+## 显式启用的 OpenAlex 实时模式（P2）
+
+将 `data_mode` 设为 `live`、`allow_network` 设为 `true`，且仅配置
+`sources.openalex`。使用 `anonymous: true`，或只给出 `api_key_env` 的环境变量名；密钥不能写入 JSON。scenario 必须传入已检索、可审计的 `reference_evidence`；实时采集不会导入或修改本地 RAG 文库。搜索/下载尝试、游标、次数和字节上限、正文缺口及 `synthetic: false` 都由同一服务投影到 CLI 和 MCP。下载原文只保存在调查 workspace。
+

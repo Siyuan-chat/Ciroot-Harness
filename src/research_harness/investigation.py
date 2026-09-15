@@ -1,12 +1,13 @@
 """Offline, resumable D19-P1 investigation orchestration."""
 from __future__ import annotations
 
-import hashlib, json, sqlite3, time, uuid
+import base64, hashlib, json, os, sqlite3, time, uuid
 from pathlib import Path
 from jsonschema import Draft202012Validator
 from langgraph.graph import StateGraph, START, END
 from .errors import HarnessError, NotFoundError, ValidationError
-from .investigation_sources import SourceError, SyntheticTransport, baseline_snapshot, normalize, policy_allows, canonical_identity
+from .investigation_sources import SourceError, SyntheticTransport, OpenAlexTransport, baseline_snapshot, normalize, policy_allows, canonical_identity
+from . import literature
 from .investigation_contracts import get_task_schema, validate_spec, validate_runtime
 from .investigation_monitoring import MonitorStore
 from .investigation_review import ReviewStore
@@ -26,7 +27,7 @@ def schema(key, item=None):
 candidate = {"type":"object","required":["document_id","relevance","reason"],"additionalProperties":False,"properties":{"document_id":{"type":"string","minLength":1},"relevance":{"enum":["relevant","irrelevant","uncertain"]},"reason":{"type":"string","minLength":1}}}
 finding = {"type":"object","required":["finding","evidence_ids"],"additionalProperties":False,"properties":{"finding":{"type":"string","minLength":1},"evidence_ids":{"type":"array","minItems":1,"items":{"type":"string"}}}}
 TASK_SCHEMAS = {
- "planning": schema("search_plan", {"type":"object","required":["queries"],"additionalProperties":False,"properties":{"queries":{"type":"array","minItems":1,"items":{"type":"object","required":["source","query"],"additionalProperties":False,"properties":{"source":{"enum":["synthetic-paper","synthetic-patent"]},"query":{"type":"string","minLength":1}}}}}}),
+ "planning": schema("search_plan", {"type":"object","required":["queries"],"additionalProperties":False,"properties":{"queries":{"type":"array","minItems":1,"items":{"type":"object","required":["source","query"],"additionalProperties":False,"properties":{"source":{"enum":["synthetic-paper","synthetic-patent","openalex"]},"query":{"type":"string","minLength":1}}}}}}),
  "paper_search": schema("candidates", {"type":"array","items":candidate}), "patent_search": schema("candidates", {"type":"array","items":candidate}),
  "evidence_analysis": schema("findings", {"type":"array","minItems":1,"items":finding}),
  "business_judgment": schema("judgments", {"type":"array","items":{"type":"object","required":["document_id","relevance","human_review_required","reason"],"additionalProperties":False,"properties":{"document_id":{"type":"string"},"relevance":{"enum":["relevant","irrelevant","uncertain"]},"human_review_required":{"type":"boolean"},"reason":{"type":"string","minLength":1}}}}),
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.execute("CREATE TABLE IF NOT EXISTS source_attempts(run_id TEXT,query_id TEXT,cursor TEXT,attempt INTEGER,status TEXT,result TEXT,PRIMARY KEY(run_id,query_id,cursor,attempt))")
         self.db.execute("CREATE TABLE IF NOT EXISTS source_queries(run_id TEXT,query_id TEXT,source TEXT,query TEXT,parent_query_id TEXT,input_refs TEXT,status TEXT,reason TEXT,PRIMARY KEY(run_id,query_id))")
         self.db.execute("CREATE TABLE IF NOT EXISTS discovery_evidence(evidence_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,document_id TEXT NOT NULL,version_id TEXT NOT NULL,payload TEXT NOT NULL,visibility TEXT NOT NULL,company_id TEXT)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS discovery_documents(run_id TEXT NOT NULL,document_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(run_id,document_id))")
         self.db.execute("CREATE TABLE IF NOT EXISTS frozen_reports(run_id TEXT PRIMARY KEY,payload TEXT NOT NULL,created REAL NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_runs(run_id TEXT PRIMARY KEY,monitor_id TEXT NOT NULL,cycle_id TEXT NOT NULL,profile TEXT NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_cycle_facts(monitor_id TEXT NOT NULL,cycle_key TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(monitor_id,cycle_key))")
@@ -67,7 +69,9 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         try:
             self._lock.acquire(timeout=0)
         except Timeout as error: raise InvestigationError("RH_WORKSPACE_BUSY","another investigation service owns this workspace") from error
-    def doctor(self): return {"ok":True,"mode":"offline","network":"disabled","data_mode":"synthetic","missing":[],"capabilities":{"langgraph":True,"model_api":False,"sources":"synthetic_only"}}
+    def doctor(self):
+        present=bool(os.environ.get("OPENALEX_API_KEY"))
+        return {"ok":True,"mode":"host","network":"opt_in","data_modes":["synthetic","live"],"missing":[],"capabilities":{"langgraph":True,"model_api":False,"sources":{"synthetic":True,"openalex":{"available":True,"anonymous":True,"api_key":"present" if present else "missing"}}}}
     def validate_plan(self, plan):
         if not isinstance(plan,dict): raise ValidationError("plan must be an object")
         search_plan=plan.get("search_plan",plan if "queries" in plan else None)
@@ -82,12 +86,21 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
     def create_investigation(self,spec,runtime,scenario=None):
         validate_spec(spec)
         validate_runtime(runtime)
-        if spec.get("status")!="ready" or runtime.get("mode")!="host" or runtime.get("data_mode")!="synthetic": raise InvestigationError("RH_PRECONDITION","ready synthetic host inputs are required")
+        live=runtime.get("data_mode")=="live"
+        if spec.get("status")!="ready" or runtime.get("mode")!="host" or runtime.get("data_mode") not in {"synthetic","live"}: raise InvestigationError("RH_PRECONDITION","ready host inputs are required")
+        if live and runtime.get("allow_network") is not True: raise InvestigationError("RH_PRECONDITION","live source requires explicit network opt-in")
         scenario=scenario or {}
         if not isinstance(scenario,dict) or not isinstance(scenario.get("sources",[]),list): raise InvestigationError("RH_SCENARIO","scenario.sources must be a list")
-        scenario=dict(scenario); scenario["baseline_snapshot"]=baseline_snapshot(scenario.get("references",[]),runtime)
+        if live and (scenario.get("sources") or scenario.get("transport_pages")):
+            raise InvestigationError("RH_LIVE_FIXTURE","live runs cannot use synthetic source fixtures")
+        scenario=dict(scenario)
+        explicit_reference_evidence=scenario.get("reference_evidence",[])
+        if live and (not isinstance(explicit_reference_evidence,list) or any(not isinstance(item,dict) or not item.get("evidence_id") or not item.get("document_id") or not item.get("version_id") or not isinstance(item.get("text"),str) or not item["text"] or not isinstance(item.get("locator"),dict) or not item["locator"].get("kind") or not item["locator"].get("value") for item in explicit_reference_evidence)):
+            raise InvestigationError("RH_REFERENCE_EVIDENCE","live runs require explicit reference_evidence")
+        scenario["baseline_snapshot"]=explicit_reference_evidence if live else baseline_snapshot(scenario.get("references",[]),runtime)
         blocked=[x.get("document_id") for x in scenario.get("references",[]) if not policy_allows(x,runtime)]
-        run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=dict(runtime.get("budget",{})); budget.setdefault("max_tasks",8); budget.setdefault("max_source_calls",32); budget["reserved_tasks"]=0; budget["reserved_source_calls"]=0
+        if live: blocked.extend(x.get("evidence_id") for x in explicit_reference_evidence if not policy_allows(x,runtime))
+        run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=dict(runtime.get("budget",{})); budget.setdefault("max_tasks",8); budget.setdefault("max_source_calls",32); budget.setdefault("max_downloads",1); budget.setdefault("max_download_calls",12); budget.setdefault("max_download_bytes",30*1024*1024); budget["reserved_tasks"]=0; budget["reserved_source_calls"]=0; budget["reserved_download_calls"]=0; budget["reserved_downloads"]=0; budget["received_download_bytes"]=0
         self.db.execute("INSERT INTO investigations VALUES (?,?,?,?,?,?,?,?,?,?,?)",(run,json.dumps(spec),json.dumps(runtime),json.dumps(scenario),"running","planning",json.dumps(budget),now,now,None,"[]")); self.db.commit()
         if blocked:
             self._trace(run,"planning_gate","policy_blocked",{"code":"RH_POLICY_BLOCKED","references":blocked})
@@ -118,7 +131,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             if error.code not in {"RH_MODEL_BUDGET","RH_MONITOR_BUDGET"}: raise
             extracted=self._done(run_id,"evidence_analysis","extract")
             evidence_row=self.db.execute("SELECT payload FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract'",(run_id,)).fetchone()
-            result={"run_id":run_id,"synthetic":True,"outcome":"partial","conclusion":"Task budget exhausted before the next stage.","verification":None,"findings":extracted[0]["findings"] if extracted else [],"evidence":json.loads(evidence_row["payload"])["evidence"] if evidence_row else [],"artifacts":[],"issues":[{"code":error.code,"status":"open"}]}
+            result={"run_id":run_id,"synthetic":self._synthetic_run(run_id),"outcome":"partial","conclusion":"Task budget exhausted before the next stage.","verification":None,"findings":extracted[0]["findings"] if extracted else [],"evidence":json.loads(evidence_row["payload"])["evidence"] if evidence_row else [],"artifacts":[],"issues":[{"code":error.code,"status":"open"}]}
             self.db.execute("UPDATE investigations SET status='partial',stage='budget_exhausted',result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run_id)); self.db.commit()
         s=self.status(run_id)
         if s["status"] in ("completed","partial"): return {"run_id":run_id,"outcome":s["status"],"stage":"completed"}
@@ -213,18 +226,18 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         plan=self._done(s["run_id"],"planning","plan")[0]["search_plan"]; q=plan["queries"]
         reference_ids={x.get("document_id") for x in json.loads(r["scenario"]).get("references",[])}
         evidence_ids={x.get("evidence_id") for x in json.loads(r["scenario"]).get("baseline_snapshot",[])}
-        self._validate_queries(q,reference_ids,evidence_ids)
+        self._validate_queries(q,reference_ids,evidence_ids,json.loads(r["runtime"]))
         runtime=json.loads(r["runtime"])
         # Source screen tasks are all-or-partial as one planning checkpoint.
         self._reserve_available(s["run_id"],len(q))
         any_task=False; partial=False
         for item in q:
-            role="paper_search" if item["source"]=="synthetic-paper" else "patent_search"
+            role="paper_search" if item["source"] in {"synthetic-paper","openalex"} else "patent_search"
             source=item["source"]; query_id=item.get("query_id") or "q-"+hashlib.sha256((source+item["query"]+str(item.get("parent_query_id",""))).encode()).hexdigest()[:12]
             self.db.execute("INSERT OR IGNORE INTO source_queries VALUES (?,?,?,?,?,?,?,?)",(s["run_id"],query_id,source,item["query"],item.get("parent_query_id"),json.dumps(item.get("input_refs",[])),"pending",None)); self.db.commit()
             if self._query_is_sensitive(item,r) and not policy_allows({"visibility":"confidential","company_id":runtime.get("data_policy",{}).get("company_id")},runtime,query=True):
                 self._set_query(s["run_id"],query_id,"policy_blocked","RH_POLICY_BLOCKED: query egress is not allowed"); partial=True; continue
-            candidates, status, reason=self._search_pages(s["run_id"],source,query_id,runtime,r)
+            candidates, status, reason=self._search_pages(s["run_id"],source,query_id,item["query"],runtime,r)
             self._set_query(s["run_id"],query_id,status,reason)
             if status != "complete": partial=True
             visible=self._visible_candidates(candidates,runtime,r)
@@ -258,6 +271,8 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if r["stage"]!="acquire_normalize":return {"run_id":s["run_id"],"next":"analysis_task"}
         selected={x["document_id"] for task in self._screens(s["run_id"]) for x in task["candidates"] if x["relevance"]!="irrelevant"}; evidence=[]; acquisition_issues=[]
         runtime=json.loads(r["runtime"])
+        if runtime.get("data_mode")=="live":
+            acquisition_issues.extend(self._acquire_live_documents(s["run_id"],runtime,selected))
         for doc in self._sources(r):
             if doc.get("document_id") not in selected: continue
             if not policy_allows(doc,runtime):
@@ -278,6 +293,70 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         judge_evidence=[item for item in evidence if not monitor or self._monitor_needs_judgment(monitor,item)]
         if judge_evidence:self._task(s["run_id"],"business_judgment","judge",{**payload,"documents":[{"document_id":e["document_id"],"evidence_id":e["evidence_id"]} for e in judge_evidence]})
         self._set(s["run_id"],stage="analysis",status="waiting_model");self._trace(s["run_id"],"acquire_normalize","normalized",{"evidence_count":len(evidence)});return {"run_id":s["run_id"],"next":"end"}
+
+    def _acquire_live_documents(self,run_id,runtime,selected):
+        documents={item.get("document_id"):item for item in self._sources(self._run(run_id)) if item.get("document_id") in selected and item.get("source")=="openalex" and item.get("version") != "openalex-oa-pdf"}
+        pending={row["cursor"] for row in self.db.execute("SELECT cursor FROM source_attempts WHERE run_id=? AND query_id='download-document' AND status='pending'",(run_id,))}
+        uncertain=set(documents) & pending
+        documents={key:value for key,value in documents.items() if key not in uncertain}
+        issues=[{"code":"RH_DOWNLOAD_UNCERTAIN","status":"open","document_id":key,"message":"prior download attempt is unknown and was not resent"} for key in uncertain]
+        if not documents:
+            return issues
+        budget=json.loads(self._run(run_id)["budget"])
+        if budget["reserved_downloads"] >= budget["max_downloads"]:
+            return [*issues,{"code":"RH_DOWNLOAD_BUDGET","status":"open","message":"download limit exhausted"}]
+        service=self
+        class CountingSession:
+            def __init__(self): self.client=literature.requests.Session()
+            def get(self,url,**kwargs):
+                current=json.loads(service._run(run_id)["budget"])
+                if current["reserved_download_calls"] >= current["max_download_calls"]:
+                    raise literature.LiteratureError("download_call_budget", "download request budget exhausted")
+                current["reserved_download_calls"]+=1
+                cursor="url-"+hashlib.sha256(str(url).encode()).hexdigest()[:16]
+                number=service.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='download' AND cursor=?",(run_id,cursor)).fetchone()[0]+1
+                service.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id))
+                service.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,"download",cursor,number,"pending",json.dumps({"kind":"download"}))); service.db.commit()
+                try:
+                    response=self.client.get(url,**kwargs)
+                except Exception:
+                    service.db.execute("UPDATE source_attempts SET status='RH_SOURCE_NETWORK_ERROR' WHERE run_id=? AND query_id='download' AND cursor=? AND attempt=?",(run_id,cursor,number)); service.db.commit(); raise
+                status="success" if 200 <= getattr(response,"status_code",0) < 300 else "RH_SOURCE_HTTP_"+str(getattr(response,"status_code",0))
+                service.db.execute("UPDATE source_attempts SET status=? WHERE run_id=? AND query_id='download' AND cursor=? AND attempt=?",(status,run_id,cursor,number)); service.db.commit()
+                return response
+        def reserve_document(record):
+            current=json.loads(self._run(run_id)["budget"]); document_id=record.get("source_id")
+            if current["reserved_downloads"] >= current["max_downloads"]: raise literature.LiteratureError("download_budget", "download limit exhausted")
+            current["reserved_downloads"]+=1
+            number=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='download-document' AND cursor=?",(run_id,document_id)).fetchone()[0]+1
+            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id))
+            self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,"download-document",document_id,number,"pending",json.dumps({"kind":"download-document"}))); self.db.commit()
+        def received(count):
+            current=json.loads(self._run(run_id)["budget"]); current["received_download_bytes"]+=count
+            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id)); self.db.commit()
+            if current["received_download_bytes"] > current["max_download_bytes"]: raise literature.LiteratureError("byte_budget_exceeded", "download byte budget exhausted")
+        output=self.root/"downloads"/run_id
+        try:
+            catalog=literature.download({"records":list(documents.values())},output,limit=min(budget["max_downloads"]-budget["reserved_downloads"],len(documents)),session=CountingSession(),max_total_bytes=budget["max_download_bytes"]-budget["received_download_bytes"],on_record_start=reserve_document,on_received=received)
+        except literature.LiteratureError as error:
+            return [*issues,{"code":"RH_DOWNLOAD_"+error.code.upper(),"status":"open","message":"open-access full text is unavailable"}]
+        for outcome in catalog["records"]:
+            record=outcome["record"]; document=documents.get(record.get("source_id")); download=outcome["download"]
+            if not document: continue
+            final="success" if download.get("status")=="success" else "RH_DOWNLOAD_"+str(download.get("error",download.get("status","failed"))).upper()
+            self.db.execute("UPDATE source_attempts SET status=?,result=? WHERE run_id=? AND query_id='download-document' AND cursor=? AND status='pending'",(final,json.dumps(download),run_id,record.get("source_id")))
+            if download.get("status")=="success" and isinstance(download.get("path"),str):
+                path=(output/download["path"]).resolve()
+                try:
+                    document={**document,"version":"openalex-oa-pdf","content_type":"application/pdf","base64_bytes":base64.b64encode(path.read_bytes()).decode("ascii")}
+                    self.db.execute("INSERT OR REPLACE INTO discovery_documents VALUES (?,?,?)",(run_id,document["document_id"],json.dumps(document)))
+                except OSError:
+                    issues.append({"code":"RH_DOWNLOAD_LOCAL","status":"open","document_id":record.get("source_id"),"message":"downloaded body could not be read"})
+            else:
+                issues.append({"code":"RH_FULLTEXT_GAP","status":"open","document_id":record.get("source_id"),"message":"only metadata or abstract is available","detail":download.get("error",download.get("status"))})
+        self.db.commit()
+        if catalog["outcome"]!="completed": issues.append({"code":"RH_DOWNLOAD_PARTIAL","status":"open","message":"open-access acquisition is partial"})
+        return issues
     def _analysis(self,s):
         r=self._run(s["run_id"])
         if r["stage"]=="acquire_normalize" or self._pending(s["run_id"]):return {"run_id":s["run_id"],"next":"end"}
@@ -298,13 +377,14 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         bibliography=[self._bibliography(doc) for doc in self._sources(r) if any(x["document_id"]==doc.get("document_id") for x in evidence)]
         acquisition_issues=extract_payload.get("acquisition_issues",[])
         try:
-            report=build_report_data(s["run_id"],json.loads(r["spec"]),evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,acquisition_issues,"run-"+s["run_id"]); report["baseline_evidence"]=extract_payload.get("baseline_evidence",[])
+            report_spec={**json.loads(r["spec"]),"runtime":json.loads(r["runtime"])}
+            report=build_report_data(s["run_id"],report_spec,evidence,findings,synthesis,self._done(s["run_id"],"writing","write")[0]["sections"],v,bibliography,coverage,acquisition_issues,"run-"+s["run_id"]); report["baseline_evidence"]=extract_payload.get("baseline_evidence",[])
             report["monitor"]=self._monitor_snapshot(s["run_id"])
         except Exception as error:
-            report={"synthetic":True,"run_id":s["run_id"],"report_version":"run-"+s["run_id"],"research_question":json.loads(r["spec"])["research_question"],"report_targets":json.loads(r["spec"]).get("report_targets",[]),"findings":findings,"evidence":evidence,"claims":[],"sections":[],"bibliography":bibliography,"coverage":coverage,"issues":[*acquisition_issues,{"code":"RH_REPORT_DATA","message":str(error)}]}
+            report={"synthetic":self._synthetic_run(s["run_id"]),"run_id":s["run_id"],"report_version":"run-"+s["run_id"],"research_question":json.loads(r["spec"])["research_question"],"report_targets":json.loads(r["spec"]).get("report_targets",[]),"findings":findings,"evidence":evidence,"claims":[],"sections":[],"bibliography":bibliography,"coverage":coverage,"issues":[*acquisition_issues,{"code":"RH_REPORT_DATA","message":str(error)}]}
         self.db.execute("INSERT OR REPLACE INTO frozen_reports VALUES (?,?,?)",(s["run_id"],json.dumps(report),time.time())); self.db.commit()
         legacy=any("claim_id" not in claim for claim in synthesis) or any("body" not in section or "claim_ids" not in section for section in self._done(s["run_id"],"writing","write")[0]["sections"])
-        outcome="completed" if v["status"]=="supported" and coverage["complete"] and (legacy or not report.get("issues")) else "partial"; result={"run_id":s["run_id"],"synthetic":True,"outcome":outcome,"conclusion":v["conclusion"],"verification":v,"findings":findings,"evidence":evidence,"baseline_evidence":extract_payload.get("baseline_evidence",[]),"artifacts":[],"coverage":coverage,"monitor":self._monitor_snapshot(s["run_id"]),"issues":report.get("issues",[])}
+        outcome="completed" if v["status"]=="supported" and coverage["complete"] and (legacy or not report.get("issues")) else "partial"; result={"run_id":s["run_id"],"synthetic":self._synthetic_run(s["run_id"]),"outcome":outcome,"conclusion":v["conclusion"],"verification":v,"findings":findings,"evidence":evidence,"baseline_evidence":extract_payload.get("baseline_evidence",[]),"artifacts":[],"coverage":coverage,"monitor":self._monitor_snapshot(s["run_id"]),"issues":report.get("issues",[])}
         self.db.execute("UPDATE investigations SET stage='completed',status=?,result=?,updated=? WHERE id=?",(outcome,json.dumps(result),time.time(),s["run_id"]));self.db.commit();self._trace(s["run_id"],"verification_gate",v["status"]);return {"run_id":s["run_id"],"next":"end"}
 
     def _task(self,run,role,typ,payload):
@@ -339,12 +419,13 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             item=evidence[judgment["document_id"]]
             saved=self.reviews.record_judgment(monitor["monitor_id"],monitor["profile"]["company_id"],item["document_id"],item["version_id"],monitor["profile"]["rule_version"],judgment,[item["evidence_id"]])
             self.monitors.mark_judged(monitor["cycle_id"],item["document_id"],item["version_id"],saved["issue_id"])
-    def _validate_queries(self,queries,reference_ids=None,evidence_ids=None):
+    def _validate_queries(self,queries,reference_ids=None,evidence_ids=None,runtime=None):
         errors=list(Draft202012Validator(get_task_schema("planning")).iter_errors({"search_plan":{"queries":queries}}))
         if errors: raise InvestigationError("RH_QUERY_IDENTITY","query plan failed schema validation")
         ids=[]
         for item in queries:
-            if item["source"] not in {"synthetic-paper","synthetic-patent"}: raise InvestigationError("RH_QUERY_IDENTITY","query source is not available in offline mode")
+            allowed={"synthetic-paper","synthetic-patent"} if runtime is None or runtime.get("data_mode")=="synthetic" else {"openalex"}
+            if item["source"] not in allowed: raise InvestigationError("RH_QUERY_IDENTITY","query source is unavailable for this runtime")
             ids.append(item["query_id"])
         if len(ids)!=len(set(ids)): raise InvestigationError("RH_QUERY_IDENTITY","query_id must be unique within a run")
         known=set(ids)
@@ -365,7 +446,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if role == "planning":
             queries=result["search_plan"]["queries"]
             run=self._run(row["run_id"]); references=json.loads(run["scenario"]).get("references",[]); docs={x.get("document_id") for x in references}; evidence={x.get("evidence_id") for x in json.loads(run["scenario"]).get("baseline_snapshot",[])}
-            self._validate_queries(queries,docs,evidence)
+            self._validate_queries(queries,docs,evidence,json.loads(run["runtime"]))
         elif role in ("paper_search","patent_search"):
             if not {x["document_id"] for x in result["candidates"]}<={x["document_id"] for x in p["candidates"]}:raise InvestigationError("RH_RESULT_REFERENCE","candidate is not in source task")
         elif role=="evidence_analysis":
@@ -394,8 +475,14 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         x=self.db.execute("SELECT * FROM investigations WHERE id=?",(run,)).fetchone()
         if not x:raise NotFoundError()
         return x
-    def _sources(self,run):return json.loads(run["scenario"]).get("sources",[])
-    def _search_pages(self,run_id,source,query_id,runtime,run):
+    def _synthetic_run(self,run): return json.loads(self._run(run)["runtime"]).get("data_mode") == "synthetic"
+    def _sources(self,run):
+        fixture=json.loads(run["scenario"]).get("sources",[])
+        live=[json.loads(row["payload"]) for row in self.db.execute("SELECT payload FROM discovery_documents WHERE run_id=? ORDER BY rowid",(run["id"],))]
+        return [*fixture,*live]
+    def _search_pages(self,run_id,source,query_id,query,runtime,run):
+        if source=="openalex":
+            return self._search_live_pages(run_id,query_id,query,runtime)
         transport=SyntheticTransport(json.loads(run["scenario"]).get("transport_pages",[])); cursor=None; found=[]; seen=set(); max_pages=int(runtime.get("budget",{}).get("max_pages_per_query",32))
         while True:
             if len(seen)>=max_pages or cursor in seen:
@@ -422,6 +509,45 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
                     self.db.execute("UPDATE source_attempts SET status='success',result=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(json.dumps(page),run_id,query_id,cursor,attempt));self.db.commit(); break
             seen.add(cursor)
             found.extend(page["candidates"]); cursor=page["next_cursor"]
+            if cursor is None:return found,"complete",None
+
+    def _search_live_pages(self,run_id,query_id,query,runtime):
+        cursor=None; found=[]; seen=set(); source_config=runtime["sources"]["openalex"]; max_pages=min(int(runtime["budget"].get("max_pages_per_query",32)),int(source_config.get("max_pages",32))); max_candidates=int(source_config.get("max_candidates",100))
+        def reserve_http(meta):
+            budget=json.loads(self._run(run_id)["budget"])
+            if budget["reserved_source_calls"] >= budget["max_source_calls"]:
+                raise SourceError("RH_SOURCE_BUDGET","source request budget exhausted")
+            budget["reserved_source_calls"]+=1
+            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
+            self.db.commit()
+        transport=OpenAlexTransport(runtime,reserve_http)
+        while True:
+            if len(seen)>=max_pages or cursor in seen:
+                return found,"partial","cursor loop or page limit"
+            cached=self.db.execute("SELECT result FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND status='success' ORDER BY attempt DESC LIMIT 1",(run_id,query_id,cursor)).fetchone()
+            if cached:
+                page=json.loads(cached["result"])
+            else:
+                if self.db.execute("SELECT 1 FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND status='pending'",(run_id,query_id,cursor)).fetchone():
+                    return found,"partial","uncertain prior source call"
+                page=None
+                for _ in range(3):
+                    number=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ?",(run_id,query_id,cursor)).fetchone()[0]+1
+                    self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,query_id,cursor,number,"pending",json.dumps({"kind":"search"}))); self.db.commit()
+                    try:
+                        page=transport.search("openalex",query,cursor)
+                    except SourceError as error:
+                        self.db.execute("UPDATE source_attempts SET status=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(error.code,run_id,query_id,cursor,number)); self.db.commit()
+                        if error.code in {"RH_SOURCE_RATE_LIMIT","RH_SOURCE_TIMEOUT","RH_SOURCE_SOURCE_UNAVAILABLE","RH_SOURCE_NETWORK_ERROR"}: continue
+                        return found,"partial",error.code
+                    self.db.execute("UPDATE source_attempts SET status='success',result=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(json.dumps(page),run_id,query_id,cursor,number)); self.db.commit(); break
+                if page is None: return found,"partial","source retry exhausted"
+            for document in page["candidates"]:
+                if len(found) >= max_candidates: break
+                self.db.execute("INSERT OR REPLACE INTO discovery_documents VALUES (?,?,?)",(run_id,document["document_id"],json.dumps(document)))
+                found.append(document)
+            self.db.commit(); seen.add(cursor); cursor=page["next_cursor"]
+            if len(found) >= max_candidates and cursor is not None: return found,"partial","candidate limit"
             if cursor is None:return found,"complete",None
 
     def _screens(self,run):
@@ -463,7 +589,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         return {"queries":queries,"attempts":attempts,"complete":bool(queries) and all(x["status"]=="complete" for x in queries)}
 
     def _finish_source_partial(self,run,message):
-        result={"run_id":run,"synthetic":True,"outcome":"partial","conclusion":message,"verification":None,"findings":[],"evidence":[],"artifacts":[],"issues":[{"code":"RH_SOURCE_PARTIAL","status":"open"}],"coverage":self._coverage(run)}
+        result={"run_id":run,"synthetic":self._synthetic_run(run),"outcome":"partial","conclusion":message,"verification":None,"findings":[],"evidence":[],"artifacts":[],"issues":[{"code":"RH_SOURCE_PARTIAL","status":"open"}],"coverage":self._coverage(run)}
         self.db.execute("UPDATE investigations SET status='partial',stage='completed',result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run));self.db.commit()
     def _set(self,run,**kw):
         kw["updated"]=time.time();self.db.execute("UPDATE investigations SET "+",".join(f"{k}=?" for k in kw)+" WHERE id=?",(*kw.values(),run));self.db.commit()

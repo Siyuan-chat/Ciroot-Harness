@@ -51,3 +51,8 @@ python scripts/investigation_replay.py --pending pending.json --output replay-re
 
 インストール済みの製品では `PYTHONPATH` は不要です。PowerShell と同じ Python で `python -m pip install .[investigation]` を実行してからコマンドを実行します。`PYTHONPATH=<worktree>\src` はソース開発時の自測でのみ任意に設定します。
 
+## 明示的に有効化する OpenAlex live モード（P2）
+
+`data_mode` を `live`、`allow_network` を `true` とし、
+`sources.openalex` だけを設定します。`anonymous: true` を選ぶか、環境変数名だけを `api_key_env` に指定します。キーを JSON に書いてはいけません。scenario は取得済みで監査可能な `reference_evidence` を渡す必要があり、live 収集はローカル RAG ライブラリを import・変更しません。検索/ダウンロード試行、cursor、回数・受信バイト上限、本文欠落、`synthetic: false` は同一サービスから CLI と MCP に投影されます。原文は investigation workspace 内だけに保存されます。
+
