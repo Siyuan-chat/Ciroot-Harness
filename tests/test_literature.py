@@ -56,6 +56,40 @@ class LiteratureTests(unittest.TestCase):
             with self.assertRaisesRegex(literature.LiteratureError, "OPENALEX_API_KEY"):
                 literature.search({"queries": ["AEM"], "year_min": 2020, "review_only": False, "max_candidates": 10, "max_pages_per_query": 1})
 
+    def test_search_supports_bounded_page_size_and_sort(self):
+        def payload(number, cursor):
+            return {"results": [{"id": f"https://openalex.org/W{number}", "doi": f"https://doi.org/10.1/example{number}", "title": f"AEM {number}", "publication_year": 2024, "type": "article", "authorships": [], "locations": [], "abstract_inverted_index": {}}], "meta": {"next_cursor": cursor}}
+        responses = iter([Response(payload=payload(1, "page-2")), Response(payload=payload(2, None))])
+        session = Session({literature.OPENALEX_URL: lambda: next(responses)})
+        result = literature.search({"queries": ["AEM"], "year_min": 2020, "review_only": False, "max_candidates": 10, "max_pages_per_query": 2, "page_size": 5, "sort": "relevance_score:desc", "anonymous": True}, session=session)
+        self.assertEqual("complete", result["search_status"]["status"])
+        self.assertEqual("relevance_score:desc", result["search_status"]["sort"])
+        self.assertEqual(["*", "page-2"], [call[1]["params"]["cursor"] for call in session.calls])
+        self.assertEqual([5, 5], [call[1]["params"]["per-page"] for call in session.calls])
+        self.assertEqual(["relevance_score:desc", "relevance_score:desc"], [call[1]["params"]["sort"] for call in session.calls])
+        self.assertIsNone(result["queries"][0]["next_cursor"])
+
+    def test_search_resumes_from_explicit_cursor_without_leaking_it_as_a_completed_cursor(self):
+        payload = {"results": [{"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/example", "title": "AEM", "publication_year": 2024, "type": "article", "authorships": [], "locations": [], "abstract_inverted_index": {}}], "meta": {"next_cursor": "page-3"}}
+        session = Session({literature.OPENALEX_URL: Response(payload=payload)})
+        result = literature.search({"queries": ["AEM"], "year_min": 2020, "review_only": False, "max_candidates": 1, "max_pages_per_query": 2, "page_size": 1, "start_cursors": {"AEM": "page-2"}, "anonymous": True}, session=session)
+        self.assertEqual("partial", result["search_status"]["status"])
+        self.assertEqual("page-2", result["queries"][0]["start_cursor"])
+        self.assertEqual("page-3", result["queries"][0]["next_cursor"])
+        self.assertEqual("page-2", session.calls[0][1]["params"]["cursor"])
+
+    def test_search_marks_exact_terminal_candidate_limit_complete(self):
+        payload = {"results": [{"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/example", "title": "AEM", "publication_year": 2024, "type": "article", "authorships": [], "locations": [], "abstract_inverted_index": {}}], "meta": {"next_cursor": None}}
+        result = literature.search({"queries": ["AEM"], "year_min": 2020, "review_only": False, "max_candidates": 1, "max_pages_per_query": 2, "page_size": 1, "anonymous": True}, session=Session({literature.OPENALEX_URL: Response(payload=payload)}))
+        self.assertEqual("complete", result["search_status"]["status"])
+        self.assertIsNone(result["queries"][0]["next_cursor"])
+
+    def test_search_rejects_invalid_page_size_and_cursor_mapping(self):
+        base = {"queries": ["AEM"], "year_min": 2020, "review_only": False, "max_candidates": 1, "max_pages_per_query": 1, "anonymous": True}
+        for update in ({"page_size": True}, {"sort": {}}, {"start_cursors": {"other": "page-2"}}, {"start_cursors": {"AEM": ""}}):
+            with self.assertRaisesRegex(literature.LiteratureError, "page_size|sort|start_cursors"):
+                literature.search({**base, **update}, session=Session({}))
+
     def test_download_preserves_partial_work_and_reuses_verified_pdf(self):
         good = "https://files.example/good.pdf"
         html = "https://files.example/html.pdf"
