@@ -3,6 +3,7 @@ import json
 import pytest
 
 from research_harness import investigation
+from research_harness import literature
 from research_harness.investigation import InvestigationService
 from research_harness.investigation_sources import SourceError
 
@@ -132,3 +133,74 @@ def test_synthetic_confidential_baseline_is_sensitive_without_input_refs(tmp_pat
     with InvestigationService(tmp_path) as service:
         run=service.create_investigation(_spec(),runtime,scenario)["run_id"]
         assert service._query_is_sensitive({"input_refs":[]},service._run(run))
+
+
+def _record(doi, url):
+    return {"source_id": doi, "title": doi, "doi": doi, "year": 2024, "authors": [], "type": "article", "locations": [{"is_oa": True, "pdf_url": url, "landing_page_url": None, "license": "CC-BY", "version": "publishedVersion"}]}
+
+
+def test_download_limit_counts_failed_document_and_non_2xx_is_not_success(monkeypatch, tmp_path):
+    class Response:
+        status_code=403; headers={}
+        def close(self): pass
+    class Session:
+        def __init__(self): self.calls=[]
+        def get(self, url, **kwargs): self.calls.append(url); return Response()
+    session=Session(); started=[]
+    def reserve(record):
+        started.append(record["doi"])
+        if len(started) == 2: raise literature.LiteratureError("download_budget", "limit")
+    monkeypatch.setattr(literature, "_safe_url", lambda value: value)
+    catalog=literature.download({"records":[_record("10.1/first","https://files.example/first.pdf"),_record("10.1/second","https://files.example/second.pdf")]},tmp_path,limit=2,session=session,on_record_start=reserve)
+    assert started == ["10.1/first","10.1/second"] and len(session.calls) == 1
+    assert catalog["records"][0]["download"]["status"] != "success"
+    assert catalog["records"][1]["download"] == {"status":"failed","error":"download_budget"}
+    assert catalog["outcome"] == "partial"
+
+
+def test_download_budget_rejection_preserves_prior_catalog_outcome(monkeypatch, tmp_path):
+    class Response:
+        status_code=200; headers={}
+        def __init__(self, data): self.data=data
+        def iter_content(self, chunk_size=65536): yield self.data
+        def close(self): pass
+    class Session:
+        def __init__(self): self.index=0
+        def get(self, url, **kwargs): self.index+=1; return Response(b"%PDF-good")
+    calls=[]
+    monkeypatch.setattr(literature, "_safe_url", lambda value: value)
+    monkeypatch.setattr(literature, "_pdf_check", lambda data, record: (1, True, False))
+    def reserve(record):
+        calls.append(record["doi"])
+        if len(calls) == 2: raise literature.LiteratureError("download_budget", "limit")
+    catalog=literature.download({"records":[_record("10.1/first","https://files.example/first.pdf"),_record("10.1/second","https://files.example/second.pdf")]},tmp_path,limit=2,session=Session(),on_record_start=reserve)
+    assert calls == ["10.1/first","10.1/second"]
+    assert [item["download"]["status"] for item in catalog["records"]] == ["success","failed"]
+    assert catalog["records"][1]["download"]["error"] == "download_budget"
+    assert (tmp_path / "catalog.json").exists()
+
+
+def test_download_byte_ledger_survives_service_reopen(tmp_path):
+    with InvestigationService(tmp_path) as service:
+        run=service.create_investigation(_spec(),_runtime(),{"reference_evidence":[]})["run_id"]
+        budget=service.status(run)["budget"]; budget["received_download_bytes"]=17
+        service.db.execute("UPDATE investigations SET budget=? WHERE id=?",(json.dumps(budget),run)); service.db.commit()
+    with InvestigationService(tmp_path) as reopened:
+        assert reopened.status(run)["budget"]["received_download_bytes"] == 17
+
+
+def test_service_download_403_is_a_failed_http_attempt(monkeypatch, tmp_path):
+    class Response:
+        status_code=403; headers={}
+        def close(self): pass
+    class Session:
+        def get(self, url, **kwargs): return Response()
+    monkeypatch.setattr(literature.requests, "Session", Session)
+    monkeypatch.setattr(literature, "_safe_url", lambda value: value)
+    with InvestigationService(tmp_path) as service:
+        runtime=_runtime(); run=service.create_investigation(_spec(),runtime,{"reference_evidence":[]})["run_id"]
+        document={"document_id":"W1","version":"openalex-metadata","source":"openalex",**_record("10.1/first","https://files.example/first.pdf")}
+        service.db.execute("INSERT INTO discovery_documents VALUES (?,?,?)",(run,"W1",json.dumps(document))); service.db.commit()
+        service._acquire_live_documents(run,runtime,{"W1"})
+        status=service.db.execute("SELECT status FROM source_attempts WHERE run_id=? AND query_id='download'",(run,)).fetchone()["status"]
+        assert status == "RH_SOURCE_HTTP_403"
