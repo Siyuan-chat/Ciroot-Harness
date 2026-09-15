@@ -1,5 +1,6 @@
 from importlib.metadata import PackageNotFoundError
 import sys
+import types
 
 import pytest
 
@@ -11,6 +12,13 @@ def _store_completed_document(library: RagLibrary) -> None:
     library._db.execute("INSERT INTO rag_versions VALUES (?,?,?,?,?,?,?,?,?)", ("ver-1", "doc-1", "sha", "fixture", 1, "full_text", "[]", "fixture.txt", 1))
     library._db.execute("INSERT INTO rag_evidence VALUES (?,?,?,?,?,?,?,?,?)", ("ev-1", "doc-1", "ver-1", 1, "fixture evidence", '{"line_start": 1, "line_end": 1}', None, "text", "fixture"))
     library._db.commit()
+
+
+def _qdrant_module_stub() -> types.ModuleType:
+    module = types.ModuleType("qdrant_client")
+    module.QdrantClient = object
+    module.models = object()
+    return module
 
 
 def test_status_keeps_empty_and_verified_index_counts_distinct(tmp_path, monkeypatch):
@@ -46,25 +54,30 @@ def test_status_reports_an_unavailable_index_as_unknown(tmp_path, monkeypatch, e
 def test_status_keeps_qdrant_dependency_and_index_failures_explicit(tmp_path, monkeypatch):
     with RagLibrary(tmp_path / "library") as library:
         _store_completed_document(library)
-        monkeypatch.setitem(sys.modules, "qdrant_client", None)
-        status = library.get_library_status()
-        assert status["indexed_document_count"] is None
-        assert status["index_status"] == "unavailable"
-        assert status["index_error"]["code"] == "RH_RAG_DEPENDENCY"
+        with monkeypatch.context() as scoped:
+            scoped.setitem(sys.modules, "qdrant_client", None)
+            status = library.get_library_status()
+            assert status["indexed_document_count"] is None
+            assert status["index_status"] == "unavailable"
+            assert status["index_error"]["code"] == "RH_RAG_DEPENDENCY"
 
     with RagLibrary(tmp_path / "busy") as library:
         _store_completed_document(library)
-        library._qdrant = type("BusyIndex", (), {"collection_exists": lambda self, _collection: (_ for _ in ()).throw(RuntimeError("locked")), "close": lambda self: None})()
-        status = library.get_library_status()
-        assert status["indexed_document_count"] is None
-        assert status["index_error"]["code"] == "RH_RAG_BUSY"
+        with monkeypatch.context() as scoped:
+            scoped.setitem(sys.modules, "qdrant_client", _qdrant_module_stub())
+            library._qdrant = type("BusyIndex", (), {"collection_exists": lambda self, _collection: (_ for _ in ()).throw(RuntimeError("locked")), "close": lambda self: None})()
+            status = library.get_library_status()
+            assert status["indexed_document_count"] is None
+            assert status["index_error"]["code"] == "RH_RAG_BUSY"
 
     with RagLibrary(tmp_path / "corrupt") as library:
         _store_completed_document(library)
-        library._qdrant = type("CorruptIndex", (), {"collection_exists": lambda self, _collection: (_ for _ in ()).throw(ValueError("corrupt")), "close": lambda self: None})()
-        status = library.get_library_status()
-        assert status["indexed_document_count"] is None
-        assert status["index_error"]["code"] == "RH_RAG_INDEX_UNAVAILABLE"
+        with monkeypatch.context() as scoped:
+            scoped.setitem(sys.modules, "qdrant_client", _qdrant_module_stub())
+            library._qdrant = type("CorruptIndex", (), {"collection_exists": lambda self, _collection: (_ for _ in ()).throw(ValueError("corrupt")), "close": lambda self: None})()
+            status = library.get_library_status()
+            assert status["indexed_document_count"] is None
+            assert status["index_error"]["code"] == "RH_RAG_INDEX_UNAVAILABLE"
 
 
 def test_search_maps_missing_fingerprint_metadata_to_rag_dependency(tmp_path, monkeypatch):
