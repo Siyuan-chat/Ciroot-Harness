@@ -2,6 +2,8 @@
 
 [中文](README.zh-CN.md) · English · [日本語](README.ja.md)
 
+**2026-09-15 checkpoint:** local RAG/native Luna calls and the live OpenAlex protocol path are verified. New-PDF Docling ingestion and scientific investigation quality remain pending. [Handoff (Chinese)](docs/D19_P2_HANDOFF.md) · [Acceptance](docs/D19_P2_CONTINUATION_ACCEPTANCE.md).
+
 [Integrated system design (Chinese)](docs/SYSTEM_DESIGN.md) · [Architecture diagram](docs/diagrams/harness-overview.svg) · [D19 experiment plan](docs/INVESTIGATION_EXPERIMENT_PLAN.md). These describe the target design; implementation status is stated separately.
 
 A local literature/patent investigation framework. The target workflow is natural-language requirements → versioned JSON → retrieval → comparison with a frozen reference library → human review and reports.

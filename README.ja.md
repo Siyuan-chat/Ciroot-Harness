@@ -2,6 +2,8 @@
 
 [中文](README.zh-CN.md) · [English](README.md) · 日本語
 
+**2026-09-15 時点：**ローカル RAG／Codex 上の Luna 呼び出しと実 OpenAlex のプロトコル経路を検証済みです。新規 PDF の Docling 解析・取り込みと科学的調査の品質は未検証です。[引き継ぎ（中国語）](docs/D19_P2_HANDOFF.md) · [検証記録](docs/D19_P2_CONTINUATION_ACCEPTANCE.md)。
+
 [全体設計（中国語）](docs/SYSTEM_DESIGN.md) · [構成図](docs/diagrams/harness-overview.svg) · [D19検証計画](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。目標設計と実装済みの機能は区別して記載しています。
 
 ローカルの文献・特許調査フレームワークです。目標の流れは、自然言語の要件 → バージョン付き JSON → 検索 → 固定した参照資料との比較 → 人による確認とレポートです。

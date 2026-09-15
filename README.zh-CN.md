@@ -2,6 +2,8 @@
 
 中文 · [English](README.md) · [日本語](README.ja.md)
 
+**2026-09-15 检查点：**本地 RAG／原生 Luna 调用及真实 OpenAlex 协议链已验收；新增 PDF 的 Docling 解析入库和科学调查质量仍待完成。[Handoff](docs/D19_P2_HANDOFF.md) · [详细验收](docs/D19_P2_CONTINUATION_ACCEPTANCE.md)。
+
 [整体设计文档](docs/SYSTEM_DESIGN.md) · [总架构图](docs/diagrams/harness-overview.svg) · [D19实验方案](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。设计覆盖一次性调查、企业监测与人工分流；已实现能力另有明确状态。
 
 本地文献／专利调查框架。目标流程：自然语言需求 → 版本化 JSON → 检索 → 与冻结参照库比较 → 人工判断与报告。
