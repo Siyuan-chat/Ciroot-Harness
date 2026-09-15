@@ -48,11 +48,15 @@ class LiteratureError(Exception):
 @dataclass
 class _Budget:
     received: int = 0
+    limit: int = MAX_TOTAL_BYTES
+    on_received: Any = None
 
     def add(self, count: int) -> None:
         self.received += count
-        if self.received > MAX_TOTAL_BYTES:
-            raise LiteratureError("byte_budget_exceeded", "the 300 MiB receive limit was reached")
+        if self.on_received is not None:
+            self.on_received(count)
+        if self.received > self.limit:
+            raise LiteratureError("byte_budget_exceeded", "the receive limit was reached")
 
 
 def _read_json(path: str | Path) -> Any:
@@ -182,10 +186,14 @@ def _close(response: Any) -> None:
         close()
 
 
-def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
+def search(config: Mapping[str, Any], *, session: Any = None, on_attempt: Any = None, max_retries: int = MAX_RETRIES) -> dict[str, Any]:
     """Search OpenAlex with bounded cursor pagination and save raw candidates."""
+    if type(max_retries) is not int or max_retries < 0: raise LiteratureError("invalid_input", "max_retries must be a non-negative integer")
+    timeout_seconds = config.get("timeout_seconds", 30)
+    if type(timeout_seconds) is not int or timeout_seconds < 1: raise LiteratureError("invalid_input", "timeout_seconds must be a positive integer")
     queries, year_min, review_only, max_candidates, max_pages, anonymous, title_search, page_size, sort, start_cursors = _require_search_config(config)
-    api_key = None if anonymous else os.environ.get("OPENALEX_API_KEY")
+    api_key_env = config.get("api_key_env", "OPENALEX_API_KEY")
+    api_key = None if anonymous else os.environ.get(api_key_env) if isinstance(api_key_env, str) else None
     if not anonymous and not api_key:
         raise LiteratureError("missing_api_key", "set OPENALEX_API_KEY or use anonymous: true")
     client = session or requests.Session()
@@ -212,11 +220,13 @@ def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
                 filters.append(f"title.search:{title_search}")
             params = {"search": query, "filter": ",".join(filters), "sort": sort, "cursor": cursor, "per-page": min(page_size or 100, max_candidates - len(records))}
             response = None
-            for attempt in range(MAX_RETRIES + 1):
+            for attempt in range(max_retries + 1):
+                if on_attempt is not None:
+                    on_attempt({"kind": "search", "query": query, "cursor": cursor, "attempt": attempt + 1})
                 try:
-                    response = client.get(OPENALEX_URL, params=params, headers=headers, timeout=(5, 30), allow_redirects=False)
+                    response = client.get(OPENALEX_URL, params=params, headers=headers, timeout=(5, timeout_seconds), allow_redirects=False)
                 except requests.RequestException:
-                    if attempt == MAX_RETRIES:
+                    if attempt == max_retries:
                         failures.append({"query": query, "code": "network_error"})
                         state = "failed"
                     else:
@@ -229,11 +239,11 @@ def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
                     state = "failed"
                     break
                 if status == 429 or 500 <= status < 600:
-                    if attempt < MAX_RETRIES:
+                    if attempt < max_retries:
                         _close(response)
                         time.sleep(_retry_after(response))
                         continue
-                    failures.append({"query": query, "code": "source_unavailable"})
+                    failures.append({"query": query, "code": "source_unavailable", "retry_after": _retry_after(response)})
                     _close(response)
                     state = "failed"
                     break
@@ -555,7 +565,7 @@ def _write_catalog_outputs(output: Path, catalog: Mapping[str, Any]) -> None:
     (output / "README.md").write_text(summary, encoding="utf-8")
 
 
-def download(manifest: Mapping[str, Any] | list[Any], output: str | Path, *, limit: int = 25, use_unpaywall: bool = False, session: Any = None) -> dict[str, Any]:
+def download(manifest: Mapping[str, Any] | list[Any], output: str | Path, *, limit: int = 25, use_unpaywall: bool = False, session: Any = None, max_total_bytes: int | None = None, on_record_start: Any = None, on_received: Any = None) -> dict[str, Any]:
     """Download up to ``limit`` identity-checked open PDFs, preserving partial work."""
     if not isinstance(limit, int) or not 1 <= limit <= 100:
         raise LiteratureError("invalid_input", "limit must be between 1 and 100")
@@ -577,7 +587,9 @@ def download(manifest: Mapping[str, Any] | list[Any], output: str | Path, *, lim
     prior_path = destination / "catalog.json"
     prior = _read_json(prior_path) if prior_path.exists() else {"records": []}
     client = session or requests.Session()
-    budget = _Budget()
+    if max_total_bytes is not None and (type(max_total_bytes) is not int or max_total_bytes < 1):
+        raise LiteratureError("invalid_input", "max_total_bytes must be a positive integer")
+    budget = _Budget(limit=max_total_bytes or MAX_TOTAL_BYTES, on_received=on_received)
     known_hashes: set[str] = set()
     unpaywall_email = os.environ.get("UNPAYWALL_EMAIL") if use_unpaywall else None
     outcomes: list[dict[str, Any]] = []
@@ -605,6 +617,8 @@ def download(manifest: Mapping[str, Any] | list[Any], output: str | Path, *, lim
                 except (OSError, LiteratureError):
                     pass
             try:
+                if on_record_start is not None:
+                    on_record_start(record)
                 result = _download_record(record, client, budget, pdf_dir, known_hashes, use_unpaywall, unpaywall_email, log_handle)
             except LiteratureError as exc:
                 result = {"status": "failed", "error": exc.code}

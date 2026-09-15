@@ -106,9 +106,7 @@ def _synthetic(spec: dict[str, Any]) -> bool:
     if "synthetic" in spec: return bool(spec["synthetic"])
     runtime = spec.get("runtime", {})
     if spec.get("data_mode") == "synthetic" or isinstance(runtime, dict) and runtime.get("data_mode") == "synthetic": return True
-    # P1's builder is offline-fixture-only.  A later live builder must require
-    # an explicit non-synthetic policy instead of silently reusing this path.
-    return True
+    return False if spec.get("data_mode") == "live" or isinstance(runtime, dict) and runtime.get("data_mode") == "live" else True
 
 
 def build_report_data(run_id: str, spec: dict[str, Any], evidence: list[dict[str, Any]], findings: list[dict[str, Any]], claims: list[dict[str, Any]], sections: list[dict[str, Any]], verification: dict[str, Any], bibliography: list[dict[str, Any]], coverage: dict[str, Any], issues: list[dict[str, Any]], report_version: str = "v1") -> dict[str, Any]:
