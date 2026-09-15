@@ -562,7 +562,8 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         refs=set(item.get("input_refs",[])); baseline={"baseline:"+x["document_id"] for x in json.loads(run["scenario"]).get("references",[]) if x.get("visibility")=="confidential"}
         snapshots=json.loads(run["scenario"]).get("baseline_snapshot",[])
         evidence_ids={x.get("evidence_id") for x in snapshots if x.get("visibility")=="confidential"}
-        return bool(refs & baseline) or bool(refs & evidence_ids) or any(x.get("visibility")=="confidential" for x in snapshots)
+        legacy_confidential=any(x.get("visibility")=="confidential" for x in json.loads(run["scenario"]).get("references",[]))
+        return bool(refs & baseline) or bool(refs & evidence_ids) or legacy_confidential and bool(snapshots) or any(x.get("visibility")=="confidential" for x in snapshots)
 
     def _visible_candidates(self,candidates,runtime,run):
         records={x.get("document_id"):x for x in self._sources(run)}; unique={}; out=[]

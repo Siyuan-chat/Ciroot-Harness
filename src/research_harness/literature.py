@@ -616,9 +616,9 @@ def download(manifest: Mapping[str, Any] | list[Any], output: str | Path, *, lim
                         continue
                 except (OSError, LiteratureError):
                     pass
-            if on_record_start is not None:
-                on_record_start(record)
             try:
+                if on_record_start is not None:
+                    on_record_start(record)
                 result = _download_record(record, client, budget, pdf_dir, known_hashes, use_unpaywall, unpaywall_email, log_handle)
             except LiteratureError as exc:
                 result = {"status": "failed", "error": exc.code}

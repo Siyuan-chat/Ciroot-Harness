@@ -124,3 +124,11 @@ def test_confidential_reference_evidence_blocks_query_egress(tmp_path):
     with InvestigationService(tmp_path) as service:
         run=service.create_investigation(_spec(),runtime,{"reference_evidence":[evidence]})["run_id"]
         assert service._query_is_sensitive({"input_refs":["secret"]},service._run(run))
+
+
+def test_synthetic_confidential_baseline_is_sensitive_without_input_refs(tmp_path):
+    runtime={"mode":"host","data_mode":"synthetic","model_id":"local","data_policy":{"company_id":"co","allowed_models":["local"],"allow_query_egress":False},"budget":{"max_tasks":8}}
+    scenario={"references":[{"document_id":"secret","version":"v1","text":"secret","visibility":"confidential","company_id":"co"}],"sources":[]}
+    with InvestigationService(tmp_path) as service:
+        run=service.create_investigation(_spec(),runtime,scenario)["run_id"]
+        assert service._query_is_sensitive({"input_refs":[]},service._run(run))
