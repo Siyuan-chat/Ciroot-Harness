@@ -29,3 +29,5 @@ On the bundled Python runtime, `python -m pytest -q tests/test_rag_cli.py tests/
 ## Index status when runtime checks are unavailable
 
 `get_library_status()` reports a confirmed empty index as `index_status="empty"` with `indexed_document_count=0`. If Qdrant or its required package metadata cannot be checked, it instead reports `index_status="unavailable"`, `indexed_document_count=null`, and a safe `index_error`. This state does not establish that vectors are absent and must not trigger a rebuild. Search and import/rebuild continue to return structured `RH_RAG_DEPENDENCY` errors for missing runtime dependencies; a missing collection remains the existing confirmed incomplete-index path.
+
+The 2026-09-15 [D19 continuation acceptance](D19_P2_CONTINUATION_ACCEPTANCE.md) verifies restored retrieval over the unchanged 23-document index and native Codex/Luna MCP calls. It also records the failed full parser-extra installation attempt; new-PDF Docling parsing is not covered by that restored-runtime acceptance. `pip check` alone does not verify optional extras or server startup.
