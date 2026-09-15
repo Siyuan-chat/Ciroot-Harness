@@ -133,7 +133,7 @@ def _record(work: Mapping[str, Any], query: str) -> dict[str, Any]:
     }
 
 
-def _require_search_config(config: Mapping[str, Any]) -> tuple[list[str], int, bool, int, int, bool, str]:
+def _require_search_config(config: Mapping[str, Any]) -> tuple[list[str], int, bool, int, int, bool, str, int | None, str, dict[str, str]]:
     queries = config.get("queries")
     if not isinstance(queries, list) or not queries or not all(isinstance(query, str) and query.strip() for query in queries):
         raise LiteratureError("invalid_input", "queries must be a non-empty list of strings")
@@ -145,15 +145,27 @@ def _require_search_config(config: Mapping[str, Any]) -> tuple[list[str], int, b
     max_pages = config.get("max_pages_per_query")
     anonymous = config.get("anonymous", False)
     title_search = config.get("title_search", "")
+    page_size = config.get("page_size")
+    sort = config.get("sort", "cited_by_count:desc")
+    start_cursors = config.get("start_cursors", {})
     if not isinstance(review_only, bool) or not isinstance(anonymous, bool):
         raise LiteratureError("invalid_input", "review_only and anonymous must be booleans")
     if not isinstance(title_search, str):
         raise LiteratureError("invalid_input", "title_search must be a string")
+    if page_size is not None and (type(page_size) is not int or not 1 <= page_size <= 100):
+        raise LiteratureError("invalid_input", "page_size must be an integer between 1 and 100")
+    if not isinstance(sort, str) or sort not in {"cited_by_count:desc", "publication_date:desc", "relevance_score:desc"}:
+        raise LiteratureError("invalid_input", "sort must be a supported descending OpenAlex sort")
+    if not isinstance(start_cursors, dict) or any(not isinstance(query, str) or not isinstance(cursor, str) or not cursor.strip() for query, cursor in start_cursors.items()):
+        raise LiteratureError("invalid_input", "start_cursors must map queries to non-empty cursors")
+    normalized_queries = [query.strip() for query in queries]
+    if not set(start_cursors).issubset(normalized_queries):
+        raise LiteratureError("invalid_input", "start_cursors contains a query not present in queries")
     if not isinstance(max_candidates, int) or not 1 <= max_candidates <= 1000:
         raise LiteratureError("invalid_input", "max_candidates must be between 1 and 1000")
     if not isinstance(max_pages, int) or not 1 <= max_pages <= 20:
         raise LiteratureError("invalid_input", "max_pages_per_query must be between 1 and 20")
-    return [query.strip() for query in queries], year_min, review_only, max_candidates, max_pages, anonymous, title_search.strip()
+    return normalized_queries, year_min, review_only, max_candidates, max_pages, anonymous, title_search.strip(), page_size, sort, {query: cursor.strip() for query, cursor in start_cursors.items()}
 
 
 def _retry_after(response: Any) -> float:
@@ -172,7 +184,7 @@ def _close(response: Any) -> None:
 
 def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
     """Search OpenAlex with bounded cursor pagination and save raw candidates."""
-    queries, year_min, review_only, max_candidates, max_pages, anonymous, title_search = _require_search_config(config)
+    queries, year_min, review_only, max_candidates, max_pages, anonymous, title_search, page_size, sort, start_cursors = _require_search_config(config)
     api_key = None if anonymous else os.environ.get("OPENALEX_API_KEY")
     if not anonymous and not api_key:
         raise LiteratureError("missing_api_key", "set OPENALEX_API_KEY or use anonymous: true")
@@ -185,10 +197,11 @@ def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
     query_status: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     for query in queries:
+        start_cursor = start_cursors.get(query)
         if len(records) >= max_candidates:
-            query_status.append({"query": query, "status": "not_run", "pages": 0, "next_cursor": None})
+            query_status.append({"query": query, "status": "not_run", "pages": 0, "start_cursor": start_cursor, "next_cursor": None})
             continue
-        cursor = "*"
+        cursor = start_cursor or "*"
         pages = 0
         state = "complete"
         while len(records) < max_candidates and pages < max_pages:
@@ -197,7 +210,7 @@ def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
                 filters.append("type:review")
             if title_search:
                 filters.append(f"title.search:{title_search}")
-            params = {"search": query, "filter": ",".join(filters), "sort": "cited_by_count:desc", "cursor": cursor, "per-page": min(100, max_candidates - len(records))}
+            params = {"search": query, "filter": ",".join(filters), "sort": sort, "cursor": cursor, "per-page": min(page_size or 100, max_candidates - len(records))}
             response = None
             for attempt in range(MAX_RETRIES + 1):
                 try:
@@ -245,6 +258,7 @@ def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
                 break
             _close(response)
             pages += 1
+            candidate_limit_reached = False
             for work in results:
                 if not isinstance(work, dict):
                     continue
@@ -260,22 +274,27 @@ def search(config: Mapping[str, Any], *, session: Any = None) -> dict[str, Any]:
                 indexes[identity] = len(records)
                 records.append(candidate)
                 if len(records) == max_candidates:
-                    state = "partial"
+                    candidate_limit_reached = True
                     break
             next_cursor = meta.get("next_cursor")
             if not next_cursor:
+                cursor = None
+                break
+            if candidate_limit_reached:
+                state = "partial"
+                cursor = next_cursor
                 break
             if pages == max_pages:
                 state = "partial"
                 cursor = next_cursor
                 break
             cursor = next_cursor
-        query_status.append({"query": query, "status": state, "pages": pages, "next_cursor": None if cursor == "*" else cursor})
+        query_status.append({"query": query, "status": state, "pages": pages, "start_cursor": start_cursor, "next_cursor": cursor})
     states = [item["status"] for item in query_status]
     overall = "failed" if states and all(state == "failed" for state in states) else ("partial" if any(state in {"partial", "failed", "not_run"} for state in states) else "complete")
     return {
         "records": records,
-        "search_status": {"status": overall, "anonymous": anonymous, "source": "openalex", "failures": failures},
+        "search_status": {"status": overall, "anonymous": anonymous, "source": "openalex", "sort": sort, "page_size": page_size, "failures": failures},
         "queries": query_status,
     }
 
