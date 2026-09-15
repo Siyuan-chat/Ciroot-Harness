@@ -538,7 +538,9 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
                         page=transport.search("openalex",query,cursor)
                     except SourceError as error:
                         self.db.execute("UPDATE source_attempts SET status=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(error.code,run_id,query_id,cursor,number)); self.db.commit()
-                        if error.code in {"RH_SOURCE_RATE_LIMIT","RH_SOURCE_TIMEOUT","RH_SOURCE_SOURCE_UNAVAILABLE","RH_SOURCE_NETWORK_ERROR"}: continue
+                        if error.code in {"RH_SOURCE_RATE_LIMIT","RH_SOURCE_TIMEOUT","RH_SOURCE_SOURCE_UNAVAILABLE","RH_SOURCE_NETWORK_ERROR"}:
+                            if isinstance(error.retry_after,(int,float)) and error.retry_after > 0: time.sleep(min(error.retry_after,5))
+                            continue
                         return found,"partial",error.code
                     self.db.execute("UPDATE source_attempts SET status='success',result=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(json.dumps(page),run_id,query_id,cursor,number)); self.db.commit(); break
                 if page is None: return found,"partial","source retry exhausted"
@@ -558,7 +560,9 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
 
     def _query_is_sensitive(self,item,run):
         refs=set(item.get("input_refs",[])); baseline={"baseline:"+x["document_id"] for x in json.loads(run["scenario"]).get("references",[]) if x.get("visibility")=="confidential"}
-        return bool(refs & baseline) or bool(json.loads(run["scenario"]).get("baseline_snapshot")) and any(x.get("visibility")=="confidential" for x in json.loads(run["scenario"]).get("references",[]))
+        snapshots=json.loads(run["scenario"]).get("baseline_snapshot",[])
+        evidence_ids={x.get("evidence_id") for x in snapshots if x.get("visibility")=="confidential"}
+        return bool(refs & baseline) or bool(refs & evidence_ids) or any(x.get("visibility")=="confidential" for x in snapshots)
 
     def _visible_candidates(self,candidates,runtime,run):
         records={x.get("document_id"):x for x in self._sources(run)}; unique={}; out=[]
@@ -569,7 +573,8 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             if not policy_allows(record,runtime): continue
             key=canonical_identity(dict(record,**candidate))
             if key in unique: continue
-            unique[key]=candidate; out.append({"document_id":candidate["document_id"],"title":candidate.get("title","")})
+            unique[key]=candidate
+            out.append({name:candidate.get(name) for name in ("document_id","title","doi","year","type","abstract","authors","locations","source_id","query_provenance") if name in candidate})
         return out
 
     def _bibliography(self,document):

@@ -8,7 +8,7 @@ from typing import Any
 from . import literature
 
 class SourceError(Exception):
-    def __init__(self, code, message): self.code, self.message=code,message
+    def __init__(self, code, message, retry_after=None): self.code, self.message, self.retry_after=code,message,retry_after
 
 @dataclass
 class SyntheticTransport:
@@ -37,6 +37,7 @@ class OpenAlexTransport:
     def __init__(self, runtime, on_attempt):
         self.runtime = runtime
         self.on_attempt = on_attempt
+        self.session = literature.requests.Session()
 
     def search(self, source, query_id, cursor=None, attempt=1):
         if source != "openalex":
@@ -51,13 +52,14 @@ class OpenAlexTransport:
                 "anonymous": bool(config.get("anonymous")), "api_key_env": config.get("api_key_env", "OPENALEX_API_KEY"),
                 "timeout_seconds": config.get("timeout_seconds", 30),
                 "start_cursors": {query_id: cursor} if cursor else {},
-            }, on_attempt=self.on_attempt, max_retries=0)
+            }, session=self.session, on_attempt=self.on_attempt, max_retries=0)
         except literature.LiteratureError as error:
             raise SourceError("RH_SOURCE_" + error.code.upper(), "OpenAlex request failed") from error
         state = result["queries"][0]
         if state["status"] == "failed":
-            code = result["search_status"].get("failures", [{}])[0].get("code", "source_unavailable")
-            raise SourceError("RH_SOURCE_" + str(code).upper(), "OpenAlex request failed")
+            failure = result["search_status"].get("failures", [{}])[0]
+            code = failure.get("code", "source_unavailable")
+            raise SourceError("RH_SOURCE_" + str(code).upper(), "OpenAlex request failed", failure.get("retry_after"))
         candidates = []
         for record in result["records"]:
             source_id = record.get("source_id")

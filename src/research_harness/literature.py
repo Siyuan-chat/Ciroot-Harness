@@ -243,7 +243,7 @@ def search(config: Mapping[str, Any], *, session: Any = None, on_attempt: Any = 
                         _close(response)
                         time.sleep(_retry_after(response))
                         continue
-                    failures.append({"query": query, "code": "source_unavailable"})
+                    failures.append({"query": query, "code": "source_unavailable", "retry_after": _retry_after(response)})
                     _close(response)
                     state = "failed"
                     break

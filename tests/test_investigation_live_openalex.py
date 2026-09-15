@@ -95,3 +95,32 @@ def test_live_http_budget_counts_failed_attempts(monkeypatch, tmp_path):
         assert result == ([], "partial", "RH_SOURCE_BUDGET")
         assert len(calls) == 2
         assert service.status(run)["budget"]["reserved_source_calls"] == 1
+
+
+def test_live_collector_retries_rate_limited_http_then_persists_page(monkeypatch, tmp_path):
+    class Response:
+        def __init__(self, status_code, payload=None, headers=None): self.status_code=status_code; self.payload=payload; self.headers=headers or {}
+        def json(self): return self.payload
+        def close(self): pass
+    class Session:
+        def __init__(self): self.responses=[Response(429, headers={"Retry-After": "2"}), Response(200, {"results": [{"id": "https://openalex.org/W1", "title": "paper", "doi": "https://doi.org/10.1/x", "publication_year": 2024, "type": "article", "authorships": [], "locations": [], "abstract_inverted_index": {}}], "meta": {"next_cursor": None}})]
+        def get(self, *args, **kwargs): return self.responses.pop(0)
+    import research_harness.investigation_sources as sources
+    sleeps=[]
+    monkeypatch.setattr(sources.literature.requests, "Session", Session)
+    monkeypatch.setattr(investigation.time, "sleep", sleeps.append)
+    with InvestigationService(tmp_path) as service:
+        run=service.create_investigation(_spec(), _runtime(), {"reference_evidence": []})["run_id"]
+        assert service._search_live_pages(run, "q1", "query", _runtime())[1] == "complete"
+        assert sleeps == [2.0]
+        rows=list(service.db.execute("SELECT status,result FROM source_attempts WHERE run_id=? ORDER BY attempt",(run,)))
+        assert [row["status"] for row in rows] == ["RH_SOURCE_SOURCE_UNAVAILABLE", "success"]
+        assert json.loads(rows[-1]["result"])["candidates"][0]["doi"] == "10.1/x"
+
+
+def test_confidential_reference_evidence_blocks_query_egress(tmp_path):
+    runtime=_runtime(); runtime["data_policy"]={"company_id":"co","allowed_models":["local"],"allow_query_egress":False}; runtime["model_id"]="local"
+    evidence={"evidence_id":"secret","document_id":"base","version_id":"v1","text":"secret","locator":{"kind":"page","value":"1"},"visibility":"confidential","company_id":"co"}
+    with InvestigationService(tmp_path) as service:
+        run=service.create_investigation(_spec(),runtime,{"reference_evidence":[evidence]})["run_id"]
+        assert service._query_is_sensitive({"input_refs":["secret"]},service._run(run))
