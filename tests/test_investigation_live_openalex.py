@@ -204,3 +204,35 @@ def test_service_download_403_is_a_failed_http_attempt(monkeypatch, tmp_path):
         service._acquire_live_documents(run,runtime,{"W1"})
         status=service.db.execute("SELECT status FROM source_attempts WHERE run_id=? AND query_id='download'",(run,)).fetchone()["status"]
         assert status == "RH_SOURCE_HTTP_403"
+
+
+def test_screen_order_is_preserved_at_live_download_boundary(monkeypatch, tmp_path):
+    captured=[]
+    def fake_download(manifest, output, **_kwargs):
+        captured.extend(item["source_id"] for item in manifest["records"])
+        return {"outcome":"partial","records":[]}
+    monkeypatch.setattr(literature, "download", fake_download)
+    with InvestigationService(tmp_path) as service:
+        runtime=_runtime(); run=service.create_investigation(_spec(),runtime,{"reference_evidence":[]})["run_id"]
+        for identifier in ("W1","W2"):
+            document={"document_id":identifier,"version":"openalex-metadata","source":"openalex",**_record("10.1/"+identifier,"https://files.example/"+identifier+".pdf")}
+            service.db.execute("INSERT INTO discovery_documents VALUES (?,?,?)",(run,identifier,json.dumps(document)))
+        service.db.commit()
+        service._acquire_live_documents(run,runtime,["W2","W1"])
+    assert captured == ["10.1/W2","10.1/W1"]
+
+
+def test_nonirrelevant_screen_order_is_passed_to_live_acquisition(monkeypatch, tmp_path):
+    selected=[]
+    with InvestigationService(tmp_path) as service:
+        run=service.create_investigation(_spec(),_runtime(),{"reference_evidence":[]})["run_id"]
+        service.db.execute("UPDATE investigations SET stage='acquire_normalize' WHERE id=?",(run,)); service.db.commit()
+        service._screens=lambda _run: [{"candidates":[
+            {"document_id":"W2","relevance":"relevant","reason":"first"},
+            {"document_id":"W1","relevance":"uncertain","reason":"second"},
+            {"document_id":"W3","relevance":"irrelevant","reason":"excluded"},
+            {"document_id":"W2","relevance":"relevant","reason":"duplicate"},
+        ]}]
+        monkeypatch.setattr(service,"_acquire_live_documents",lambda _run,_runtime,items: selected.extend(items) or [])
+        service._acquire({"run_id":run})
+    assert selected == ["W2","W1"]

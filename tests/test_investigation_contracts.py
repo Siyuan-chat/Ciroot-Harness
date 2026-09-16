@@ -1,4 +1,5 @@
 import hashlib
+from importlib import resources
 from pathlib import Path
 import pytest
 from research_harness.errors import HarnessError
@@ -16,3 +17,8 @@ def test_public_contract_helpers_validate_d19_shapes():
     assert get_task_schema("verification")["properties"]["verification"]["properties"]["status"]["enum"] == ["supported","partial","insufficient","contradicted"]
     with pytest.raises(HarnessError): validate_runtime({"mode":"host","data_mode":"synthetic","budget":{"max_tasks":True}})
     with pytest.raises(HarnessError): validate_spec({"status":"ready","project_id":"p","revision":1,"research_question":"q","report_targets":[],"references":[]})
+
+
+def test_role_prompts_are_packaged_resources_with_fact_payload_guidance():
+    prompt = resources.files("research_harness").joinpath("prompts", "investigation", "evidence_analysis.md").read_text(encoding="utf-8")
+    assert "baseline_evidence" in prompt and "discovery_evidence" in prompt

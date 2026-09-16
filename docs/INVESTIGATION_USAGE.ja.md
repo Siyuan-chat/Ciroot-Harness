@@ -56,3 +56,19 @@ python scripts/investigation_replay.py --pending pending.json --output replay-re
 `data_mode` を `live`、`allow_network` を `true` とし、
 `sources.openalex` だけを設定します。`anonymous: true` を選ぶか、環境変数名だけを `api_key_env` に指定します。キーを JSON に書いてはいけません。scenario は取得済みで監査可能な `reference_evidence` を渡す必要があり、live 収集はローカル RAG ライブラリを import・変更しません。検索/ダウンロード試行、cursor、回数・受信バイト上限、本文欠落、`synthetic: false` は同一サービスから CLI と MCP に投影されます。原文は investigation workspace 内だけに保存されます。
 
+### discovery library の RAG 事実接続（P3）
+
+live acquisition 後、`evidence_analysis/extract` が pending の間に、host は
+`InvestigationService.attach_discovery_evidence(run_id, evidence, mappings,
+bibliography=None)` を呼び出せます。各 RAG evidence は `evidence_id`、
+`document_id`、`version_id`、原文 `text`、`locator` を保持し、mapping は取得済み
+OpenAlex の document/version、DOI、ダウンロード SHA256 に接続します。最小入力形状は次です。
+
+```json
+{"evidence":[{"evidence_id":"ev-rag","document_id":"doc-rag","version_id":"ver-rag","text":"原文抜粋","locator":{"page":1}}],"mappings":[{"investigation_document_id":"W123","investigation_version_id":"openalex-oa-pdf","doi":"10.1234/example","sha256":"downloaded-content-hash","rag_document_id":"doc-rag","rag_version_id":"ver-rag"}]}
+```
+
+接続により pending task は更新され `task_version` が増えます。すでに task を取得した host は
+`get_pending_tasks` を再実行してから最新版を submit します。同一入力は増分なしで `reused` を返します。
+analysis または business_judgment の submit 後は事実を変更できません。この呼び出しはダウンロード、解析、RAG index の変更を行いません。
+

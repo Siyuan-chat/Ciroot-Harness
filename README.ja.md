@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md) · [English](README.md) · 日本語
 
-**2026-09-15 時点：**ローカル RAG／Codex 上の Luna 呼び出しと実 OpenAlex のプロトコル経路を検証済みです。新規 PDF の Docling 解析・取り込みと科学的調査の品質は未検証です。[引き継ぎ（中国語）](docs/D19_P2_HANDOFF.md) · [検証記録](docs/D19_P2_CONTINUATION_ACCEPTANCE.md)。
+**2026-09-16 時点：** P3 の限定的な論文事例は独立検証済みです。新規 PDF の Docling/RAG 取り込み、中国語の2種類の本文、出力と再読込を確認しました。検索範囲は partial のままです。P4 は単一特許ファミリーの計画段階で、OPS 登録は承認待ちです。[P3 検証](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 計画](docs/D19_P4_PLAN.md) · [代替案](docs/D19_P4_FALLBACK.md)。
 
 [全体設計（中国語）](docs/SYSTEM_DESIGN.md) · [構成図](docs/diagrams/harness-overview.svg) · [D19検証計画](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。目標設計と実装済みの機能は区別して記載しています。
 
@@ -37,7 +37,7 @@ python -m venv .venv
 
 [日本語ガイド](docs/USER_GUIDE.ja.md) · [現在の範囲](docs/SCOPE_AUDIT.md) · [契約／アダプター](docs/CONTRACTS.md) · [受入 K01–K07](docs/ACCEPTANCE.md) · [要件](docs/PRD.md) · [構成](docs/ARCHITECTURE.md) · [決定事項](docs/DECISIONS.md)
 
-最初の実例はポリマー設計を予定しています。[草案](examples/polymer-design.draft.json) には未確定要件があり、実行可能な科学的事例ではありません。実際の API 接続と事例／デモ検証後に GitHub で公開します。科学的事例や公開リリースの受入はまだ行っていません。
+最初の実例はポリマー設計を予定しています。[草案](examples/polymer-design.draft.json) には未確定要件があり、実行可能な科学的事例ではありません。実際の API 接続と事例／デモ検証後に GitHub で公開します。P3 の限定的な論文事例は検証済みで、より広い科学的評価と公開リリースは未完了です。
 
 キー、非公開原文、実行ワークスペースは Git に保存しないでください。同梱デモは合成資料のみです。調査は手動で開始し、標準の定期実行はありません。
 

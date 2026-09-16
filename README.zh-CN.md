@@ -2,7 +2,7 @@
 
 中文 · [English](README.md) · [日本語](README.ja.md)
 
-**2026-09-15 检查点：**本地 RAG／原生 Luna 调用及真实 OpenAlex 协议链已验收；新增 PDF 的 Docling 解析入库和科学调查质量仍待完成。[Handoff](docs/D19_P2_HANDOFF.md) · [详细验收](docs/D19_P2_CONTINUATION_ACCEPTANCE.md)。
+**2026-09-16 进展：** P3 有界论文案例已通过独立验收，包含新 PDF 的 Docling/RAG 入库、中文双报告正文、标准导出与重开；检索覆盖仍为 partial。P4 单专利族阶段已完成范围设计，OPS 注册审批 pending。[P3 验收](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 计划](docs/D19_P4_PLAN.md) · [替代方案](docs/D19_P4_FALLBACK.md)。
 
 [整体设计文档](docs/SYSTEM_DESIGN.md) · [总架构图](docs/diagrams/harness-overview.svg) · [D19实验方案](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。设计覆盖一次性调查、企业监测与人工分流；已实现能力另有明确状态。
 
@@ -37,7 +37,7 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 
 [中文指南](docs/USER_GUIDE.zh-CN.md) · [当前范围](docs/SCOPE_AUDIT.md) · [数据／适配器契约](docs/CONTRACTS.md) · [验收 K01–K07](docs/ACCEPTANCE.md) · [需求](docs/PRD.md) · [架构](docs/ARCHITECTURE.md) · [决策](docs/DECISIONS.md)
 
-后续首个案例为聚合物设计。[案例草案](examples/polymer-design.draft.json) 仍有待定需求，不是可运行的科学案例。真实 API 接入及案例／demo 验收后再发布 GitHub；当前没有科学案例或公开发布验收结论。
+后续首个案例为聚合物设计。[案例草案](examples/polymer-design.draft.json) 仍有待定需求，不是可运行的科学案例。真实 API 接入及案例／demo 验收后再发布 GitHub；P3 有界论文案例已验收，更广泛科学评价与公开发布仍待完成。
 
 密钥、私有原文和运行工作区不要提交 Git。包内演示仅含合成材料。产品调查由用户手动启动，没有默认后台定时任务。
 

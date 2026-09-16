@@ -55,6 +55,15 @@ def _bib(value: Any) -> str:
     return str(value).replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", " ").replace("\r", " ")
 
 
+def _citation_key(item: dict[str, Any], index: int) -> str:
+    explicit = item.get("citation_key")
+    if explicit is not None:
+        return str(explicit)
+    identity = item.get("doi") or item.get("id") or f"reference{index}"
+    candidate = str(identity)
+    return candidate if _SAFE_COMPONENT.fullmatch(candidate) else "ref" + hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:16]
+
+
 def _write(path: Path, data: str | bytes) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     if isinstance(data, str):
@@ -172,15 +181,16 @@ def _bibtex(items: list[dict[str, Any]]) -> str:
     for index, item in enumerate(items, 1):
         if not isinstance(item, dict) or not isinstance(item.get("title"), str) or not item["title"]:
             raise ValidationError("bibliography item needs a title")
-        key = str(item.get("citation_key") or item.get("doi") or item.get("id") or f"reference{index}")
-        kind = item.get("type", "article")
+        key = _citation_key(item, index)
+        kind = "article" if item.get("type") == "review" else item.get("type", "article")
         if kind not in {"article", "book", "incollection", "inproceedings", "manual", "misc", "phdthesis", "techreport", "unpublished"} or not _SAFE_COMPONENT.fullmatch(key) or key in keys:
             raise ValidationError("bibliography has invalid BibTeX type or key")
         allowed = {"author", "title", "journal", "booktitle", "year", "volume", "number", "pages", "publisher", "doi", "url", "note", "month", "edition", "institution", "citation_key", "id", "type"}
-        if set(item) - allowed:
+        provenance_only = {"visibility"}
+        if set(item) - allowed - provenance_only:
             raise ValidationError("bibliography has unsupported BibTeX field")
         keys.add(key)
-        fields = [(key, value) for key, value in item.items() if key not in {"citation_key", "id", "type"} and value not in (None, "")]
+        fields = [(key, value) for key, value in item.items() if key not in {"citation_key", "id", "type", *provenance_only} and value not in (None, "")]
         rendered = ",\n  ".join(f"{name} = {{{_bib(value)}}}" for name, value in fields)
         entries.append(f"@{kind}{{{_bib(key)},\n  {rendered}\n}}")
     return "\n\n".join(entries) + ("\n" if entries else "")

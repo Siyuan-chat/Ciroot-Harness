@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.execute("CREATE TABLE IF NOT EXISTS source_queries(run_id TEXT,query_id TEXT,source TEXT,query TEXT,parent_query_id TEXT,input_refs TEXT,status TEXT,reason TEXT,PRIMARY KEY(run_id,query_id))")
         self.db.execute("CREATE TABLE IF NOT EXISTS discovery_evidence(evidence_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,document_id TEXT NOT NULL,version_id TEXT NOT NULL,payload TEXT NOT NULL,visibility TEXT NOT NULL,company_id TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS discovery_documents(run_id TEXT NOT NULL,document_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(run_id,document_id))")
+        self.db.execute("CREATE TABLE IF NOT EXISTS attached_discovery_evidence(run_id TEXT PRIMARY KEY,payload TEXT NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS frozen_reports(run_id TEXT PRIMARY KEY,payload TEXT NOT NULL,created REAL NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_runs(run_id TEXT PRIMARY KEY,monitor_id TEXT NOT NULL,cycle_id TEXT NOT NULL,profile TEXT NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_cycle_facts(monitor_id TEXT NOT NULL,cycle_key TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(monitor_id,cycle_key))")
@@ -156,6 +157,65 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if row["visibility"] != "public" and not policy_allows({"visibility":row["visibility"],"company_id":row["company_id"]},runtime):
             raise InvestigationError("RH_POLICY_BLOCKED","discovery evidence is not authorized for this runtime")
         return item
+    def attach_discovery_evidence(self,run_id,evidence,mappings,bibliography=None):
+        """Bind explicit C2 RAG facts to an acquired live document before analysis."""
+        run=self._run(run_id)
+        if json.loads(run["runtime"]).get("data_mode") != "live":
+            raise InvestigationError("RH_FACT_INPUT","discovery RAG evidence can only be attached to a live run")
+        if run["stage"] != "analysis" or self.db.execute("SELECT 1 FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract' AND status='pending'",(run_id,)).fetchone() is None:
+            raise InvestigationError("RH_FACT_SNAPSHOT","discovery evidence can only be attached before analysis submission")
+        if self.db.execute("SELECT 1 FROM model_tasks WHERE run_id=? AND role='business_judgment' AND status='completed'",(run_id,)).fetchone():
+            raise InvestigationError("RH_FACT_SNAPSHOT","completed business judgment cannot receive new facts")
+        if not all(isinstance(value,list) for value in (evidence,mappings,bibliography or [])):
+            raise InvestigationError("RH_FACT_INPUT","evidence, mappings, and bibliography must be lists")
+        acquired={item.get("document_id"):item for item in self._sources(run) if item.get("version")=="openalex-oa-pdf"}
+        downloads={row["cursor"]:json.loads(row["result"]) for row in self.db.execute("SELECT cursor,result FROM source_attempts WHERE run_id=? AND query_id='download-document' AND status='success'",(run_id,)) if row["result"]}
+        by_rag={(item.get("rag_document_id"),item.get("rag_version_id")):item for item in mappings if isinstance(item,dict)}
+        if len(by_rag) != len(mappings): raise InvestigationError("RH_FACT_INPUT","each RAG document/version mapping must be unique")
+        for item in evidence:
+            if not isinstance(item,dict) or not all(isinstance(item.get(key),str) and item[key] for key in ("evidence_id","document_id","version_id","text")) or not isinstance(item.get("locator"),dict):
+                raise InvestigationError("RH_FACT_INPUT","RAG evidence needs identity, text, and locator")
+            mapping=by_rag.get((item["document_id"],item["version_id"]))
+            if not mapping: raise InvestigationError("RH_FACT_IDENTITY","RAG evidence has no identity mapping")
+            source=acquired.get(mapping.get("investigation_document_id")); download=downloads.get(mapping.get("investigation_document_id"))
+            if not source or source.get("version") != mapping.get("investigation_version_id") or not download:
+                raise InvestigationError("RH_FACT_IDENTITY","mapping does not name an acquired document version")
+            if canonical_identity(source) != canonical_identity(mapping) or download.get("sha256") != mapping.get("sha256"):
+                raise InvestigationError("RH_FACT_IDENTITY","mapping DOI or downloaded content fingerprint does not match")
+        payload={"evidence":evidence,"mappings":mappings,"bibliography":bibliography or []}
+        encoded=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"))
+        existing=self.db.execute("SELECT payload FROM attached_discovery_evidence WHERE run_id=?",(run_id,)).fetchone()
+        if existing:
+            if existing["payload"] == encoded:return {"status":"reused","run_id":run_id,"evidence_count":len(evidence)}
+            raise InvestigationError("RH_FACT_SNAPSHOT","discovery evidence is already attached")
+        extract=self.db.execute("SELECT payload FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract' AND status='pending'",(run_id,)).fetchone()
+        current=json.loads(extract["payload"])
+        ids=[item.get("evidence_id") for item in [*current["evidence"],*evidence]]
+        if len(ids) != len(set(ids)): raise InvestigationError("RH_FACT_IDENTITY","evidence IDs must be unique in the fact snapshot")
+        self.db.execute("INSERT INTO attached_discovery_evidence VALUES (?,?)",(run_id,encoded))
+        fact_document_ids={item.get("document_id") for item in [*current["evidence"],*evidence]}
+        attached_bibliography=[item for item in bibliography or [] if isinstance(item,dict) and item.get("id") in fact_document_ids]
+        complete_bibliography=[*current.get("bibliography",[]),*attached_bibliography]
+        known_bibliography={item.get("id") for item in complete_bibliography if isinstance(item,dict)}
+        complete_bibliography.extend(self._bibliography({"document_id":document_id}) for document_id in sorted(fact_document_ids) if document_id and document_id not in known_bibliography)
+        updated={**current,"evidence":[*current["evidence"],*evidence],"bibliography":complete_bibliography}
+        for row in self.db.execute("SELECT id,payload FROM model_tasks WHERE run_id=? AND status='pending' AND role IN ('evidence_analysis','business_judgment')",(run_id,)):
+            task=json.loads(row["payload"]); task.update(updated)
+            self.db.execute("UPDATE model_tasks SET payload=?,task_version=task_version+1 WHERE id=?",(json.dumps(task),row["id"]))
+        self.db.commit()
+        return {"status":"attached","run_id":run_id,"evidence_count":len(evidence)}
+    def _fact_payload(self,run,acquired_evidence):
+        scenario=json.loads(run["scenario"])
+        baseline=scenario.get("baseline_snapshot",[])
+        documents={item.get("document_id"):item for item in self._sources(run)}
+        facts=[*baseline,*acquired_evidence]
+        fact_document_ids={item.get("document_id") for item in facts}
+        reference_bibliography=[item for item in scenario.get("reference_bibliography",[]) if isinstance(item,dict) and item.get("id") in fact_document_ids]
+        acquired=[self._bibliography(item) for document_id,item in documents.items() if document_id in fact_document_ids]
+        bibliography=[*reference_bibliography,*acquired]
+        known_bibliography={item.get("id") for item in bibliography if isinstance(item,dict)}
+        bibliography.extend(self._bibliography({"document_id":document_id}) for document_id in sorted(fact_document_ids) if document_id and document_id not in known_bibliography)
+        return {"evidence":facts,"baseline_evidence":baseline,"bibliography":bibliography}
     def build_report_data(self,run_id):
         frozen=self.db.execute("SELECT payload FROM frozen_reports WHERE run_id=?",(run_id,)).fetchone()
         if not frozen: raise InvestigationError("RH_REPORT_DATA","report data has not been frozen")
@@ -269,7 +329,13 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
     def _acquire(self,s):
         r=self._run(s["run_id"])
         if r["stage"]!="acquire_normalize":return {"run_id":s["run_id"],"next":"analysis_task"}
-        selected={x["document_id"] for task in self._screens(s["run_id"]) for x in task["candidates"] if x["relevance"]!="irrelevant"}; evidence=[]; acquisition_issues=[]
+        selected=[]; seen=set()
+        for task in self._screens(s["run_id"]):
+            for candidate in task["candidates"]:
+                document_id=candidate["document_id"]
+                if candidate["relevance"] != "irrelevant" and document_id not in seen:
+                    selected.append(document_id); seen.add(document_id)
+        evidence=[]; acquisition_issues=[]
         runtime=json.loads(r["runtime"])
         if runtime.get("data_mode")=="live":
             acquisition_issues.extend(self._acquire_live_documents(s["run_id"],runtime,selected))
@@ -285,17 +351,18 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             doc=next((x for x in self._sources(r) if x.get("document_id")==item["document_id"]),{})
             self.db.execute("INSERT OR IGNORE INTO discovery_evidence VALUES (?,?,?,?,?,?,?)",(item["evidence_id"],s["run_id"],item["document_id"],item["version_id"],json.dumps(item),doc.get("visibility","public"),doc.get("company_id")))
         self.db.commit()
-        baseline=json.loads(r["scenario"]).get("baseline_snapshot",[])
+        facts=self._fact_payload(r,evidence)
         self._reserve_available(s["run_id"],2)
         monitor=self._monitor_context(s["run_id"])
-        payload={"input_refs":["stage:acquire_normalize"],"evidence":evidence,"discovery_evidence":evidence,"baseline_evidence":baseline,"acquisition_issues":acquisition_issues,"report_targets":json.loads(r["spec"]).get("report_targets",[]),**({"monitor":monitor} if monitor else {})}
+        payload={"input_refs":["stage:acquire_normalize"],**facts,"discovery_evidence":evidence,"acquisition_issues":acquisition_issues,"report_targets":json.loads(r["spec"]).get("report_targets",[]),**({"monitor":monitor} if monitor else {})}
         self._task(s["run_id"],"evidence_analysis","extract",payload)
         judge_evidence=[item for item in evidence if not monitor or self._monitor_needs_judgment(monitor,item)]
         if judge_evidence:self._task(s["run_id"],"business_judgment","judge",{**payload,"documents":[{"document_id":e["document_id"],"evidence_id":e["evidence_id"]} for e in judge_evidence]})
         self._set(s["run_id"],stage="analysis",status="waiting_model");self._trace(s["run_id"],"acquire_normalize","normalized",{"evidence_count":len(evidence)});return {"run_id":s["run_id"],"next":"end"}
 
     def _acquire_live_documents(self,run_id,runtime,selected):
-        documents={item.get("document_id"):item for item in self._sources(self._run(run_id)) if item.get("document_id") in selected and item.get("source")=="openalex" and item.get("version") != "openalex-oa-pdf"}
+        sources={item.get("document_id"):item for item in self._sources(self._run(run_id)) if item.get("source")=="openalex" and item.get("version") != "openalex-oa-pdf"}
+        documents={document_id:sources[document_id] for document_id in selected if document_id in sources}
         pending={row["cursor"] for row in self.db.execute("SELECT cursor FROM source_attempts WHERE run_id=? AND query_id='download-document' AND status='pending'",(run_id,))}
         uncertain=set(documents) & pending
         documents={key:value for key,value in documents.items() if key not in uncertain}
@@ -374,7 +441,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             self._task(s["run_id"],"verification","verify",{"input_refs":["task:writing"],"sections":self._done(s["run_id"],"writing","write")[0]["sections"],"claims":synthesis,"findings":self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"],"evidence":extract_payload["evidence"],"spec":json.loads(r["spec"]),"monitor_snapshot":self._monitor_snapshot(s["run_id"])});return {"run_id":s["run_id"],"next":"end"}
         v=self._done(s["run_id"],"verification","verify")[0]["verification"]; coverage=self._coverage(s["run_id"]); findings=self._done(s["run_id"],"evidence_analysis","extract")[0]["findings"]; evidence=extract_payload["evidence"]
         from .investigation_report_data import build_report_data
-        bibliography=[self._bibliography(doc) for doc in self._sources(r) if any(x["document_id"]==doc.get("document_id") for x in evidence)]
+        bibliography=extract_payload.get("bibliography",[self._bibliography(doc) for doc in self._sources(r) if any(x["document_id"]==doc.get("document_id") for x in evidence)])
         acquisition_issues=extract_payload.get("acquisition_issues",[])
         try:
             report_spec={**json.loads(r["spec"]),"runtime":json.loads(r["runtime"])}
@@ -553,7 +620,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             if cursor is None:return found,"complete",None
 
     def _screens(self,run):
-        return [json.loads(x["result"]) for x in self.db.execute("SELECT result FROM model_tasks WHERE run_id=? AND task_type LIKE 'screen:%' AND status='completed'",(run,))]
+        return [json.loads(x["result"]) for x in self.db.execute("SELECT result FROM model_tasks WHERE run_id=? AND task_type LIKE 'screen:%' AND status='completed' ORDER BY created,id",(run,))]
 
     def _set_query(self,run,query_id,status,reason):
         self.db.execute("UPDATE source_queries SET status=?,reason=? WHERE run_id=? AND query_id=?",(status,reason,run,query_id)); self.db.commit()

@@ -66,3 +66,22 @@ Search and download attempts, cursors, byte/count limits, full-text gaps, and
 the `synthetic: false` result flag are exposed through this same service, CLI,
 and MCP. Downloaded originals stay under the investigation workspace.
 
+### Discovery-library RAG fact attachment (P3)
+
+After live acquisition and while `evidence_analysis/extract` is pending, a host
+may call `InvestigationService.attach_discovery_evidence(run_id, evidence,
+mappings, bibliography=None)`. Each RAG evidence item retains its
+`evidence_id`, `document_id`, `version_id`, original `text`, and `locator`; its
+mapping binds it to the acquired OpenAlex document/version, DOI, and downloaded
+SHA256. The smallest input shape is:
+
+```json
+{"evidence":[{"evidence_id":"ev-rag","document_id":"doc-rag","version_id":"ver-rag","text":"original excerpt","locator":{"page":1}}],"mappings":[{"investigation_document_id":"W123","investigation_version_id":"openalex-oa-pdf","doi":"10.1234/example","sha256":"downloaded-content-hash","rag_document_id":"doc-rag","rag_version_id":"ver-rag"}]}
+```
+
+An attachment may update pending tasks and increments their `task_version`; a
+host that already fetched a task must call `get_pending_tasks` again before
+submitting. The identical attachment returns `reused` without an increment.
+Facts cannot change after analysis or business-judgment submission. This call
+does not download, parse, or modify the RAG index.
+

@@ -127,3 +127,47 @@ def test_bibtex_rejects_duplicate_keys_and_unknown_fields(tmp_path):
     with pytest.raises(Exception): export_reports(tmp_path, "run11", duplicate, languages=["en"])
     unknown = _data(); unknown["bibliography"][0]["custom_field"] = "unsupported"
     with pytest.raises(Exception): export_reports(tmp_path, "run12", unknown, languages=["en"])
+
+
+def test_baseline_visibility_is_retained_in_canonical_data_but_omitted_from_bibtex(tmp_path):
+    data = _data()
+    data["evidence"][0].update(document_id="baseline-doc", version_id="baseline-v1")
+    data["claims"][0].update(document_id="baseline-doc", version_id="baseline-v1")
+    data["bibliography"] = [{
+        "id": "baseline-doc", "type": "article", "title": "Baseline source",
+        "doi": "10.1000/baseline", "visibility": "public",
+    }]
+    export_reports(tmp_path, "run-baseline", data, languages=["en"])
+    root = tmp_path / "reports/run-baseline/v1"
+    canonical = json.loads((root / "report-data.canonical.json").read_text(encoding="utf-8"))
+    assert canonical["report_data"]["bibliography"][0]["visibility"] == "public"
+    bibliography = (root / "bibliography.bib").read_text(encoding="utf-8")
+    assert "visibility" not in bibliography and "doi = {10.1000/baseline}" in bibliography
+
+
+def test_bibtex_projects_review_as_article_but_preserves_canonical_type(tmp_path):
+    data = _data()
+    data["bibliography"] = [{"id": "review-doc", "type": "review", "title": "Review source"}]
+    export_reports(tmp_path, "run-review", data, languages=["en"])
+    root = tmp_path / "reports/run-review/v1"
+    canonical = json.loads((root / "report-data.canonical.json").read_text(encoding="utf-8"))
+    assert canonical["report_data"]["bibliography"][0]["type"] == "review"
+    assert "@article{review-doc," in (root / "bibliography.bib").read_text(encoding="utf-8")
+    data["bibliography"][0]["type"] = "dataset"
+    with pytest.raises(Exception):
+        export_reports(tmp_path, "run-unknown-type", data, languages=["en"])
+
+
+def test_bibtex_generates_stable_safe_key_for_doi_with_slash(tmp_path):
+    data = _data()
+    data["bibliography"] = [{"type": "article", "title": "DOI source", "doi": "10.1039/d0ee01133a"}]
+    export_reports(tmp_path, "run13", data, languages=["en"])
+    text = (tmp_path / "reports/run13/v1/bibliography.bib").read_text(encoding="utf-8")
+    assert "@article{ref" in text and "doi = {10.1039/d0ee01133a}" in text
+
+
+def test_bibtex_keeps_safe_fallback_id_as_key(tmp_path):
+    data = _data()
+    data["bibliography"] = [{"type": "misc", "title": "Identifier source", "id": "reference17"}]
+    export_reports(tmp_path, "run14", data, languages=["en"])
+    assert "@misc{reference17," in (tmp_path / "reports/run14/v1/bibliography.bib").read_text(encoding="utf-8")

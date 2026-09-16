@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md) · English · [日本語](README.ja.md)
 
-**2026-09-15 checkpoint:** local RAG/native Luna calls and the live OpenAlex protocol path are verified. New-PDF Docling ingestion and scientific investigation quality remain pending. [Handoff (Chinese)](docs/D19_P2_HANDOFF.md) · [Acceptance](docs/D19_P2_CONTINUATION_ACCEPTANCE.md).
+**2026-09-16 checkpoint:** the bounded P3 paper case passed independent acceptance, including new-PDF Docling/RAG ingestion, two Chinese report bodies, export and reopen checks. Search coverage remains partial. P4 single-family patent work is planned; OPS registration is pending. [P3 acceptance](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 plan](docs/D19_P4_PLAN.md) · [Fallback design](docs/D19_P4_FALLBACK.md).
 
 [Integrated system design (Chinese)](docs/SYSTEM_DESIGN.md) · [Architecture diagram](docs/diagrams/harness-overview.svg) · [D19 experiment plan](docs/INVESTIGATION_EXPERIMENT_PLAN.md). These describe the target design; implementation status is stated separately.
 
@@ -37,7 +37,7 @@ Real model/source APIs, OpenAlex/EPO, production vector RAG, PDF/OCR, standalone
 
 [English guide](docs/USER_GUIDE.en.md) · [Current scope](docs/SCOPE_AUDIT.md) · [Contracts/adapters](docs/CONTRACTS.md) · [Acceptance K01–K07](docs/ACCEPTANCE.md) · [Requirements](docs/PRD.md) · [Architecture](docs/ARCHITECTURE.md) · [Decisions](docs/DECISIONS.md)
 
-The first later case is polymer design. [Its draft](examples/polymer-design.draft.json) has unresolved requirements and is not runnable scientific evidence. Real API integration and case/demo validation precede GitHub publication. No scientific case or public release has been accepted yet.
+The first later case is polymer design. [Its draft](examples/polymer-design.draft.json) has unresolved requirements and is not runnable scientific evidence. Real API integration and case/demo validation precede GitHub publication. The bounded P3 paper case is accepted; broader scientific evaluation and a public release remain pending.
 
 Keep credentials, private originals and runtime workspaces outside Git. Packaged demo material is synthetic. Product investigations are manually triggered, with no default background schedule.
 

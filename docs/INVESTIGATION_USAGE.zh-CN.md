@@ -58,3 +58,16 @@ python scripts/investigation_replay.py --pending pending.json --output replay-re
 将 `data_mode` 设为 `live`、`allow_network` 设为 `true`，且仅配置
 `sources.openalex`。使用 `anonymous: true`，或只给出 `api_key_env` 的环境变量名；密钥不能写入 JSON。scenario 必须传入已检索、可审计的 `reference_evidence`；实时采集不会导入或修改本地 RAG 文库。搜索/下载尝试、游标、次数和字节上限、正文缺口及 `synthetic: false` 都由同一服务投影到 CLI 和 MCP。下载原文只保存在调查 workspace。
 
+### 发现库 RAG 事实绑定（P3）
+
+在实时采集结束、`evidence_analysis/extract` 任务仍为 pending 时，宿主可调用
+`InvestigationService.attach_discovery_evidence(run_id, evidence, mappings, bibliography=None)`。
+`evidence` 必须保留 discovery RAG 返回的 `evidence_id`、`document_id`、`version_id`、原文 `text` 和 `locator`；每个 RAG document/version 都须由 `mappings` 连接到实际下载的 OpenAlex `investigation_document_id`、`investigation_version_id`、DOI 和下载 SHA256。服务据此检查身份后，将基线、已采集页证据与 RAG 证据冻结为同一可引用事实集。相同输入会复用；分析或业务判断结果提交后拒绝变更事实。调用不会重新下载、解析或修改 RAG 索引。
+
+最小输入形状如下；`bibliography` 可为同一 `document_id` 的书目信息：
+
+```json
+{"evidence":[{"evidence_id":"ev-rag","document_id":"doc-rag","version_id":"ver-rag","text":"原文摘录","locator":{"page":1}}],"mappings":[{"investigation_document_id":"W123","investigation_version_id":"openalex-oa-pdf","doi":"10.1234/example","sha256":"下载文件哈希","rag_document_id":"doc-rag","rag_version_id":"ver-rag"}]}
+```
+
+pending 任务可在附加时更新并递增 `task_version`；已领取任务必须重新调用 `get_pending_tasks` 后再提交最新版本。相同附加返回 `reused` 且不递增版本。analysis 或 business_judgment 已提交后，事实快照不再允许变更。
