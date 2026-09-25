@@ -88,6 +88,13 @@ def canonical_identity(item):
 def normalize(document):
     content_type=document.get("content_type","text/plain"); raw=document.get("text")
     blob=base64.b64decode(document["base64_bytes"]) if document.get("base64_bytes") else None
+    if document.get("source")=="epo" and document.get("epo_sections"):
+        evidence=[]
+        for part in document["epo_sections"]:
+            item=_evidence(document,part["text"],part["locator"],None)
+            item.update({"source":"epo","publication_id":document["publication_id"],"section":part["section"],"language":part.get("language"),"source_xml":document.get("source_xml",[])})
+            evidence.append(item)
+        return evidence
     if content_type=="application/xml":
         try: root=ElementTree.fromstring(blob if blob is not None else raw.encode("utf-8"))
         except (ElementTree.ParseError, AttributeError, UnicodeError) as exc: raise SourceError("RH_NORMALIZE_XML","invalid XML") from exc

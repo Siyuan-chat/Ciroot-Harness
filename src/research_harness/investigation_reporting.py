@@ -182,15 +182,17 @@ def _bibtex(items: list[dict[str, Any]]) -> str:
         if not isinstance(item, dict) or not isinstance(item.get("title"), str) or not item["title"]:
             raise ValidationError("bibliography item needs a title")
         key = _citation_key(item, index)
-        kind = "article" if item.get("type") == "review" else item.get("type", "article")
+        kind = "article" if item.get("type") in {"review", "paper"} else ("misc" if item.get("type") == "patent" else item.get("type", "article"))
         if kind not in {"article", "book", "incollection", "inproceedings", "manual", "misc", "phdthesis", "techreport", "unpublished"} or not _SAFE_COMPONENT.fullmatch(key) or key in keys:
             raise ValidationError("bibliography has invalid BibTeX type or key")
-        allowed = {"author", "title", "journal", "booktitle", "year", "volume", "number", "pages", "publisher", "doi", "url", "note", "month", "edition", "institution", "citation_key", "id", "type"}
+        allowed = {"author", "title", "journal", "booktitle", "year", "volume", "number", "pages", "publisher", "doi", "url", "note", "month", "edition", "institution", "citation_key", "id", "type", "publication_id"}
         provenance_only = {"visibility"}
         if set(item) - allowed - provenance_only:
             raise ValidationError("bibliography has unsupported BibTeX field")
         keys.add(key)
-        fields = [(key, value) for key, value in item.items() if key not in {"citation_key", "id", "type", *provenance_only} and value not in (None, "")]
+        fields = [(key, value) for key, value in item.items() if key not in {"citation_key", "id", "type", "publication_id", *provenance_only} and value not in (None, "")]
+        if item.get("publication_id"):
+            fields = [(name, value) for name, value in fields if name != "note"] + [("note", "; ".join(filter(None, [str(item.get("note") or ""), f"Patent publication {item['publication_id']}"])))]
         rendered = ",\n  ".join(f"{name} = {{{_bib(value)}}}" for name, value in fields)
         entries.append(f"@{kind}{{{_bib(key)},\n  {rendered}\n}}")
     return "\n\n".join(entries) + ("\n" if entries else "")

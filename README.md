@@ -1,10 +1,12 @@
 # Research Harness
 
-[中文](README.zh-CN.md) · English · [日本語](README.ja.md)
+[中文 README 与 Windows GUI 使用说明](README.zh-CN.md) · English · [日本語](README.ja.md)
 
 **2026-09-16 checkpoint:** the bounded P3 paper case passed independent acceptance, including new-PDF Docling/RAG ingestion, two Chinese report bodies, export and reopen checks. Search coverage remains partial. P4 single-family patent work is planned; OPS registration is pending. [P3 acceptance](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 plan](docs/D19_P4_PLAN.md) · [Fallback design](docs/D19_P4_FALLBACK.md).
 
 [Integrated system design (Chinese)](docs/SYSTEM_DESIGN.md) · [Architecture diagram](docs/diagrams/harness-overview.svg) · [D19 experiment plan](docs/INVESTIGATION_EXPERIMENT_PLAN.md). These describe the target design; implementation status is stated separately.
+
+**CirootHarness Windows desktop candidate:** [Chinese quick start and current limits](docs/GUI_QUICKSTART.zh-CN.md). The downloadable package contains no local research corpus, API keys, or model cache; paid research calls require explicit configuration and execution.
 
 A local literature/patent investigation framework. The target workflow is natural-language requirements → versioned JSON → retrieval → comparison with a frozen reference library → human review and reports.
 
@@ -37,7 +39,7 @@ Real model/source APIs, OpenAlex/EPO, production vector RAG, PDF/OCR, standalone
 
 [English guide](docs/USER_GUIDE.en.md) · [Current scope](docs/SCOPE_AUDIT.md) · [Contracts/adapters](docs/CONTRACTS.md) · [Acceptance K01–K07](docs/ACCEPTANCE.md) · [Requirements](docs/PRD.md) · [Architecture](docs/ARCHITECTURE.md) · [Decisions](docs/DECISIONS.md)
 
-The first later case is polymer design. [Its draft](examples/polymer-design.draft.json) has unresolved requirements and is not runnable scientific evidence. Real API integration and case/demo validation precede GitHub publication. The bounded P3 paper case is accepted; broader scientific evaluation and a public release remain pending.
+The first later case is polymer design. [Its draft](examples/polymer-design.draft.json) has unresolved requirements and is not runnable scientific evidence. The bounded P3 paper case is accepted; broader scientific evaluation remains pending. Publishing the desktop candidate does not certify a live research workflow.
 
 Keep credentials, private originals and runtime workspaces outside Git. Packaged demo material is synthetic. Product investigations are manually triggered, with no default background schedule.
 

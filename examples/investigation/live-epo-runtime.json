@@ -1,0 +1,20 @@
+{
+  "mode": "host",
+  "data_mode": "live",
+  "allow_network": true,
+  "budget": {
+    "max_tasks": 10,
+    "max_source_calls": 20,
+    "max_source_bytes": 20971520,
+    "max_source_response_bytes": 5242880,
+    "max_pages_per_query": 2
+  },
+  "sources": {
+    "epo": {
+      "page_size": 5,
+      "max_pages": 2,
+      "max_candidates": 20,
+      "timeout_seconds": 30
+    }
+  }
+}

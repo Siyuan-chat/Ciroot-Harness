@@ -6,8 +6,11 @@ import json
 import os
 import re
 import sqlite3
+import shutil
+import tempfile
 import argparse
 import sys
+from xml.etree import ElementTree
 from importlib.metadata import PackageNotFoundError, version as package_version
 import uuid
 from collections import Counter
@@ -70,15 +73,21 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
     provenance. The index contains only derived vectors and metadata.
     """
 
-    def __init__(self, workspace: str | Path, *, embedding_model: str | None = None):
+    def __init__(self, workspace: str | Path, *, embedding_model: str | None = None, read_only: bool = False):
         self.root = Path(workspace).resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / "raw").mkdir(exist_ok=True)
+        self.read_only = read_only
+        if read_only:
+            if not (self.root / "rag.sqlite").is_file() or not (self.root / "qdrant").is_dir():
+                raise RagError("RH_RAG_NOT_FOUND", "read-only RAG index is missing")
+        else:
+            self.root.mkdir(parents=True, exist_ok=True)
+            (self.root / "raw").mkdir(exist_ok=True)
         self.embedding_model = embedding_model or DEFAULT_EMBEDDING_MODEL
-        self._db = sqlite3.connect(self.root / "rag.sqlite")
+        self._db = sqlite3.connect((self.root / "rag.sqlite").as_uri() + "?mode=ro" if read_only else self.root / "rag.sqlite", uri=read_only)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA foreign_keys=ON")
-        self._db.executescript(
+        if not read_only:
+            self._db.executescript(
             """
             CREATE TABLE IF NOT EXISTS rag_documents (
               document_id TEXT PRIMARY KEY, title TEXT NOT NULL, doi TEXT,
@@ -104,14 +113,15 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             CREATE TABLE IF NOT EXISTS rag_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             """
         )
-        version_columns = {row[1] for row in self._db.execute("PRAGMA table_info(rag_versions)")}
-        if "source_path" not in version_columns:
-            self._db.execute("ALTER TABLE rag_versions ADD COLUMN source_path TEXT")
-        self._db.commit()
+            version_columns = {row[1] for row in self._db.execute("PRAGMA table_info(rag_versions)")}
+            if "source_path" not in version_columns:
+                self._db.execute("ALTER TABLE rag_versions ADD COLUMN source_path TEXT")
+            self._db.commit()
         self._embedder: Any | None = None
         self._qdrant: Any | None = None
         self._converter: Any | None = None
         self._bm25_cache: dict[tuple[str, ...], tuple[Any, list[list[str]]]] = {}
+        self._read_index_copy = None
 
     def __exit__(self, *_: Any) -> None:
         self.close()
@@ -121,10 +131,18 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             self._qdrant.close()
             self._qdrant = None
         self._db.close()
+        if self._read_index_copy is not None:
+            self._read_index_copy.cleanup()
 
     def _components(self, *, enforce_config: bool = True) -> tuple[Any, Any, Any]:
-        if enforce_config:
+        if enforce_config and not self.read_only:
             self._ensure_index_config()
+        elif enforce_config:
+            saved = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
+            if not saved:
+                raise RagError("RH_RAG_INDEX_INCOMPLETE", "read-only RAG index configuration is missing")
+            if saved["value"] != self._index_fingerprint():
+                raise RagError("RH_RAG_CONFIG_MISMATCH", "read-only RAG index configuration differs")
         try:
             from fastembed import TextEmbedding
             from fastembed.common.model_description import ModelSource, PoolingType
@@ -148,7 +166,12 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             self._embedder = TextEmbedding(model_name=self.embedding_model, cache_dir=str(cache_dir), threads=_EMBEDDING_THREADS)
         if self._qdrant is None:
             try:
-                self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
+                index_path = self.root / "qdrant"
+                if self.read_only:
+                    self._read_index_copy = tempfile.TemporaryDirectory(prefix="rag-read-index-")
+                    index_path = Path(self._read_index_copy.name) / "qdrant"
+                    shutil.copytree(self.root / "qdrant", index_path, ignore=shutil.ignore_patterns(".lock"))
+                self._qdrant = QdrantClient(path=str(index_path))
             except RuntimeError as exc:
                 raise RagError("RH_RAG_BUSY", "RAG workspace index is in use") from exc
         return self._embedder, self._qdrant, SentenceSplitter
@@ -275,8 +298,22 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
     def _parse(self, path: Path) -> tuple[list[dict[str, Any]], int | None, str, list[str]]:
         if path.suffix.casefold() == ".pdf":
             return self._parse_pdf(path)
+        if path.suffix.casefold() == ".xml":
+            try:
+                root=ElementTree.parse(path).getroot()
+            except ElementTree.ParseError as exc:
+                raise RagError("RH_RAG_PARSE_FAILED", "invalid patent XML") from exc
+            blocks=[]
+            for index,node in enumerate(root.iter(),1):
+                name=node.tag.rsplit("}",1)[-1]
+                if name not in {"p","paragraph","claim"}: continue
+                text=" ".join(" ".join(node.itertext()).split())
+                if text:
+                    blocks.append({"text":text,"locator":{"kind":"xml_node","value":node.get("id") or node.get("num") or str(index)},"section":name,"role":"text"})
+            if not blocks: raise RagError("RH_RAG_PARSE_FAILED", "patent XML has no paragraphs or claims")
+            return blocks,None,"full_text",[]
         if path.suffix.casefold() != ".txt":
-            raise RagError("RH_RAG_UNSUPPORTED", "only PDF and TXT files are supported")
+            raise RagError("RH_RAG_UNSUPPORTED", "only PDF, TXT and XML files are supported")
         text = path.read_text(encoding="utf-8", errors="replace")
         return ([{"text": text, "locator": {"line_start": 1, "line_end": text.count("\n") + 1}, "section": None, "role": "text"}], None, "full_text", [])
 

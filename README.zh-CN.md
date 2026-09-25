@@ -2,6 +2,12 @@
 
 中文 · [English](README.md) · [日本語](README.ja.md)
 
+## CirootHarness Windows 桌面版
+
+下载 GitHub Releases 中的 Windows ZIP，**解压整个 `ResearchHarnessGUI` 文件夹**，运行其中的 `ResearchHarnessGUI.exe`。程序窗口名称为 CirootHarness；EXE 文件名是兼容保留的技术名称。[中文图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)介绍首次启动、工作区、文献库、Agent 对话及本地资料配置。软件本身不附带本机的 23 篇文献、模型缓存、API 密钥或研究工作区。
+
+当前发布的是本地桌面候选：已验证离线合成对话与文献浏览，真实资料导入、跨库检索、收费模型端到端调查及原生 WebView2 全流程尚未完成验收。运行真实 API 可能产生费用，需用户自行配置凭据并明确执行。具体边界见[图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)。
+
 **2026-09-16 进展：** P3 有界论文案例已通过独立验收，包含新 PDF 的 Docling/RAG 入库、中文双报告正文、标准导出与重开；检索覆盖仍为 partial。P4 单专利族阶段已完成范围设计，OPS 注册审批 pending。[P3 验收](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 计划](docs/D19_P4_PLAN.md) · [替代方案](docs/D19_P4_FALLBACK.md)。
 
 [整体设计文档](docs/SYSTEM_DESIGN.md) · [总架构图](docs/diagrams/harness-overview.svg) · [D19实验方案](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。设计覆盖一次性调查、企业监测与人工分流；已实现能力另有明确状态。
@@ -37,7 +43,7 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 
 [中文指南](docs/USER_GUIDE.zh-CN.md) · [当前范围](docs/SCOPE_AUDIT.md) · [数据／适配器契约](docs/CONTRACTS.md) · [验收 K01–K07](docs/ACCEPTANCE.md) · [需求](docs/PRD.md) · [架构](docs/ARCHITECTURE.md) · [决策](docs/DECISIONS.md)
 
-后续首个案例为聚合物设计。[案例草案](examples/polymer-design.draft.json) 仍有待定需求，不是可运行的科学案例。真实 API 接入及案例／demo 验收后再发布 GitHub；P3 有界论文案例已验收，更广泛科学评价与公开发布仍待完成。
+后续首个案例为聚合物设计。[案例草案](examples/polymer-design.draft.json) 仍有待定需求，不是可运行的科学案例。P3 有界论文案例已验收，更广泛科学评价仍待完成；桌面候选发布不代表科研案例或全部 GUI 门槛通过。
 
 密钥、私有原文和运行工作区不要提交 Git。包内演示仅含合成材料。产品调查由用户手动启动，没有默认后台定时任务。
 

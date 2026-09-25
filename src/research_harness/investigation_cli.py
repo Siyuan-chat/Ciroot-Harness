@@ -1,4 +1,4 @@
-"""Machine-readable CLI adapter for the offline InvestigationService."""
+"""Machine-readable CLI adapter for InvestigationService."""
 from __future__ import annotations
 
 import argparse
@@ -26,8 +26,12 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor")
     x = sub.add_parser("plan-validate"); x.add_argument("--plan", required=True)
     x = sub.add_parser("start"); x.add_argument("--spec", required=True); x.add_argument("--runtime", required=True); x.add_argument("--scenario")
+    x = sub.add_parser("auto-start"); x.add_argument("--spec", required=True); x.add_argument("--runtime", required=True); x.add_argument("--scenario")
+    x = sub.add_parser("auto-resume"); x.add_argument("run_id")
     x = sub.add_parser("tasks"); x.add_argument("run_id")
     x = sub.add_parser("submit"); x.add_argument("run_id"); x.add_argument("task_id"); x.add_argument("--result", required=True); x.add_argument("--task-version", required=True, type=int)
+    x = sub.add_parser("add-epo-query"); x.add_argument("run_id"); x.add_argument("--query",required=True)
+    x = sub.add_parser("recover-epo-xml"); x.add_argument("run_id"); x.add_argument("publication_id")
     for name in ("work", "resume", "status", "result", "report"):
         x = sub.add_parser(name)
         if name not in ("status",): x.add_argument("run_id")
@@ -61,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv[1:]); family = "monitor"
     else:
         parser = _parser(); args = parser.parse_args(argv); family = "investigate"
+    auto_run_id = None
     try:
         from research_harness.investigation import InvestigationService
         service = InvestigationService(args.workspace)
@@ -73,8 +78,18 @@ def main(argv: list[str] | None = None) -> int:
             if c == "doctor": result=service.doctor()
             elif c == "plan-validate": result=service.validate_plan(_json(args.plan))
             elif c == "start": result=service.create_investigation(_json(args.spec), _json(args.runtime), _json(args.scenario) if args.scenario else None)
+            elif c == "auto-start":
+                from research_harness.investigation_model_api import advance_api_run
+                created=service.create_investigation(_json(args.spec), _json(args.runtime), _json(args.scenario) if args.scenario else None)
+                auto_run_id=created["run_id"]
+                result=advance_api_run(service,auto_run_id)
+            elif c == "auto-resume":
+                from research_harness.investigation_model_api import advance_api_run
+                result=advance_api_run(service,args.run_id)
             elif c == "tasks": result=service.get_pending_tasks(args.run_id)
             elif c == "submit": result=service.submit_model_result(args.run_id,args.task_id,_json(args.result),args.task_version)
+            elif c == "add-epo-query": result=service.add_epo_query(args.run_id,_json(args.query))
+            elif c == "recover-epo-xml": result=service.recover_epo_xml(args.run_id,args.publication_id)
             elif c == "work": result=service.advance_investigation(args.run_id)
             elif c == "resume": result=service.resume_investigation(args.run_id)
             elif c == "status": result=service.status(args.run_id) if args.run_id else service.status()
@@ -94,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         return _emit(result)
     except Exception as exc:
         code=getattr(exc,"code","RH_INVESTIGATION_INTERNAL")
-        print(json.dumps({"error":{"code":code if isinstance(code,str) else "RH_INVESTIGATION_INTERNAL","message":"operation failed"}},ensure_ascii=False),file=sys.stderr)
+        print(json.dumps({"error":{"code":code if isinstance(code,str) else "RH_INVESTIGATION_INTERNAL","message":"operation failed"},**({"run_id":auto_run_id} if auto_run_id else {})},ensure_ascii=False),file=sys.stderr)
         return 2
     finally:
         service.close()

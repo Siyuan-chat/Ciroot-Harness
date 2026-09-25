@@ -171,3 +171,25 @@ def test_bibtex_keeps_safe_fallback_id_as_key(tmp_path):
     data["bibliography"] = [{"type": "misc", "title": "Identifier source", "id": "reference17"}]
     export_reports(tmp_path, "run14", data, languages=["en"])
     assert "@misc{reference17," in (tmp_path / "reports/run14/v1/bibliography.bib").read_text(encoding="utf-8")
+
+
+def test_bibtex_projects_patent_publication_without_inventing_doi(tmp_path):
+    data = _data()
+    data["bibliography"] = [{"type": "patent", "title": "Patent source", "id": "WO2026182370A1", "publication_id": "WO2026182370A1"}]
+    export_reports(tmp_path, "run-patent", data, languages=["en"])
+    root = tmp_path / "reports/run-patent/v1"
+    canonical = json.loads((root / "report-data.canonical.json").read_text(encoding="utf-8"))
+    assert canonical["report_data"]["bibliography"][0]["type"] == "patent"
+    bib = (root / "bibliography.bib").read_text(encoding="utf-8")
+    assert "@misc{WO2026182370A1," in bib and "note = {Patent publication WO2026182370A1}" in bib
+    assert "doi" not in bib.lower()
+
+
+def test_bibtex_projects_frozen_paper_type_as_article(tmp_path):
+    data = _data()
+    data["bibliography"] = [{"type": "paper", "title": "Paper source", "id": "paper-1"}]
+    export_reports(tmp_path, "run-paper", data, languages=["en"])
+    root = tmp_path / "reports/run-paper/v1"
+    canonical = json.loads((root / "report-data.canonical.json").read_text(encoding="utf-8"))
+    assert canonical["report_data"]["bibliography"][0]["type"] == "paper"
+    assert "@article{paper-1," in (root / "bibliography.bib").read_text(encoding="utf-8")

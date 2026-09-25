@@ -64,13 +64,14 @@ def _result(value: Any) -> dict[str, Any]:
 class RagMCPServer:
     """Thin, directly-callable MCP facade around a ``RagLibrary`` instance."""
 
-    def __init__(self, workspace: str | Path, catalog: str | Path, *, embedding_model: str | None = None, library: Any = None):
+    def __init__(self, workspace: str | Path, catalog: str | Path | None = None, *, embedding_model: str | None = None, read_only: bool = False, library: Any = None):
         self.workspace = Path(workspace).resolve()
-        self.catalog = Path(catalog).resolve()
+        self.catalog = Path(catalog).resolve() if catalog else None
+        self.read_only = read_only
         if library is None:
             from research_harness.rag import RagLibrary
 
-            library = RagLibrary(self.workspace, embedding_model=embedding_model)
+            library = RagLibrary(self.workspace, embedding_model=embedding_model, read_only=read_only)
         self.library = library
 
     def _call(self, method: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -80,6 +81,8 @@ class RagMCPServer:
             return {"error": _safe_error(exc)}
 
     def import_library(self, *, limit: int | None = None) -> dict[str, Any]:
+        if self.read_only or self.catalog is None:
+            return {"error": {"code": "RH_RAG_READ_ONLY", "message": "this MCP connection is read only"}}
         return self._call("import_library", self.catalog, limit=limit)
 
     def search_evidence(self, query: str, *, top_k: int = 8, filters: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -145,16 +148,17 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", default=os.environ.get("RH_RAG_WORKSPACE"), required=False)
     parser.add_argument("--catalog", default=os.environ.get("RH_RAG_CATALOG"), required=False)
     parser.add_argument("--embedding-model", default=os.environ.get("RH_RAG_EMBEDDING_MODEL"))
+    parser.add_argument("--read-only", action="store_true", help="expose existing index without imports or writes")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
-    if not args.workspace or not args.catalog:
-        print("RH_RAG_CONFIG: --workspace and --catalog are required", file=sys.stderr)
+    if not args.workspace or (not args.read_only and not args.catalog):
+        print("RH_RAG_CONFIG: --workspace is required; writable mode also requires --catalog", file=sys.stderr)
         return 2
     try:
-        rag = RagMCPServer(args.workspace, args.catalog, embedding_model=args.embedding_model)
+        rag = RagMCPServer(args.workspace, args.catalog, embedding_model=args.embedding_model, read_only=args.read_only)
     except Exception as exc:
         error = _safe_error(exc)
         print(f"{error['code']}: {error['message']}", file=sys.stderr)

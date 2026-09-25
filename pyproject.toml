@@ -17,9 +17,12 @@ mcp = ["mcp==2.2.0"]
 rag-mcp = ["docling==2.126.0", "fastembed==0.8.0", "qdrant-client==1.19.0", "llama-index-core==0.14.24", "rank-bm25==0.2.2", "nltk==3.9.3", "mcp==2.2.0"]
 literature = ["pypdf>=5"]
 test = []
+gui = ["fastapi>=0.115", "uvicorn>=0.30", "pywebview>=6", "pypdfium2>=5,<6"]
 
 [project.scripts]
 rh = "research_harness.cli:main"
+rh-control = "research_harness.gui.control:main"
+rh-control-mcp = "research_harness.gui.control_mcp:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -28,4 +31,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-research_harness = ["schemas/*.json", "fixtures/*.json", "fixtures/*.txt", "prompts/investigation/*.md", "examples/investigation/*.json"]
+research_harness = ["schemas/*.json", "fixtures/*.json", "fixtures/*.txt", "prompts/investigation/*.md", "examples/investigation/*.json", "gui/help/*.md"]
