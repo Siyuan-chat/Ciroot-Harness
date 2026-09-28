@@ -34,6 +34,7 @@ from research_harness.investigation_model_api import run_model_task
 from research_harness.gui.conversation import ConversationError, ConversationStore
 from research_harness.gui.conversation_model_api import controlled_runtime, plan as plan_conversation, validate_api_config
 from research_harness.gui.help import HelpLibrary
+from research_harness.gui.golden_demo import GoldenDemoFacade
 
 
 MODEL_KEY_ENV = {
@@ -1854,6 +1855,22 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
         if after < 0: raise HTTPException(400, "RH_GUI_CONTROL_EVENT_CURSOR: cursor is invalid")
         values = [{"seq": index, **event} for index, event in enumerate(client["events"], 1) if index > after]
         return pack({"client_id": client_id, "events": values, "next_seq": len(client["events"])})
+
+    golden_demo = GoldenDemoFacade(root)
+
+    @app.get("/api/v1/golden-demo")
+    def golden_demo_read():
+        return golden_demo.read()
+
+    @app.get("/api/v1/golden-demo/runs/{run_id}")
+    def golden_demo_run_read(run_id: str):
+        return golden_demo.read(run_id)
+
+    @app.post("/api/v1/golden-demo")
+    def golden_demo_create(body: dict, idempotency_key: str | None = Header(None)):
+        if body:
+            raise HTTPException(400, "golden demo request body must be empty")
+        return write(idempotency_key, body, golden_demo.run)
 
     if static_dir and Path(static_dir).is_dir():
         @app.get("/", include_in_schema=False)

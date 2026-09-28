@@ -43,6 +43,17 @@ export async function uploadLibraryFile(file, requestScope) {
   if(!response.ok){let data;try{data=await response.json()}catch{data=null}throw new ApiError(data,response.status)}
   const data=await response.json();if(data?.schema_version!=='1')throw new ApiError({code:'RH_SCHEMA_VERSION',message:'接口版本不匹配'},response.status);return data;
 }
+
+let goldenDemoRequestId = '';
+export function goldenDemoIdentity(fresh=false) {
+  if (fresh) goldenDemoRequestId = crypto.randomUUID();
+  if (!goldenDemoRequestId) {
+    try { goldenDemoRequestId = localStorage.getItem('rh-golden-demo-request') || ''; } catch {}
+  }
+  if (!goldenDemoRequestId) goldenDemoRequestId = crypto.randomUUID();
+  try { localStorage.setItem('rh-golden-demo-request', goldenDemoRequestId); } catch {}
+  return goldenDemoRequestId;
+}
 export const api = {
   conversations: () => request('/conversations'),
   conversation: (id, requestScope) => request(`/conversations/${encodeURIComponent(id)}`, {requestScope}),
@@ -106,5 +117,7 @@ export const api = {
   stop: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}/stop`, { method: 'POST', body: {},requestScope }),
   resume: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}/resume`, { method: 'POST', body: {},requestScope }),
   submitTask: (id, taskId, version, output,requestScope) => request(`/runs/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`, { method: 'POST', body: { task_version: version, result: output },requestScope }),
-  decide: (issueId, decision, note,requestScope) => request(`/reviews/${encodeURIComponent(issueId)}/decision`, { method: 'POST', body: { decision, note },requestScope })
+  decide: (issueId, decision, note,requestScope) => request(`/reviews/${encodeURIComponent(issueId)}/decision`, { method: 'POST', body: { decision, note },requestScope }),
+  goldenDemo: () => request('/golden-demo',{unscoped:true}),
+  runGoldenDemo: (idempotencyKey) => request('/golden-demo',{method:'POST',body:{},unscoped:true,idempotencyKey})
 };
