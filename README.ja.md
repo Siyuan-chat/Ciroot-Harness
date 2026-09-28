@@ -47,17 +47,18 @@ CirootHarness は、文献・特許調査を対象とする local-first の rese
 
 CirootHarness は現在 public preview です。完成済みの production research service ではありません。
 
-- Windows portable desktop preview（native WebView2 操作の全工程は未検証）
-- workspace / library 作成
-- テキスト抽出可能な PDF と UTF-8 TXT の import
-- desktop preview 内の local basic text search
-- LangGraph + SQLite + citation check を使う offline synthetic demo
-- 中国語・英語・日本語 report
-- acceptance record のある local RAG
-- OpenAlex を利用する OA literature collection
-- accepted offline scope における evidence / report / review / monitoring primitives
-- 新規 PDF ingestion、RAG、report export / reopen を含む bounded paper case
-- live patent workflow は引き続き開発中
+| 機能 | 現在の状態 |
+| --- | --- |
+| Windows デスクトッププレビュー | ローカル文献庫向けのポータブル先行版。ネイティブ WebView2 操作は全工程未検証 |
+| ローカル作業領域・文献庫 | 作成、テキスト抽出可能な PDF と UTF-8 TXT の取り込み |
+| 基本テキスト検索 | デスクトッププレビューで利用可能 |
+| オフライン調査デモ | 実際の InvestigationService を利用する決定論的な合成 [Golden Demo](docs/GOLDEN_DEMO.md)。オフライン、API key 不要、期待結果は `partial` |
+| 多言語レポート | テスト用シナリオで中国語・英語・日本語の出力に対応 |
+| ローカル RAG | Docling/FastEmbed/Qdrant の処理経路に受入記録あり |
+| OA 文献収集 | OpenAlex 検索と OA PDF 収集モジュール |
+| 調査サービス | 受入済みオフライン範囲の証拠・レポート・レビュー・監視の基本機能を実装 |
+| 限定的な論文事例 | P3 で新規 PDF 取り込み、RAG、レポート出力、再オープンを受入済み |
+| ライブ特許調査 | 開発中。目標設計を端から端までの受入済み機能として扱わない |
 
 詳細は [開発状況](docs/DEVELOPMENT_STATUS.md) を参照してください。
 
@@ -75,26 +76,53 @@ ResearchHarnessGUI.exe
 
 private corpus、model cache、API key は同梱されません。現在の GUI の範囲は [GUI quick start](docs/GUI_QUICKSTART.zh-CN.md) を参照してください。
 
+パッケージ内ページでの限定的な初回送信チェックは通過しています。ネイティブ WebView2 操作は未検証です。
+
+<a id="オフライン-demo"></a>
+
 ### オフライン Demo
 
-Python 3.11+ が必要です。
+**Public Golden Demo**
+
+Python 3.11+ が必要です。依存関係のインストールにはネットワークが必要な場合がありますが、Demo の実行はオフラインです。
+
+**Windows**
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install .
-.venv\Scripts\rh demo --workspace .local\demo
-.venv\Scripts\rh status --workspace .local\demo
+.venv\Scripts\python -m pip install ".[investigation]"
+.venv\Scripts\rh investigate --workspace .local/golden-demo golden-demo
 ```
 
-Demo 自体は offline で API key は不要です。synthetic candidate、verified finding、human-review issue、HTML/Markdown report、canonical JSON、review CSV を生成します。
+**macOS / Linux**
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install ".[investigation]"
+.venv/bin/rh investigate --workspace .local/golden-demo golden-demo
+```
+
+実際の InvestigationService を使って固定された決定論的な合成シナリオを実行します。API key やネットワーク接続は不要です。
+
+Golden Demo には意図的に不正な合成 XML 文書が含まれるため、期待される結果は `completed` ではなく `partial` です。
+
+ResearchSpec の固定、情報源・検索の試行記録、証拠付きの検証済み主張、未解決の正規化問題を示し、技術調査レポートと文献レビューを出力します。保存結果と再オープンの手順は [Golden Demo ガイド](docs/GOLDEN_DEMO.md) を参照してください。
+
+従来の `rh demo` はフレームワークのテスト用デモとして残ります。[ユーザーガイド](docs/USER_GUIDE.ja.md)を参照してください。
+
+この合成デモは実際の科学的証拠とは明確に区別され、実情報源による調査の受入を意味しません。
 
 ## Architecture
 
-![CirootHarness architecture](docs/diagrams/harness-overview.png)
+下図は CirootHarness を短時間で理解するための公開アーキテクチャ概要です。詳細設計と各段階の受入範囲はリンク先の技術文書を参照してください。
 
-この図は integrated target design を示します。実装・受入済み範囲は別途管理し、計画と実装を混同しません。
+![CirootHarness アーキテクチャ](docs/diagrams/cirootharness-architecture.ja.png)
 
-[System design](docs/SYSTEM_DESIGN.md) · [Architecture](docs/ARCHITECTURE.md) · [Engineering status](docs/DEVELOPMENT_STATUS.md)
+[原寸 PNG](docs/diagrams/cirootharness-architecture.ja.png) · [編集可能な SVG](docs/diagrams/cirootharness-architecture.ja.svg)
+
+この図は全体の目標設計を示します。実装・受入済み範囲は別途管理し、計画と実装を混同しません。
+
+[全体設計](docs/SYSTEM_DESIGN.md) · [アーキテクチャ](docs/ARCHITECTURE.md) · [開発状況](docs/DEVELOPMENT_STATUS.md)
 
 ## Demo / showcase
 
@@ -112,6 +140,19 @@ Demo 自体は offline で API key は不要です。synthetic candidate、verif
 public preview は、live model + source API の完全な end-to-end 調査、完全な patent-family coverage、scan PDF OCR、desktop preview の cross-library semantic search、無人 production monitoring、法的意見や FTO 判断を意味しません。
 
 credential、private original、runtime workspace、model cache は Git に含めないでください。
+
+## ドキュメント
+
+- [開発状況](docs/DEVELOPMENT_STATUS.md)
+- [Golden Demo](docs/GOLDEN_DEMO.md)
+- [全体設計](docs/SYSTEM_DESIGN.md)
+- [アーキテクチャ](docs/ARCHITECTURE.md)
+- [要件](docs/PRD.md)
+- [データ・アダプター契約](docs/CONTRACTS.md)
+- [フレームワーク受入](docs/FRAMEWORK_ACCEPTANCE.md)
+- [RAG 受入](docs/RAG_ACCEPTANCE.md)
+- [調査計画](docs/INVESTIGATION_EXPERIMENT_PLAN.md)
+- [ユーザーガイド](docs/USER_GUIDE.ja.md)
 
 ## License / Citation
 

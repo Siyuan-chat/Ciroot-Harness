@@ -8,6 +8,7 @@ Design documents in this repository intentionally describe future architecture a
 
 | Area | Status | Evidence / notes |
 | --- | --- | --- |
+| Public Golden Demo | Accepted deterministic synthetic integration demo | [Golden Demo](GOLDEN_DEMO.md); [tests](../tests/test_golden_demo.py); offline, synthetic, no model API calls, no network required; frozen ResearchSpec; source/query attempts; evidence-bearing documents; verified claims; open normalization issue; technical report and literature review; reopen tested; [CI-covered](../.github/workflows/ci.yml); expected final outcome = `partial`. This is integration acceptance, not scientific, live-source or patent-search acceptance. |
 | D2 fixture framework | Accepted | `docs/FRAMEWORK_ACCEPTANCE.md`; deterministic synthetic sources, LangGraph, SQLite, citation verification and multilingual report outputs |
 | D18 local RAG | Implemented with acceptance record | `docs/RAG_ACCEPTANCE.md`; see `docs/RAG_STAGE.md` for the exact boundary |
 | OA literature collection | Implemented as a separate collection module | OpenAlex search and OA-PDF collection; collection is not equivalent to scientific screening |

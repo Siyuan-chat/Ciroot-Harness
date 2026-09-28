@@ -54,7 +54,7 @@ CirootHarness is an active preview, not a finished production research service.
 | Windows desktop preview | Portable prerelease for local library workflows; native WebView2 interaction is not fully accepted |
 | Local workspace and library | Create workspaces/libraries; import text-extractable PDF and UTF-8 TXT |
 | Local basic text search | Available in the desktop preview |
-| Offline investigation demo | Deterministic synthetic sources; LangGraph + SQLite + citation checks |
+| Offline investigation demo | Deterministic synthetic [Golden Demo](docs/GOLDEN_DEMO.md) using the real InvestigationService; offline, no API key, expected `partial`. |
 | Multilingual reports | Chinese, English and Japanese outputs in the fixture workflow |
 | Local RAG | Docling/FastEmbed/Qdrant-based workflow with recorded acceptance |
 | OA literature collection | OpenAlex search and OA-PDF collection module |
@@ -78,37 +78,49 @@ The window is branded **CirootHarness**. The executable name is currently retain
 
 The preview starts without bundled private documents, model caches, or API keys. The accepted package checks cover workspace and library creation, text-extractable PDF or UTF-8 TXT import, local basic search, and a bounded first-send flow through the packaged page. Native WebView2 interaction remains unverified. See the [Chinese GUI guide](docs/GUI_QUICKSTART.zh-CN.md) for the current boundaries.
 
+<a id="run-the-offline-demo"></a>
+
 ### 2. Run the offline demo
 
-Python 3.11+ is required.
+**Public Golden Demo**
+
+Python 3.11+ is required. Installation may require network access; execution is offline.
 
 **Windows**
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install .
-.venv\Scripts\rh demo --workspace .local\demo
-.venv\Scripts\rh status --workspace .local\demo
+.venv\Scripts\python -m pip install ".[investigation]"
+.venv\Scripts\rh investigate --workspace .local/golden-demo golden-demo
 ```
 
 **macOS / Linux**
 
 ```bash
 python -m venv .venv
-.venv/bin/python -m pip install .
-.venv/bin/rh demo --workspace .local/demo
-.venv/bin/rh status --workspace .local/demo
+.venv/bin/python -m pip install ".[investigation]"
+.venv/bin/rh investigate --workspace .local/golden-demo golden-demo
 ```
 
-The demo itself is offline and requires no API key. It produces synthetic candidates, verified findings, a human-review issue, HTML/Markdown reports, canonical JSON, and a review CSV.
+Runs the deterministic synthetic Golden Demo through the real InvestigationService. No model API key or network access is required.
 
-Synthetic demo material is deliberately separated from real scientific evidence.
+The Golden Demo intentionally contains one malformed synthetic XML document, so the expected outcome is `partial`, not `completed`.
+
+It freezes a ResearchSpec, records source/query attempts, produces evidence-backed verified claims and an open normalization issue, and exports a technical report and a literature review. See the [Golden Demo guide](docs/GOLDEN_DEMO.md) for persisted results and reopening.
+
+The older `rh demo` remains a legacy framework fixture demo; see the [user guide](docs/USER_GUIDE.en.md).
+
+This synthetic integration demo is separate from real scientific evidence and live-source acceptance.
 
 ## Architecture
 
+The diagram below is the public architecture overview. Detailed engineering design and stage-specific acceptance remain in the linked technical documents.
+
 The target system takes a research question through specification, retrieval, evidence extraction, verification, human review, and report generation.
 
-![CirootHarness architecture](docs/diagrams/harness-overview.png)
+![CirootHarness architecture](docs/diagrams/cirootharness-architecture.en.png)
+
+[Full-size PNG](docs/diagrams/cirootharness-architecture.en.png) · [editable SVG](docs/diagrams/cirootharness-architecture.en.svg)
 
 The diagram describes the integrated design. **Implemented/accepted scope is tracked separately** so that planned components are not confused with working product behavior.
 
@@ -174,6 +186,7 @@ Credentials, private originals, runtime workspaces, and model caches should stay
 
 ## Documentation
 
+- [Golden Demo](docs/GOLDEN_DEMO.md)
 - [Engineering status](docs/DEVELOPMENT_STATUS.md)
 - [System design](docs/SYSTEM_DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
