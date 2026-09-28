@@ -24,6 +24,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--workspace", required=True)
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
+    sub.add_parser("golden-demo", help="run the fixed synthetic offline demonstration")
     x = sub.add_parser("plan-validate"); x.add_argument("--plan", required=True)
     x = sub.add_parser("start"); x.add_argument("--spec", required=True); x.add_argument("--runtime", required=True); x.add_argument("--scenario")
     x = sub.add_parser("auto-start"); x.add_argument("--spec", required=True); x.add_argument("--runtime", required=True); x.add_argument("--scenario")
@@ -76,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
         if family == "investigate":
             c=args.command
             if c == "doctor": result=service.doctor()
+            elif c == "golden-demo":
+                from research_harness.golden_demo import run_golden_demo
+                result=run_golden_demo(args.workspace, service)
             elif c == "plan-validate": result=service.validate_plan(_json(args.plan))
             elif c == "start": result=service.create_investigation(_json(args.spec), _json(args.runtime), _json(args.scenario) if args.scenario else None)
             elif c == "auto-start":

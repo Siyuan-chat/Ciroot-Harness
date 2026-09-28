@@ -166,3 +166,7 @@ P2 首轮结果：OpenAlex 已安装采集器真实匿名两页续查（5+5）�
 ### P4 审批等待、替代方案与 GitHub 同步（2026-09-16）
 
 用户明确 OPS 注册审批 pending，要求同步近期进展到现有 GitHub，并制定 EPO 不可用时的替代方案。授权提交/推送本次相关代码、测试、指南及阶段记录；不上传 .local 原文、数据库、凭据或会话，不创建 PR。替代方案见 D19_P4_FALLBACK.md，分别覆盖 OPS 不可用与 EPO 整体不可用；本轮不执行替代来源真实调查。
+
+### Public Golden Demo 的合成边界（2026-09-28）
+
+用户要求先完成 Public Showcase Foundation，再以独立阶段建立无需 API key、无需私有资料的 Golden Demo。固定场景复用现有 InvestigationService，以明确标记的合成来源和确定性宿主结果运行；真实来源检索或科学结论不能从该演示推断。验收要求包含冻结 ResearchSpec、来源尝试、可回溯的 claim/证据/文档版本/定位/原文、人工问题、双报告、真实最终状态及重启后读取。固定场景故意包含一条无效合成 XML，最终状态应保持 partial；工程说明见 GOLDEN_DEMO.md。本阶段不修改调查核心、GUI 或私有材料。
