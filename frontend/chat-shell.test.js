@@ -22,6 +22,11 @@ test('chat is a right-side workspace column with narrow-window content/chat swit
   assert.match(css,/\.workspace\.detail-open>\.detail\{display:block;position:absolute/);
   assert.match(css,/@media\(max-width:650px\)/);
 });
+test('narrow Plan view gives the assistant the full main grid without flex-shrinking its content',()=>{
+  assert.match(app,/function planInvestigation\(\)[\s\S]*?state\.chatOpen=true[\s\S]*?mobileView='chat'/);
+  assert.match(css,/\.workspace\.chat-open\.view-chat>\.chat-dock\{display:grid!important;grid-column:1!important;grid-row:1!important;min-height:0;width:100%;height:100%/);
+  assert.doesNotMatch(css,/\.workspace\.chat-open\.view-chat>\.chat-dock\{display:flex!important/);
+});
 test('context and chat keep compact labels, disclosure-only low-frequency controls, and a usable composer',()=>{
   assert.match(app,/<details id="context-controls" class="context-controls">/);
   assert.match(app,/<details id="top-more" class="top-more">/);
