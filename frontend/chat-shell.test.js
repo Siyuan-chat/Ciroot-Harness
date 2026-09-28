@@ -11,7 +11,8 @@ test('new workspace action stays in the top bar and Ask Agent links to the chat 
   assert.match(app,/app\.querySelector\('#top-chat'\)[\s\S]*?mobileView='chat'[\s\S]*?app\.querySelector\('#chat-input'\)/);
 });
 test('chat is a right-side workspace column with narrow-window content/chat switching and optional details',()=>{
-  assert.match(app,/aria-label="\$\{esc\(translate\('对象详情'/);
+  assert.match(app,/aria-label="\$\{esc\(t\(state\.inspector\.type==='document'\?'document\.inspectorTitle':'evidence\.inspectorTitle'/);
+  assert.match(app,/function inspectorContent\(\)[\s\S]*?id="close-detail"[^>]*aria-label="\$\{esc\(t\('inspector\.close'/);
   assert.match(app,/\$\{chatPanel\(\)\}<\/div><details class="runbar">/);
   assert.match(css,/\.workspace\.detail-closed>\.detail\{display:none\}/);
   assert.match(app,/id="show-content"/);assert.match(app,/id="show-chat"/);
@@ -84,7 +85,7 @@ test('details drawer overlays content so it does not narrow the document list be
 test('selecting workspace, library, collection, or the library nav returns to the scoped library content view',()=>{
   assert.match(app,/state\.page='library';mobileView='content';setScope\(/);
   assert.match(app,/await loadLibrary\(generation\);await syncEvents/);
-  assert.match(app,/\['overview','library','investigations'\]\.includes\(page\)\)mobileView='content'/);
+  assert.match(app,/\['overview','library','investigations','reports','settings'\]\.includes\(page\)\)mobileView='content'/);
   assert.match(app,/app\.querySelectorAll\('\[data-page\]'\)\.forEach\(b=>b\.onclick=\(\)=>\{mobileNavOpen=false;loadPage\(b\.dataset\.page\)\}\)/);
   assert.match(app,/state\.loading&&state\.libraryStatus==null[\s\S]*?正在读取所选文献库/);
 });
