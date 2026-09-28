@@ -77,6 +77,7 @@ test('report selection only offers real runs returned by the API',()=>{
   const html=renderReportSelection({runs:[{run_id:'run-1',status:'partial',research_question:'Saved question'}],t,locale});
   assert.match(html,/Saved question/);
   assert.match(html,/data-open-report-run="run-1"/);
+  assert.doesNotMatch(html,/<small>run-1<\\/small>/);
   assert.doesNotMatch(html,/<small>run-1<\/small>/);
   assert.doesNotMatch(html,/sample|fake/i);
   for(const language of ['zh','en','ja'])assert.match(renderReportSelection({runs:[],t,locale:language}),new RegExp(language==='zh'?'选择调查报告':language==='en'?'Select an investigation report':'調査レポートを選択'));
