@@ -13,7 +13,8 @@ test('new workspace action stays in the top bar and Ask Agent links to the chat 
 test('chat is a right-side workspace column with narrow-window content/chat switching and optional details',()=>{
   assert.match(app,/aria-label="\$\{esc\(t\(state\.inspector\.type==='document'\?'document\.inspectorTitle':'evidence\.inspectorTitle'/);
   assert.match(app,/function inspectorContent\(\)[\s\S]*?id="close-detail"[^>]*aria-label="\$\{esc\(t\('inspector\.close'/);
-  assert.match(app,/\$\{chatPanel\(\)\}<\/div><details class="runbar">/);
+  assert.match(app,/\$\{chatPanel\(\)\}<\/div><\/div>/);
+  assert.doesNotMatch(app,/<details class="runbar">/);
   assert.match(css,/\.workspace\.detail-closed>\.detail\{display:none\}/);
   assert.match(app,/id="show-content"/);assert.match(app,/id="show-chat"/);
   assert.match(css,/@media\(max-width:1100px\)/);
