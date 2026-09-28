@@ -5,7 +5,7 @@ import json
 from importlib import resources
 from typing import Any
 
-from .investigation import InvestigationService
+from .investigation import InvestigationError, InvestigationService
 
 
 def _answer(task: dict[str, Any]) -> dict[str, Any]:
@@ -29,9 +29,19 @@ def _answer(task: dict[str, Any]) -> dict[str, Any]:
     if role == "writing":
         claims = payload.get("claims", [])
         ids = [item["claim_id"] for item in claims]
+        evidence_by_id = {item["evidence_id"]: item for item in payload.get("evidence", [])}
+        def traced_claim(claim: dict[str, Any]) -> str:
+            evidence_id = claim["evidence_refs"][0]
+            item = evidence_by_id[evidence_id]
+            locator = json.dumps(item["locator"], ensure_ascii=False, sort_keys=True)
+            return (f"Claim: {claim['claim']}\n\nEvidence ID: {evidence_id}\n"
+                    f"Document: {item['document_id']}\nVersion: {item['version_id']}\n"
+                    f"Locator: {locator}\nSource excerpt: {claim['quote']}")
+        technical = traced_claim(claims[0]) if claims else "No verified synthetic claim was available."
+        review = "Cross-source synthetic evidence review.\n\n" + ("\n\n".join(traced_claim(claim) for claim in claims) or "No verified synthetic claims were available.")
         sections = []
-        for kind in ("technical_report", "literature_review"):
-            sections.append({"deliverable_type": kind, "language": "en", "section_id": f"golden-{kind}", "title": "Synthetic offline result", "body": "This report contains only the supplied synthetic statements and their verified evidence links.", "claim_ids": ids})
+        for kind, body, section_ids in (("technical_report", technical, ids[:1]), ("literature_review", review, ids)):
+            sections.append({"deliverable_type": kind, "language": "en", "section_id": f"golden-{kind}", "title": "Synthetic offline result", "body": body, "claim_ids": section_ids})
         return {"sections": sections}
     if role == "verification":
         claims = payload.get("claims", [])
@@ -48,17 +58,26 @@ def run_golden_demo(workspace: str, service: InvestigationService | None = None)
     service = service or InvestigationService(workspace)
     try:
         run_id = service.create_investigation(spec, runtime, scenario)["run_id"]
-        while True:
+        max_steps = int(runtime.get("budget", {}).get("max_tasks", 8)) + 8
+        for _ in range(max_steps):
             state = service.status(run_id)
             if state["status"] in {"completed", "partial", "failed", "policy_blocked", "stopped"}:
                 break
             tasks = service.get_pending_tasks(run_id)
+            if not tasks:
+                raise InvestigationError("RH_GOLDEN_DEMO_STALLED", "run has no pending role tasks and has not reached a terminal state")
             for task in tasks:
                 service.submit_model_result(run_id, task["task_id"], _answer(task), task["task_version"])
             service.advance_investigation(run_id)
+        else:
+            raise InvestigationError("RH_GOLDEN_DEMO_STALLED", "run exceeded the bounded role-task progress limit")
+        state = service.status(run_id)
+        if state["status"] not in {"completed", "partial", "failed", "policy_blocked", "stopped"}:
+            raise InvestigationError("RH_GOLDEN_DEMO_STALLED", "run did not reach a terminal state")
         service.export_report(run_id, ["en"])
         result = service.get_result(run_id)
-        return {"run_id": run_id, "outcome": result["outcome"], "synthetic": result["synthetic"], "candidate_count": len({x.get("document_id") for x in result.get("evidence", [])}), "verified_claim_count": len([x for x in service.build_report_data(run_id).get("claims", []) if x.get("verification") in (True, "verified") or isinstance(x.get("verification"), dict) and x["verification"].get("status") == "verified"]), "open_issue_count": len([x for x in result.get("issues", []) if x.get("status") == "open"]), "coverage": result.get("coverage"), "artifacts": result.get("artifacts", [])}
+        candidates = {item["document_id"] for page in scenario.get("transport_pages", []) for item in page.get("candidates", []) if isinstance(item, dict) and item.get("document_id")}
+        return {"run_id": run_id, "outcome": result["outcome"], "synthetic": result["synthetic"], "candidate_count": len(candidates), "evidence_document_count": len({x.get("document_id") for x in result.get("evidence", [])}), "verified_claim_count": len([x for x in service.build_report_data(run_id).get("claims", []) if x.get("verification") in (True, "verified") or isinstance(x.get("verification"), dict) and x["verification"].get("status") == "verified"]), "open_issue_count": len([x for x in result.get("issues", []) if x.get("status") == "open"]), "coverage": result.get("coverage"), "artifacts": result.get("artifacts", [])}
     finally:
         if owns_service:
             service.close()
