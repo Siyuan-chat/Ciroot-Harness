@@ -26,7 +26,7 @@ main{padding:var(--space-4) var(--space-6)}.top{padding:var(--space-2) var(--spa
 .sidebar button[aria-current=page],.segmented button[aria-pressed=true]{background:var(--brand-tint);color:var(--brand-teal-dark);font-weight:700}
 .badge.partial,.status-partial,.status-waiting,.status-needs_review{color:var(--status-partial);background:var(--status-partial-bg)}
 .badge.failed,.status-failed{color:var(--status-failed);background:var(--status-failed-bg)}
-.badge.completed,.badge.verified,.status-completed,.status-verified{color:var(--status-success);background:var(--status-success-bg)}
+.badge.completed,.badge.verified,.status-completed,.status-verified{color:var(--status-success);background:var(--status-success-bg)}\n.badge.synthetic{color:var(--brand-teal-dark);background:var(--brand-tint);border-color:#b8d8d4}
 .status-running,.status-active{color:var(--status-active);background:var(--status-active-bg)}
 .status-badge[class*="unknown"],.status-unknown{color:#536273;background:#edf1f5}
 .card,.overview-welcome,.overview-demo,.overview-section,.overview-summary article,.review-inbox-item,.investigation-summary article,.investigation-progress li{border-color:var(--line-soft)}
