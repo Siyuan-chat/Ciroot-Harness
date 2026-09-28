@@ -10,7 +10,7 @@ const apiSource=await readFile(new URL('./api.js',import.meta.url),'utf8');
 
 test('Overview is the default route and exposes only four product destinations plus Settings',()=>{
   assert.match(app,/page: 'overview'/);
-  assert.match(app,/const nav = \[\['overview','nav\.overview'\],\['library','nav\.library'\],\['runs','nav\.investigations'\],\['report','nav\.reportsReview'\],\['settings','nav\.settings'\]\]/);
+  assert.match(app,/const nav = \[\['overview','nav\.overview'\],\['library','nav\.library'\],\['investigations','nav\.investigations'\],\['report','nav\.reportsReview'\],\['settings','nav\.settings'\]\]/);
   assert.match(app,/nav\.slice\(0,4\)/);
   assert.match(app,/nav\.slice\(4\)/);
   assert.doesNotMatch(app,/\['reader','|\['patents','/);
@@ -36,8 +36,11 @@ test('Plan keeps the question in the current scoped draft and opens assistant wi
 test('Golden Demo uses scoped idempotent adapter then opens the real returned run',()=>{
   const handler=app.match(/async function startGoldenDemo\(\)\{([\s\S]*?)\}\r?\nasync function loadLibrary/)?.[1]||'';
   assert.match(handler,/api\.runGoldenDemoScoped\(scope,key\)/);
-  assert.match(handler,/api\.run\(runId,scope\)/);
-  assert.match(handler,/state\.page='runs'/);
+  assert.match(handler,/await openInvestigation\(runId\)/);
+  const open=app.match(/async function openInvestigation\(runId\)\{([\s\S]*?)\}\r?\nasync function startGoldenDemo/)?.[1]||'';
+  assert.match(open,/api\.run\(runId,scope\)/);
+  assert.match(open,/api\.tasks\(runId,scope\)/);
+  assert.match(open,/state\.page='investigations'/);
   assert.match(handler,/demoIdempotencyKey/);
   assert.match(apiSource,/runGoldenDemoScoped: \(requestScope,idempotencyKey\) => request\('\/demos\/golden'/);
 });

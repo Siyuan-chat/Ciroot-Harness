@@ -84,7 +84,7 @@ test('details drawer overlays content so it does not narrow the document list be
 test('selecting workspace, library, collection, or the library nav returns to the scoped library content view',()=>{
   assert.match(app,/state\.page='library';mobileView='content';setScope\(/);
   assert.match(app,/await loadLibrary\(generation\);await syncEvents/);
-  assert.match(app,/if\(page==='library'\)mobileView='content'/);
+  assert.match(app,/\['overview','library','investigations'\]\.includes\(page\)\)mobileView='content'/);
   assert.match(app,/app\.querySelectorAll\('\[data-page\]'\)\.forEach\(b=>b\.onclick=\(\)=>\{mobileNavOpen=false;loadPage\(b\.dataset\.page\)\}\)/);
   assert.match(app,/state\.loading&&state\.libraryStatus==null[\s\S]*?正在读取所选文献库/);
 });
