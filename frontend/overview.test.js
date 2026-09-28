@@ -14,7 +14,9 @@ test('Overview is the default route and exposes only four product destinations p
   assert.match(app,/nav\.slice\(0,4\)/);
   assert.match(app,/nav\.slice\(4\)/);
   assert.doesNotMatch(app,/\['reader','|\['patents','/);
-  assert.match(app,/const publicPage=state\.page==='report'\?'reports':state\.page/);\n  assert.match(app,/aria-current=\"\$\{publicPage===id\?'page':'false'\}\"/);\n});
+  assert.match(app,/const publicPage=state\.page==='report'\?'reports':state\.page/);
+  assert.match(app,/aria-current=\"\$\{publicPage===id\?'page':'false'\}\"/);
+});
 
 test('Overview keeps unknown counts nullable and labels Golden Demo offline and synthetic',()=>{
   const html=renderOverview({overview:{workspace:{name:'Polymer'},library:{index_status:'unindexed',document_count:null},recent_runs:[{run_id:'inv-1',outcome:'partial',verified_claim_count:null,open_issue_count:null}],review_summary:{open_run_issue_count:null}},locale:'en',t});
