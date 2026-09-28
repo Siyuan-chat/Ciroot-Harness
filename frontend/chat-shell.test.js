@@ -89,4 +89,5 @@ test('selecting workspace, library, collection, or the library nav returns to th
   assert.match(app,/\['overview','library','investigations','reports','settings'\]\.includes\(page\)\)mobileView='content'/);
   assert.match(app,/app\.querySelectorAll\('\[data-page\]'\)\.forEach\(b=>b\.onclick=\(\)=>\{mobileNavOpen=false;loadPage\(b\.dataset\.page\)\}\)/);
   assert.match(app,/state\.loading&&state\.libraryStatus==null[\s\S]*?正在读取所选文献库/);
-  assert.match(app,/target\.page==='queue'\)\{state\.page='settings';await loadQueue\(generation\)\}/);\n});
+  assert.match(app,/target\.page==='queue'\)\{state\.page='settings';await loadQueue\(generation\)\}/);
+});
