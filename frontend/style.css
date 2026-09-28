@@ -160,3 +160,11 @@ button{color:var(--brand-navy)}button:hover{background:var(--brand-tint)}a{color
 .workspace-primary:hover,.workspace-dialog-result button:hover{background:var(--brand-teal-dark)}
 .workspace-secondary{background:#fff;border-color:#b8c5d4;color:var(--brand-navy)}
 @media(max-width:480px){.workspace-dialog{width:calc(100vw - 1rem);max-height:calc(100dvh - 1rem);border-radius:11px}.workspace-form{gap:.8rem;padding:1rem}.workspace-dialog-actions{display:grid;grid-template-columns:1fr 1fr}.workspace-dialog-actions button{width:100%}}
+.library-local-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem;margin:.5rem 0 1rem;padding:.8rem;border:1px solid var(--line);border-radius:9px;background:#f8fafc}
+.library-local-actions form{display:flex;align-items:end;gap:.5rem;min-width:0}
+.library-local-actions label{display:grid;gap:.25rem;flex:1;min-width:0;font-size:.84rem;font-weight:650}
+.library-local-actions input{min-width:0;width:100%;padding:.45rem .55rem;border:1px solid #bcc9d8;border-radius:6px;background:white;color:var(--ink);font:inherit}
+.library-local-actions button{flex:none;min-height:2.35rem;padding:.4rem .65rem;background:var(--brand-teal);border-color:var(--brand-teal);color:white;font-weight:700}
+.library-local-actions>.muted{grid-column:1/-1;margin:0;font-size:.8rem}
+.library-message{padding:.6rem .75rem;border-radius:6px;background:#eef7f5;color:var(--brand-navy)}
+@media(max-width:700px){.library-local-actions{grid-template-columns:minmax(0,1fr)}.library-local-actions>.muted{grid-column:1}}

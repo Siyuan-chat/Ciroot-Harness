@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 
 from research_harness.investigation import InvestigationService, InvestigationError
 from research_harness.rag import RagLibrary, RagError
+from research_harness.gui import local_library
 from research_harness.investigation_model_api import run_model_task
 from research_harness.gui.conversation import ConversationError, ConversationStore
 from research_harness.gui.conversation_model_api import controlled_runtime, plan as plan_conversation, validate_api_config
@@ -120,11 +121,12 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
         path.mkdir(parents=True, exist_ok=True)
         workspaces[str(ident)] = {**record, "path": path, "name": record.get("name", str(ident))}
     default_library_root = Path(library_workspace).resolve() if library_workspace else root
-    libraries = {"default": {"name": "Default library", "path": default_library_root, "workspace_ids": ["default"], "collections": {}}}
+    legacy_rag_present = (default_library_root / "rag.sqlite").is_file()
+    libraries = {"default": {"name": "Default library", "path": default_library_root, "workspace_ids": ["default"], "collections": {}, "runtime_empty": not legacy_rag_present, "read_only": bool(library_workspace and Path(library_workspace).resolve() != root)}}
     for ident, value in (registered_libraries or {}).items():
         record = value if isinstance(value, dict) else {"path": value}
         libpath = Path(record["path"]).resolve()
-        libraries[str(ident)] = {**record, "path": libpath, "name": record.get("name", str(ident)), "workspace_ids": list(record.get("workspace_ids", workspaces.keys())), "collections": record.get("collections", {})}
+        libraries[str(ident)] = {**record, "path": libpath, "name": record.get("name", str(ident)), "workspace_ids": list(record.get("workspace_ids", workspaces.keys())), "collections": record.get("collections", {}), "runtime_created": False}
     for ident, record in runtime_registry["workspaces"].items():
         if not re.fullmatch(r"ws-[0-9a-f]{32}", ident) or ident in workspaces:
             raise ValueError("runtime workspace ID conflicts with trusted registration")
@@ -144,7 +146,7 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
         if path.parent != library_data_root.resolve() or not path.is_dir():
             raise ValueError("runtime library directory is unavailable")
         libraries[ident] = {"name": record["name"], "path": path, "workspace_ids": list(record["workspace_ids"]),
-                            "collections": {}, "runtime_empty": True}
+                            "collections": {}, "runtime_empty": True, "runtime_created": True}
     for wid, record in runtime_registry["workspaces"].items():
         reference_id = record.get("reference_library_id")
         if reference_id:
@@ -413,11 +415,20 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
 
     def library_status(item):
         path = item["path"]
-        return "ready" if (path / "rag.sqlite").is_file() and (path / "qdrant").is_dir() else "unavailable" if (path / "rag.sqlite").is_file() else "unindexed"
+        if (path / "rag.sqlite").is_file():
+            return "ready" if (path / "qdrant").is_dir() else "unavailable"
+        if local_library.has_index(path):
+            db = sqlite3.connect(f"file:{(path / local_library.DB_NAME).as_posix()}?mode=ro", uri=True)
+            try:
+                if db.execute("SELECT COUNT(*) FROM documents").fetchone()[0]:
+                    return "basic"
+            finally:
+                db.close()
+        return "unindexed"
 
     def library_public(ident, item, workspace_id):
         return {"library_id": ident, "name": item["name"],
-                "read_only": bool(item.get("read_only", not item.get("runtime_empty", False)) or workspace_id in item.get("read_only_workspace_ids", [])),
+                "read_only": bool(item.get("read_only", not item.get("runtime_empty", False)) or (item["path"] / "rag.sqlite").is_file() or workspace_id in item.get("read_only_workspace_ids", [])),
                 "index_status": library_status(item)}
 
     def workspace_public(ident):
@@ -829,6 +840,9 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
 
     def freeze_reference_snapshot(question):
         lib=libraries[active_library_id()]; libpath=lib["path"]
+        if not (libpath/"rag.sqlite").is_file() and not (libpath/"qdrant").exists():
+            selected=collection_ids()
+            return local_library.reference_snapshot(libpath, workspace_id=active_workspace_id(), library_id=active_library_id(), collection_id=active_collection_id(), query=question, document_ids=set(selected) if selected is not None else None)
         if not (libpath/"rag.sqlite").is_file() or not (libpath/"qdrant").is_dir():
             raise HTTPException(409,"selected library index is unavailable; reference was not frozen")
         with RagLibrary(libpath,read_only=True) as rag:
@@ -1117,7 +1131,7 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
                     libraries[reference_id]["workspace_ids"] = list(dict.fromkeys([*libraries[reference_id]["workspace_ids"], workspace_id]))
                     libraries[reference_id].setdefault("read_only_workspace_ids", []).append(workspace_id)
                 else:
-                    libraries[library_id] = {"name": f"{name} library", "path": library_dir, "workspace_ids": [workspace_id], "collections": {}, "runtime_empty": True}
+                    libraries[library_id] = {"name": f"{name} library", "path": library_dir, "workspace_ids": [workspace_id], "collections": {}, "runtime_empty": True, "runtime_created": True}
                 default_library_for[workspace_id] = library_id
                 response = {"schema_version": "1", **workspace_public(workspace_id)}
                 next_registry["idempotency"][idempotency_key] = {"digest": digest, "response": response}
@@ -1147,6 +1161,70 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
     def workspace_libraries(workspace_id: str):
         if workspace_id not in workspaces: raise HTTPException(404,"workspace is not registered")
         return pack({"items":[{**library_public(ident, item, workspace_id),"default":ident==default_library_for[workspace_id]} for ident,item in libraries.items() if workspace_id in item["workspace_ids"]]})
+
+    @app.post("/api/v1/libraries")
+    def create_library(body: dict, idempotency_key: str | None = Header(None)):
+        if not isinstance(body, dict) or set(body) != {"name"} or not isinstance(body["name"], str):
+            raise HTTPException(400, "RH_GUI_LIBRARY_REQUEST:library request is invalid")
+        name = body["name"].strip()
+        if not 1 <= len(name) <= 80 or "\0" in name:
+            raise HTTPException(400, "RH_GUI_LIBRARY_REQUEST:library name is invalid")
+        if not idempotency_key:
+            raise HTTPException(400, "RH_GUI_IDEMPOTENCY_REQUIRED:idempotency-key is required")
+        wid = active_workspace_id()
+        normalized = {"operation": "create-library", "workspace_id": wid, "name": name}
+        digest = hashlib.sha256(json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        with registry_lock:
+            prior = runtime_registry["idempotency"].get(idempotency_key)
+            if prior:
+                if prior.get("digest") != digest:
+                    raise HTTPException(409, "RH_GUI_IDEMPOTENCY_CONFLICT:idempotency key conflicts with an existing request")
+                return prior["response"]
+            ident = "lib-" + uuid.uuid4().hex
+            directory = (library_data_root / ident).resolve()
+            if directory.parent != library_data_root.resolve():
+                raise HTTPException(400, "RH_GUI_LIBRARY_PATH:library path is invalid")
+            try:
+                library_data_root.mkdir(parents=True, exist_ok=True)
+                directory.mkdir()
+                next_registry = json.loads(json.dumps(runtime_registry))
+                next_registry["libraries"][ident] = {"name": name, "workspace_ids": [wid]}
+                response = {"schema_version": "1", **library_public(ident, {"name": name, "path": directory, "workspace_ids": [wid], "collections": {}, "runtime_empty": True, "runtime_created": True}, wid)}
+                next_registry["idempotency"][idempotency_key] = {"digest": digest, "response": response}
+                write_runtime_registry(next_registry)
+                runtime_registry.clear(); runtime_registry.update(next_registry)
+                libraries[ident] = {"name": name, "path": directory, "workspace_ids": [wid], "collections": {}, "runtime_empty": True, "runtime_created": True}
+                return response
+            except Exception:
+                if ident not in libraries and directory.exists():
+                    directory.rmdir()
+                raise
+
+    @app.put("/api/v1/library/import")
+    async def import_library_file(request: Request, filename: str):
+        library = libraries[active_library_id()]
+        library_root = library["path"]
+        if library_public(active_library_id(), library, active_workspace_id())["read_only"] or (library_root / "rag.sqlite").is_file():
+            raise HTTPException(403, "RH_GUI_LIBRARY_READ_ONLY:the selected library is read-only")
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > local_library.MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "RH_GUI_LIBRARY_TOO_LARGE:file exceeds the 20 MiB limit")
+        chunks = bytearray()
+        async for part in request.stream():
+            if len(chunks) + len(part) > local_library.MAX_UPLOAD_BYTES:
+                raise HTTPException(413, "RH_GUI_LIBRARY_TOO_LARGE:file exceeds the 20 MiB limit")
+            chunks.extend(part)
+        if not active_write_lock.acquire(blocking=False):
+            raise HTTPException(409, "RH_GUI_BUSY:another write is active")
+        try:
+            try:
+                result = await asyncio.to_thread(local_library.import_file, library_root, filename, bytes(chunks))
+            except local_library.LocalLibraryError as exc:
+                status = 413 if exc.code == "RH_GUI_LIBRARY_TOO_LARGE" else 400
+                raise HTTPException(status, f"{exc.code}:{exc}") from exc
+        finally:
+            active_write_lock.release()
+        return pack({**result, "index_mode": "basic"})
 
     @app.get("/api/v1/libraries/{library_id}/collections")
     def library_collections(library_id: str):
@@ -1382,21 +1460,33 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
     @app.get("/api/v1/library")
     def library(limit: int = 20, cursor: str | None = None):
         library_root=active_library_root()
-        if not (library_root / "rag.sqlite").is_file() or not (library_root / "qdrant").is_dir():
-            return pack({"items":[],"next_cursor":None,"index_status":"not_indexed","document_count":None,"reason":"RH_RAG_NOT_FOUND"})
-        with RagLibrary(library_root, read_only=True) as rag:
-            status = rag.get_library_status()
-            allowed=validate_collection_members([d["document_id"] for d in status["documents"]])
-            values = [_document_projection(rag.get_document(d["document_id"])) for d in status["documents"] if allowed is None or d["document_id"] in allowed]
-        return pack({**_page(values,limit,cursor),"index_status":status["index_status"],"document_count":len(values)})
+        if (library_root / "rag.sqlite").is_file() or (library_root / "qdrant").exists():
+            if not (library_root / "rag.sqlite").is_file() or not (library_root / "qdrant").is_dir():
+                return pack({"items":[],"next_cursor":None,"index_status":"not_indexed","document_count":None,"reason":"RH_RAG_NOT_FOUND"})
+            with RagLibrary(library_root, read_only=True) as rag:
+                status = rag.get_library_status()
+                allowed=validate_collection_members([d["document_id"] for d in status["documents"]])
+                values = [_document_projection(rag.get_document(d["document_id"])) for d in status["documents"] if allowed is None or d["document_id"] in allowed]
+            return pack({**_page(values,limit,cursor),"index_status":status["index_status"],"index_mode":"hybrid","document_count":len(values)})
+        if not local_library.has_index(library_root) and not libraries[active_library_id()].get("runtime_created", False):
+            return pack({"items": [], "next_cursor": None, "index_status": "not_indexed", "document_count": None, "reason": "RH_RAG_NOT_FOUND"})
+        try:
+            selected=collection_ids()
+            result = local_library.list_documents(library_root, limit=max(1, min(limit, 100)), cursor=cursor, document_ids=set(selected) if selected is not None else None)
+        except local_library.LocalLibraryError as exc:
+            raise HTTPException(400, f"{exc.code}:{exc}") from exc
+        return pack(result)
 
     @app.get("/api/v1/library/search")
     async def library_search(q: str, top_k: int = 8):
         if not q.strip() or len(q) > 500 or not 1 <= top_k <= 20:
             raise HTTPException(400, "query or top_k is invalid")
         library_root=active_library_root()
+        if not (library_root / "rag.sqlite").is_file() and not (library_root / "qdrant").exists():
+            selected=collection_ids()
+            return pack(local_library.search(library_root, q, top_k=top_k, document_ids=set(selected) if selected is not None else None))
         if not (library_root / "rag.sqlite").is_file() or not (library_root / "qdrant").is_dir():
-            raise HTTPException(404, "literature index is unavailable")
+            raise HTTPException(409, "RH_RAG_NOT_FOUND:legacy literature index is incomplete; no basic-index fallback was attempted")
         with RagLibrary(library_root,read_only=True) as rag: available=[d["document_id"] for d in rag.get_library_status()["documents"]]
         ids=validate_collection_members(available); filters={"document_ids":ids} if ids is not None else {}
         if ids is not None and not ids: return pack({"query":q,"items":[],"diagnostics":{"mode":"hybrid","coverage_limits":["empty registered collection"]}})
@@ -1411,6 +1501,11 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
     def library_document(document_id: str):
         check_document_scope(document_id)
         library_root=active_library_root()
+        if not (library_root / "rag.sqlite").is_file():
+            try:
+                return pack({"document": local_library.get_document(library_root, document_id)})
+            except local_library.LocalLibraryError as exc:
+                raise HTTPException(404, f"{exc.code}:{exc}") from exc
         with RagLibrary(library_root, read_only=True) as rag:
             return pack({"document":_document_projection(rag.get_document(document_id))})
 
@@ -1422,6 +1517,12 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
     def library_source(document_id: str, version_id: str):
         check_document_scope(document_id)
         library_root=active_library_root()
+        if not (library_root / "rag.sqlite").is_file():
+            try:
+                target = local_library.source_file(library_root, document_id, version_id)
+                return target, target
+            except local_library.LocalLibraryError as exc:
+                raise HTTPException(404, f"{exc.code}:{exc}") from exc
         with RagLibrary(library_root, read_only=True) as rag:
             document = rag.get_document(document_id)
         version = next((item for item in document["versions"] if item["version_id"] == version_id), None)
@@ -1557,9 +1658,17 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
             except Exception as exc:
                 if getattr(exc,"code","")!="RH_NOT_FOUND": raise
         if item is None:
-            with RagLibrary(active_library_root(), read_only=True) as rag:
-                item=rag.get_evidence_context(evidence_id)
-                item["items"]=[{k:v for k,v in row.items() if k!="source_path"} for row in item["items"]]
+            library_root = active_library_root()
+            if not (library_root / "rag.sqlite").is_file():
+                try:
+                    item = local_library.evidence_context(library_root, evidence_id)
+                    check_document_scope(item["document_id"])
+                except local_library.LocalLibraryError as exc:
+                    raise HTTPException(404, f"{exc.code}:{exc}") from exc
+            else:
+                with RagLibrary(library_root, read_only=True) as rag:
+                    item=rag.get_evidence_context(evidence_id)
+                    item["items"]=[{k:v for k,v in row.items() if k!="source_path"} for row in item["items"]]
         return pack({"evidence":item,"locator_insufficient":not bool(item.get("locator"))})
 
     @app.get("/api/v1/reviews")

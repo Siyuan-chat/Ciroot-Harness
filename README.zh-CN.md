@@ -6,7 +6,7 @@
 
 下载 GitHub Releases 中的 Windows ZIP，**解压整个 `ResearchHarnessGUI` 文件夹**，运行其中的 `ResearchHarnessGUI.exe`。程序窗口名称为 CirootHarness；EXE 文件名是兼容保留的技术名称。[中文图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)介绍首次启动、工作区、文献库、Agent 对话及本地资料配置。软件本身不附带本机的 23 篇文献、模型缓存、API 密钥或研究工作区。
 
-当前发布的是本地桌面候选：已验证离线合成对话与文献浏览，真实资料导入、跨库检索、收费模型端到端调查及原生 WebView2 全流程尚未完成验收。运行真实 API 可能产生费用，需用户自行配置凭据并明确执行。具体边界见[图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)。
+当前发布的是本地桌面候选：可在空白工作区创建文献库，导入可提取文字的 PDF 或 UTF-8 TXT，并进行本地基础文本检索。跨库检索、收费模型端到端调查及原生 WebView2 全流程尚未完成验收。运行真实 API 可能产生费用，需用户自行配置凭据并明确执行。具体边界见[图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)。
 
 **2026-09-16 进展：** P3 有界论文案例已通过独立验收，包含新 PDF 的 Docling/RAG 入库、中文双报告正文、标准导出与重开；检索覆盖仍为 partial。P4 单专利族阶段已完成范围设计，OPS 注册审批 pending。[P3 验收](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 计划](docs/D19_P4_PLAN.md) · [替代方案](docs/D19_P4_FALLBACK.md)。
 

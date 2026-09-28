@@ -35,6 +35,14 @@ export async function request(path, { method = 'GET', body, signal, unscoped = f
   if (data?.schema_version !== '1') throw new ApiError({ code: 'RH_SCHEMA_VERSION', message: '接口版本不匹配' }, response.status);
   return data;
 }
+export async function uploadLibraryFile(file, requestScope) {
+  const selected=requestScope||scope;
+  const headers={'Accept':'application/json','Content-Type':'application/octet-stream','X-Workspace-Id':selected.workspaceId,'X-Library-Id':selected.libraryId,'X-Collection-Id':selected.collectionId,'idempotency-key':crypto.randomUUID()};
+  const value=token();if(value)headers['x-session-token']=value;
+  const response=await fetch(`${ROOT}/library/import?filename=${encodeURIComponent(file.name)}`,{method:'PUT',headers,body:file,credentials:'same-origin'});
+  if(!response.ok){let data;try{data=await response.json()}catch{data=null}throw new ApiError(data,response.status)}
+  const data=await response.json();if(data?.schema_version!=='1')throw new ApiError({code:'RH_SCHEMA_VERSION',message:'接口版本不匹配'},response.status);return data;
+}
 export const api = {
   conversations: () => request('/conversations'),
   conversation: (id, requestScope) => request(`/conversations/${encodeURIComponent(id)}`, {requestScope}),
@@ -75,7 +83,9 @@ export const api = {
   cancelCommand: (id,requestScope) => request(`/queue/${encodeURIComponent(id)}/cancel`,{method:'POST',body:{},requestScope}),
   resumeQueue: (requestScope,reviewedCommandIds=[]) => request('/queue/resume',{method:'POST',body:reviewedCommandIds.length?{reviewed_command_ids:reviewedCommandIds,confirm_needs_review:true}:{},requestScope}),
   library: (cursor,requestScope) => request('/library?limit=50' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),{requestScope}),
-  searchEvidence: (query, topK=8) => request(`/library/search?q=${encodeURIComponent(query)}&top_k=${encodeURIComponent(topK)}`),
+  searchEvidence: (query, topK=8,requestScope) => request(`/library/search?q=${encodeURIComponent(query)}&top_k=${encodeURIComponent(topK)}`,{requestScope}),
+  createLibrary: (name,requestScope,idempotencyKey) => request('/libraries',{method:'POST',body:{name},requestScope,idempotencyKey}),
+  uploadLibraryFile,
   libraryDocument: (id,requestScope) => request(`/library/documents/${encodeURIComponent(id)}`,{requestScope}),
   runDocument: (runId,id,requestScope) => request(`/runs/${encodeURIComponent(runId)}/documents/${encodeURIComponent(id)}`,{requestScope}),
   runs: (cursor,requestScope) => request('/runs?limit=50' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),{requestScope}),

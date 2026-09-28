@@ -16,6 +16,20 @@ from .app import create_app, load_context_registry
 from .control import remove_descriptor, write_descriptor
 
 
+def _show_webview2_guidance(error: Exception) -> None:
+    message = ("Research Harness could not open its desktop window.\n\n"
+               "This Windows installation may not have the Microsoft Edge WebView2 Evergreen Runtime. "
+               "Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and restart the application.\n\n"
+               f"Details: {error}")
+    print(message, file=sys.stderr, flush=True)
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, message, "Research Harness — WebView2 required", 0x10)
+        except Exception:
+            pass
+
+
 def _bundle_root() -> Path:
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
 
@@ -91,7 +105,11 @@ def main() -> None:
         if args.no_browser:
             server.run(sockets=[listener])
         else:
-            import webview
+            try:
+                import webview
+            except Exception as exc:
+                _show_webview2_guidance(exc)
+                return
             webview.settings["ALLOW_DOWNLOADS"] = True
             worker = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
             worker.start()
@@ -107,6 +125,8 @@ def main() -> None:
                                                            width=1440, height=900, min_size=(850, 600))
             try:
                 webview.start(gui="edgechromium", private_mode=False, storage_path=str(workspace / "webview"))
+            except Exception as exc:
+                _show_webview2_guidance(exc)
             finally:
                 server.should_exit = True
                 worker.join(timeout=10)

@@ -35,14 +35,9 @@ if (-not (Test-Path 'frontend\dist\index.html')) { throw 'Run npm run build in f
     --specpath '.local\gui-package' `
     packaging\desktop_entry.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed: $LASTEXITCODE" }
-$library = Join-Path $root '.local\rag-acceptance\real-v3\workspace'
-if ((Test-Path (Join-Path $library 'rag.sqlite')) -and (Test-Path (Join-Path $library 'qdrant'))) {
-    [System.IO.File]::WriteAllText((Join-Path $root '.local\gui-package\dist\ResearchHarnessGUI\library-workspace.txt'), $library, [System.Text.UTF8Encoding]::new($false))
+$portableRoot = Join-Path $root '.local\gui-package\dist\ResearchHarnessGUI'
+foreach ($machineConfig in @('library-workspace.txt', 'rag-model-cache.txt', 'mcp-python.txt')) {
+    $machinePath = Join-Path $portableRoot $machineConfig
+    if (Test-Path -LiteralPath $machinePath) { Remove-Item -LiteralPath $machinePath -Force }
 }
-$modelCache = Join-Path $root '.local\rag-acceptance\luna-e5-small-probe\model-cache'
-if (Test-Path (Join-Path $modelCache 'models--intfloat--multilingual-e5-small')) {
-    [System.IO.File]::WriteAllText((Join-Path $root '.local\gui-package\dist\ResearchHarnessGUI\rag-model-cache.txt'), $modelCache, [System.Text.UTF8Encoding]::new($false))
-}
-$mcpPython = (Resolve-Path $Python).Path
-[System.IO.File]::WriteAllText((Join-Path $root '.local\gui-package\dist\ResearchHarnessGUI\mcp-python.txt'), $mcpPython, [System.Text.UTF8Encoding]::new($false))
 Write-Output (Resolve-Path '.local\gui-package\dist\ResearchHarnessGUI\ResearchHarnessGUI.exe')
