@@ -6,7 +6,7 @@ await mkdir(join(here,'dist'),{recursive:true});
 await mkdir(join(here,'dist','assets'),{recursive:true});
 await copyFile(join(here,'../assets/ciroot-harness-logo.png'),join(here,'dist/assets/ciroot-harness-logo.png'));
 for(const file of ['index.html','style.css','app.js','api.js','i18n.js','library-view.js','golden-demo-view.js']) await copyFile(join(here,file),join(here,'dist',file));
-for (const [source, target] of [['pages/overview.js','pages/overview.js'],['components/status-badge.js','components/status-badge.js'],['components/golden-demo-card.js','components/golden-demo-card.js']]) {
+for (const [source, target] of [['pages/overview.js','pages/overview.js'],['pages/investigation.js','pages/investigation.js'],['components/status-badge.js','components/status-badge.js'],['components/golden-demo-card.js','components/golden-demo-card.js']]) {
   await mkdir(join(here,'dist',target.split('/').slice(0,-1).join('/')),{recursive:true});
   await copyFile(join(here,source),join(here,'dist',target));
 }
