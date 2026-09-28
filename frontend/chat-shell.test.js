@@ -80,6 +80,6 @@ test('selecting workspace, library, collection, or the library nav returns to th
   assert.match(app,/state\.page='library';mobileView='content';setScope\(/);
   assert.match(app,/await loadLibrary\(generation\);await syncEvents/);
   assert.match(app,/if\(page==='library'\)mobileView='content'/);
-  assert.match(app,/app\.querySelectorAll\('\[data-page\]'\)\.forEach\(b=>b\.onclick=\(\)=>loadPage\(b\.dataset\.page\)\)/);
+  assert.match(app,/app\.querySelectorAll\('\[data-page\]'\)\.forEach\(b=>b\.onclick=\(\)=>\{mobileNavOpen=false;loadPage\(b\.dataset\.page\)\}\)/);
   assert.match(app,/state\.loading&&state\.libraryStatus==null[\s\S]*?正在读取所选文献库/);
 });

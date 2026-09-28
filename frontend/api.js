@@ -100,6 +100,7 @@ export const api = {
   libraryDocument: (id,requestScope) => request(`/library/documents/${encodeURIComponent(id)}`,{requestScope}),
   runDocument: (runId,id,requestScope) => request(`/runs/${encodeURIComponent(runId)}/documents/${encodeURIComponent(id)}`,{requestScope}),
   runs: (cursor,requestScope) => request('/runs?limit=50' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),{requestScope}),
+  overview: requestScope => request('/overview',{requestScope}),
   run: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}`,{requestScope}),
   referenceSnapshot: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}/reference-snapshot`,{requestScope}),
   events: (id, after=0,requestScope) => request(`/runs/${encodeURIComponent(id)}/events?after=${encodeURIComponent(after)}&limit=100`,{requestScope}),
@@ -119,5 +120,6 @@ export const api = {
   submitTask: (id, taskId, version, output,requestScope) => request(`/runs/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`, { method: 'POST', body: { task_version: version, result: output },requestScope }),
   decide: (issueId, decision, note,requestScope) => request(`/reviews/${encodeURIComponent(issueId)}/decision`, { method: 'POST', body: { decision, note },requestScope }),
   goldenDemo: () => request('/golden-demo',{unscoped:true}),
-  runGoldenDemo: (idempotencyKey) => request('/golden-demo',{method:'POST',body:{},unscoped:true,idempotencyKey})
+  runGoldenDemo: (idempotencyKey) => request('/golden-demo',{method:'POST',body:{},unscoped:true,idempotencyKey}),
+  runGoldenDemoScoped: (requestScope,idempotencyKey) => request('/demos/golden',{method:'POST',body:{},requestScope,idempotencyKey})
 };
