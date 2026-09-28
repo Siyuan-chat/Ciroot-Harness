@@ -1,1 +1,1 @@
-{"name":"research-harness-gui","private":true,"type":"module","scripts":{"test":"node --test","check":"node --check app.js && node --check api.js && node --check i18n.js && node --check library-view.js","build":"node build.js"}}
+{"name":"research-harness-gui","private":true,"type":"module","scripts":{"test":"node --test","test:dom":"node golden-demo-dom-check.mjs","check":"node --check app.js && node --check api.js && node --check i18n.js && node --check library-view.js && node --check golden-demo-view.js && node --check golden-demo-dom-check.mjs","build":"node build.js"}}

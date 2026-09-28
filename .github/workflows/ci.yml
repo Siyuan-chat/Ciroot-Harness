@@ -46,7 +46,8 @@ jobs:
             tests/test_investigation_contracts.py \
             tests/test_gui_api_conversation.py \
             tests/test_investigation_report_data.py \
-            tests/test_golden_demo.py
+            tests/test_golden_demo.py \
+            tests/test_gui_golden_demo.py
 
   frontend:
     name: Frontend checks

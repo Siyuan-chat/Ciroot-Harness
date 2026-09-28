@@ -170,3 +170,15 @@ P2 首轮结果：OpenAlex 已安装采集器真实匿名两页续查（5+5）�
 ### Public Golden Demo 的合成边界（2026-09-28）
 
 用户要求先完成 Public Showcase Foundation，再以独立阶段建立无需 API key、无需私有资料的 Golden Demo。固定场景复用现有 InvestigationService，以明确标记的合成来源和确定性宿主结果运行；真实来源检索或科学结论不能从该演示推断。验收要求包含冻结 ResearchSpec、来源尝试、可回溯的 claim/证据/文档版本/定位/原文、人工问题、双报告、真实最终状态及重启后读取。固定场景故意包含一条无效合成 XML，最终状态应保持 partial；工程说明见 GOLDEN_DEMO.md。本阶段不修改调查核心、GUI 或私有材料。
+
+### Public Launch: GUI Golden Demo and real showcase (2026-09-28)
+
+用户批准按独立阶段将已验收 CLI Golden Demo 接入 GUI，再从实际运行捕获展示资产。Public Launch Alignment 已由 PR #3 完成并合并，复用三语 PNG/SVG，不重绘、不创建重复文档 PR。
+
+GUI 通过最小 facade 调用 canonical `run_golden_demo`，使用服务管理的独立 `public-golden-demo` 工作区；不读取当前私有文献库，不要求 API key，不复制角色答案、业务状态机或调查逻辑。界面仅显示服务生成的规格、来源尝试、主张、证据、问题和报告；执行中显示真实请求等待，结束后保留实际 outcome。GET 重开读取持久结果，POST 显式开始执行并复用请求幂等机制。截图只捕获同一合成 run，所有 Demo 页面标记 SYNTHETIC / OFFLINE / DEMO。
+
+本轮不更改 InvestigationService、RAG、数据库 schema、版本、仓库名称、live source 或科学能力声明。PR B 独立验收与合并后才开展 PR C。完成后停止，保留用户与外部 Public Launch Acceptance；仓库元数据和 release engineering 后续处理。原已发布桌面 ZIP 不因 source PR 合并而自动更新，必须区分当前源码/本地构建与公开 release 的实际能力。
+
+### Public Launch scope update — 2026-09-28
+
+The user deferred PR C screenshots, hero and video until the planned frontend improvements are complete. Continue the GUI Golden Demo implementation, code review and CI in PR B. Do not publish current UI imagery or mark the visual/Public Launch gate complete. Native desktop interaction/reopen acceptance remains pending; successful browser and API checks do not replace it. Repository metadata, version alignment, release packaging and broad modularization remain outside this phase.

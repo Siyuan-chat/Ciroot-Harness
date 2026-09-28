@@ -9,6 +9,7 @@ export function resolveLocale(saved, browserLanguages=[]) {
 }
 
 const words = {
+  '体验离线 Demo': ['Try Offline Demo', 'オフライン Demo を試す'],
   '对象详情': ['Object details', 'オブジェクト詳細'], '关闭详情': ['Close details', '詳細を閉じる'], '显示详情': ['Show details', '詳細を表示'],
   '内容': ['Content', 'コンテンツ'], '对话': ['Chat', 'チャット'],
   '全局写入通道忙，排队命令会依序运行。': ['The global writer is busy. Queued commands will run in order.', '全体の書き込み処理中です。コマンドは順番に実行されます。'],
