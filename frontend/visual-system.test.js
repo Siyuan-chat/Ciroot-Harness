@@ -73,6 +73,7 @@ test('visual tokens keep partial, failed, success, active and unknown states dis
   assert.match(css, /\.badge\.partial,\.status-partial[^{]+\{color:var\(--status-partial\)/);
   assert.match(css, /\.badge\.failed,\.status-failed\{color:var\(--status-failed\)/);
   assert.match(css, /\.status-badge\[class\*="unknown"\],\.status-unknown/);
+  assert.match(css, /\.badge\.synthetic\{color:var\(--brand-teal-dark\);background:var\(--brand-tint\)/);
 });
 
 test('focus, active navigation and long identifiers have visible, resilient styles', () => {
