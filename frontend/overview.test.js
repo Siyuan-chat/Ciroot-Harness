@@ -14,8 +14,9 @@ test('Overview is the default route and exposes only four product destinations p
   assert.match(app,/nav\.slice\(0,4\)/);
   assert.match(app,/nav\.slice\(4\)/);
   assert.doesNotMatch(app,/\['reader','|\['patents','/);
-  assert.match(app,/const publicPage=state\.page==='report'\?'reports':state\.page/);
+  assert.match(app,/const publicPage=\(\{report:'reports',reviews:'reports',runs:'investigations',reader:'library',patents:'investigations'\}\[state\.page\]\|\|state\.page\)/);
   assert.match(app,/aria-current=\"\$\{publicPage===id\?'page':'false'\}\"/);
+  assert.match(app,/const shellPageHead=\['overview','investigations','reports','report'\]\.includes\(state\.page\)\?'':/);
 });
 
 test('Overview keeps unknown counts nullable and labels Golden Demo offline and synthetic',()=>{
