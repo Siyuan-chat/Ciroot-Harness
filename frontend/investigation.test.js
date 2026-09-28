@@ -37,7 +37,7 @@ test('progress projection tolerates sparse and Golden Demo stage traces without 
   assert.equal(projected.find(step=>step.key==='review').state,'warning');
 });
 
-test('Golden Demo workspace preserves partial and synthetic state, real counts, structured claims, and no heuristic Patent Compare',()=>{
+test('Golden Demo workspace preserves partial and synthetic state, real counts, structured claims, and no heuristic patent tab',()=>{
   const run={run_id:'inv-golden',project_id:'golden-project',status:'partial',stage:'completed',synthetic:true,
     coverage:{complete:false,candidate_count:3,queries:[{source:'synthetic-paper',status:'complete',query:'membrane',candidate_count:2}]},
     stage_trace:[{node:'planning_gate',event:'planned'},{node:'source_task',event:'screened'},{node:'acquire_normalize',event:'normalized'}]};
@@ -59,14 +59,14 @@ test('Golden Demo workspace preserves partial and synthetic state, real counts, 
   assert.match(html,/2 verified/);
   assert.match(html,/1 open issue/);
   assert.match(html,/Verified/);
-  assert.doesNotMatch(html,/Patent Compare/);
+  assert.doesNotMatch(html,/\bPatents\b/);
   assert.doesNotMatch(html,/data-investigation-action/);
   const evidenceHtml=renderInvestigationWorkspace({run,result,reportData,t,locale:'en',tab:'evidence'});
   assert.match(evidenceHtml,/Synthetic quote &lt;unsafe&gt;/);
   assert.match(evidenceHtml,/data-evidence-id="e1"/);
   assert.match(evidenceHtml,/Evidence 2/);
   const patent=renderInvestigationWorkspace({run,result,reportData:{...reportData,bibliography:[...reportData.bibliography,{id:'pat-1',title:'Registered patent',type:'patent'}]},t,locale:'en'});
-  assert.match(patent,/Patent Compare/);
+  assert.match(patent,/\bPatents\b/);
 });
 
 test('unknown report fields remain unknown and the investigation UI has EN, zh-CN and JA labels',()=>{
