@@ -26,6 +26,12 @@ test('report binds section claim_ids to claims and renders only their explicit e
   assert.doesNotMatch(html,/data-page="reader"|href="[^"]*reader/i);
 });
 
+test('evidence trace resolves bibliography titles by document_id as well as id',()=>{
+  const html=renderEvidenceTrace({claim:claims[0],evidence:[evidence],bibliography:[{document_id:'doc-1',title:'Document identity title'}],t,locale});
+  assert.match(html,/Document identity title/);
+  assert.doesNotMatch(html,/>doc-1</);
+});
+
 test('missing reference remains an explicit unavailable item and no inline citation is inferred',()=>{
   const html=renderEvidenceTrace({claim:{claim_id:'c',claim:'A [1] claim',evidence_refs:['missing-id']},evidence:[],bibliography:[],t,locale});
   assert.match(html,/Referenced evidence item unavailable/);
@@ -77,6 +83,7 @@ test('report selection only offers real runs returned by the API',()=>{
   const html=renderReportSelection({runs:[{run_id:'run-1',status:'partial',research_question:'Saved question'}],t,locale});
   assert.match(html,/Saved question/);
   assert.match(html,/data-open-report-run="run-1"/);
+  assert.doesNotMatch(html,/<small>run-1<\/small>/);
   assert.doesNotMatch(html,/sample|fake/i);
   for(const language of ['zh','en','ja'])assert.match(renderReportSelection({runs:[],t,locale:language}),new RegExp(language==='zh'?'选择调查报告':language==='en'?'Select an investigation report':'調査レポートを選択'));
 });

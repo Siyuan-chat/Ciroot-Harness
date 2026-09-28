@@ -13,7 +13,8 @@ test('new workspace action stays in the top bar and Ask Agent links to the chat 
 test('chat is a right-side workspace column with narrow-window content/chat switching and optional details',()=>{
   assert.match(app,/aria-label="\$\{esc\(t\(state\.inspector\.type==='document'\?'document\.inspectorTitle':'evidence\.inspectorTitle'/);
   assert.match(app,/function inspectorContent\(\)[\s\S]*?id="close-detail"[^>]*aria-label="\$\{esc\(t\('inspector\.close'/);
-  assert.match(app,/\$\{chatPanel\(\)\}<\/div><details class="runbar">/);
+  assert.match(app,/\$\{chatPanel\(\)\}<\/div><\/div>/);
+  assert.doesNotMatch(app,/<details class="runbar">/);
   assert.match(css,/\.workspace\.detail-closed>\.detail\{display:none\}/);
   assert.match(app,/id="show-content"/);assert.match(app,/id="show-chat"/);
   assert.match(css,/@media\(max-width:1100px\)/);
@@ -88,4 +89,5 @@ test('selecting workspace, library, collection, or the library nav returns to th
   assert.match(app,/\['overview','library','investigations','reports','settings'\]\.includes\(page\)\)mobileView='content'/);
   assert.match(app,/app\.querySelectorAll\('\[data-page\]'\)\.forEach\(b=>b\.onclick=\(\)=>\{mobileNavOpen=false;loadPage\(b\.dataset\.page\)\}\)/);
   assert.match(app,/state\.loading&&state\.libraryStatus==null[\s\S]*?正在读取所选文献库/);
+  assert.match(app,/target\.page==='queue'\)\{state\.page='settings';await loadQueue\(generation\)\}/);
 });

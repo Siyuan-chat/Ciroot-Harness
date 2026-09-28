@@ -10,7 +10,7 @@ const fixture={schema_version:'1',demo:{workspace_label:'Golden Demo',run_id:'de
 test('Golden Demo CTA uses one localized label in the workspace shell',async()=>{
   const app=await readFile(new URL('./app.js',import.meta.url),'utf8');
   assert.ok(app.includes(`id="try-golden-demo"`));
-  assert.ok(app.includes(`id="try-golden-demo-inline"`));
+  assert.ok(!app.includes(`id="try-golden-demo-inline"`));
   for(const [locale,expected] of [['en','Try Offline Demo'],['zh','体验离线 Demo'],['ja','オフライン Demo を試す']]){
     assert.equal(goldenDemoCtaLabel(locale),expected);assert.equal(translate('体验离线 Demo',locale),expected);
     assert.doesNotMatch(renderGoldenDemo({locale}),/Try Offline Demo · 体验离线 Demo · オフライン Demo/);
