@@ -10,7 +10,7 @@ const apiSource=await readFile(new URL('./api.js',import.meta.url),'utf8');
 
 test('Overview is the default route and exposes only four product destinations plus Settings',()=>{
   assert.match(app,/page: 'overview'/);
-  assert.match(app,/const nav = \[\['overview','nav\.overview'\],\['library','nav\.library'\],\['investigations','nav\.investigations'\],\['report','nav\.reportsReview'\],\['settings','nav\.settings'\]\]/);
+  assert.match(app,/const nav = \[\['overview','nav\.overview'\],\['library','nav\.library'\],\['investigations','nav\.investigations'\],\['reports','nav\.reportsReview'\],\['settings','nav\.settings'\]\]/);
   assert.match(app,/nav\.slice\(0,4\)/);
   assert.match(app,/nav\.slice\(4\)/);
   assert.doesNotMatch(app,/\['reader','|\['patents','/);
