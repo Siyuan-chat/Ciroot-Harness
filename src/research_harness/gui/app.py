@@ -1398,6 +1398,58 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
                      "review_summary": {"open_run_issue_count": open_issue_count if issue_count_known else None},
                      "golden_demo": {"available": _golden_demo_available()}})
 
+    @app.get("/api/v1/review-inbox")
+    def review_inbox(limit: int = 50, cursor: str | None = None):
+        """Read-only workspace projection of run issues; monitor reviews stay separate."""
+        try:
+            with service() as svc:
+                runs_page = _page(svc.status()["runs"], limit, cursor)
+                items = []
+                unavailable_runs = []
+                for run in runs_page["items"]:
+                    run_id = run.get("run_id") if isinstance(run, dict) else None
+                    if not run_id:
+                        continue
+                    try:
+                        result = svc.get_result(run_id)
+                    except Exception:
+                        unavailable_runs.append({"run_id": run_id, "run_status": run.get("status"), "issue_count": None})
+                        continue
+                    issues = result.get("issues") if isinstance(result, dict) else None
+                    if not isinstance(issues, list):
+                        unavailable_runs.append({"run_id": run_id, "run_status": run.get("status"), "issue_count": None})
+                        continue
+                    for index, issue in enumerate(issues):
+                        entry = issue if isinstance(issue, dict) else {}
+                        items.append({
+                            "kind": "run_issue",
+                            "actionable": False,
+                            "decision_actions": [],
+                            "run_id": run_id,
+                            "run_status": run.get("status"),
+                            "outcome": result.get("outcome"),
+                            "synthetic": result.get("synthetic", run.get("synthetic")),
+                            "issue_index": index,
+                            "issue_id": entry.get("issue_id"),
+                            "title": entry.get("title"),
+                            "code": entry.get("code"),
+                            "status": entry.get("status"),
+                            "message": entry.get("message"),
+                            "reason": entry.get("reason"),
+                            "document_id": entry.get("document_id"),
+                            "source": entry.get("source"),
+                            "impact": entry.get("impact"),
+                        })
+        except ValueError as exc:
+            raise HTTPException(400, f"RH_GUI_REVIEW_INBOX_PAGE:{exc}") from exc
+        return pack({
+            "items": items,
+            "next_cursor": runs_page["next_cursor"],
+            "workspace_id": active_workspace_id(),
+            "monitor_reviews_included": False,
+            "unavailable_runs": unavailable_runs,
+        })
+
     @app.get("/api/v1/runs/{run_id}")
     def run(run_id: str):
         with service() as svc:

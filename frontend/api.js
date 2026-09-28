@@ -101,6 +101,7 @@ export const api = {
   runDocument: (runId,id,requestScope) => request(`/runs/${encodeURIComponent(runId)}/documents/${encodeURIComponent(id)}`,{requestScope}),
   runs: (cursor,requestScope) => request('/runs?limit=50' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),{requestScope}),
   overview: requestScope => request('/overview',{requestScope}),
+  reviewInbox: (cursor, requestScope, limit=50) => request('/review-inbox?limit=' + encodeURIComponent(limit) + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''), {requestScope}),
   run: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}`,{requestScope}),
   referenceSnapshot: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}/reference-snapshot`,{requestScope}),
   events: (id, after=0,requestScope) => request(`/runs/${encodeURIComponent(id)}/events?after=${encodeURIComponent(after)}&limit=100`,{requestScope}),
