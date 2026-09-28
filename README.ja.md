@@ -1,18 +1,83 @@
-# Research Harness
+<p align="center">
+  <img src="assets/ciroot-harness-logo.png" alt="CirootHarness logo" width="220">
+</p>
 
-[中文](README.zh-CN.md) · [English](README.md) · 日本語
+<h1 align="center">CirootHarness</h1>
 
-**2026-09-16 時点：** P3 の限定的な論文事例は独立検証済みです。新規 PDF の Docling/RAG 取り込み、中国語の2種類の本文、出力と再読込を確認しました。検索範囲は partial のままです。P4 は単一特許ファミリーの計画段階で、OPS 登録は承認待ちです。[P3 検証](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 計画](docs/D19_P4_PLAN.md) · [代替案](docs/D19_P4_FALLBACK.md)。
+<p align="center">
+  <strong>特許・科学文献調査のための監査可能な AI research harness。</strong><br>
+  調査質問を、バージョン管理された要件・追跡可能な証拠・レビュー可能なレポートへ変換します。
+</p>
 
-[全体設計（中国語）](docs/SYSTEM_DESIGN.md) · [構成図](docs/diagrams/harness-overview.svg) · [D19検証計画](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。目標設計と実装済みの機能は区別して記載しています。
+<p align="center">
+  <a href="README.zh-CN.md">中文</a> · <a href="README.md">English</a> · 日本語
+</p>
 
-ローカルの文献・特許調査フレームワークです。目標の流れは、自然言語の要件 → バージョン付き JSON → 検索 → 固定した参照資料との比較 → 人による確認とレポートです。
+<p align="center">
+  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
+  <img src="https://img.shields.io/badge/status-desktop%20preview-orange" alt="Desktop preview">
+</p>
 
-**D2 合成フィクスチャの独立受入は 2026-09-09 に完了しました。** [受入記録](docs/FRAMEWORK_ACCEPTANCE.md)をご覧ください。デモは合成テキストとローカルの情報源／モデル関数を使い、実際の LangGraph、SQLite、引用検証と中国語・英語・日本語レポートを動作させます。API キーや外部 API は使いません。
+<p align="center">
+  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/releases">Windows 版をダウンロード</a> ·
+  <a href="#オフライン-demo">オフライン Demo</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="docs/DEVELOPMENT_STATUS.md">開発状況</a>
+</p>
 
-## クイックスタート
+CirootHarness は、文献・特許調査を対象とする local-first の research harness です。最終回答を生成するだけではなく、調査仕様、source attempt、document version、evidence locator、review decision、実行結果を後から確認できる形で残すことを重視しています。
 
-Python 3.11+ が必要です。Windows のソースディレクトリで実行します。
+> **原則:** `partial` は `completed` ではありません。引用は原文へ戻れる状態になって初めて証拠として扱います。また、target design を実装済み機能として表示しません。
+
+## CirootHarness が重視すること
+
+| 課題 | CirootHarness の方針 |
+| --- | --- |
+| 調査条件の変化 | バージョン化された `ResearchSpec` と frozen inputs |
+| 根拠不明の結論 | document version / locator に結び付いた Evidence ID |
+| Citation hallucination | quote ownership と原文照合 |
+| Retrieval failure の隠蔽 | `complete` / `partial` / `failed` / `unsupported` を明示 |
+| 判断が曖昧なケース | human review issue と decision history を保存 |
+| 非公開資料 | local-first の document storage / RAG |
+| 再現性 | frozen inputs、構造化 state、永続化 artifact |
+
+## 現在利用できる範囲
+
+CirootHarness は現在 public preview です。完成済みの production research service ではありません。
+
+- Windows portable desktop preview（native WebView2 操作の全工程は未検証）
+- workspace / library 作成
+- テキスト抽出可能な PDF と UTF-8 TXT の import
+- desktop preview 内の local basic text search
+- LangGraph + SQLite + citation check を使う offline synthetic demo
+- 中国語・英語・日本語 report
+- acceptance record のある local RAG
+- OpenAlex を利用する OA literature collection
+- accepted offline scope における evidence / report / review / monitoring primitives
+- 新規 PDF ingestion、RAG、report export / reopen を含む bounded paper case
+- live patent workflow は引き続き開発中
+
+詳細は [開発状況](docs/DEVELOPMENT_STATUS.md) を参照してください。
+
+## Quick start
+
+### Windows desktop preview
+
+[GitHub Releases](https://github.com/Siyuan-chat/autoSearch-Harness/releases) から portable ZIP をダウンロードし、`ResearchHarnessGUI` フォルダ全体を展開して次を実行します。
+
+```text
+ResearchHarnessGUI.exe
+```
+
+ウィンドウのブランド名は **CirootHarness** です。実行ファイル名は互換性のため現時点では旧名称を維持しています。
+
+private corpus、model cache、API key は同梱されません。現在の GUI の範囲は [GUI quick start](docs/GUI_QUICKSTART.zh-CN.md) を参照してください。
+
+### オフライン Demo
+
+Python 3.11+ が必要です。
 
 ```powershell
 python -m venv .venv
@@ -21,54 +86,33 @@ python -m venv .venv
 .venv\Scripts\rh status --workspace .local\demo
 ```
 
-インストール時は宣言済みの依存パッケージを取得します。デモ自体はオフラインです。macOS/Linux では `.venv/bin/python` と `.venv/bin/rh` を使用します。独立実行検証は現在 Windows が対象です。
+Demo 自体は offline で API key は不要です。synthetic candidate、verified finding、human-review issue、HTML/Markdown report、canonical JSON、review CSV を生成します。
 
-デモは合成候補2件、検証後の判定、確認事項1件、HTML 3ファイル、Markdown 3ファイル、共通 JSON、確認用 CSV を生成します。返されたレポートディレクトリから HTML を開けます。
+## Architecture
 
-## 現在の機能
+![CirootHarness architecture](docs/diagrams/harness-overview.png)
 
-- ResearchSpec 検証、手動編集後の自動改訂、実行入力の固定。
-- ローカル原文とエビデンス、参照スナップショットと新規候補の分離。
-- 差し替え可能な fixture 情報源／モデル関数と最小 LangGraph フロー。
-- 引用の所属／原文一致、人の判断の保存、候補数上限、一部完了／失敗の明示。
-- 将来の GUI 用 Python サービス、構造化結果、安全なエラー、成果物参照、進捗コールバック。
+この図は integrated target design を示します。実装・受入済み範囲は別途管理し、計画と実装を混同しません。
 
-実際のモデル／情報源 API、OpenAlex/EPO、実運用ベクトル RAG、PDF/OCR、独立 chat、再開処理、GUI は **D2 に未接続**です。追加依存パッケージだけでは有効になりません。未対応の live/chat は拒否し、`lexical_test_only` はテスト互換用です。現在はホストのアシスタントが要件を確認して JSON を用意します。
+[System design](docs/SYSTEM_DESIGN.md) · [Architecture](docs/ARCHITECTURE.md) · [Engineering status](docs/DEVELOPMENT_STATUS.md)
 
-[日本語ガイド](docs/USER_GUIDE.ja.md) · [現在の範囲](docs/SCOPE_AUDIT.md) · [契約／アダプター](docs/CONTRACTS.md) · [受入 K01–K07](docs/ACCEPTANCE.md) · [要件](docs/PRD.md) · [構成](docs/ARCHITECTURE.md) · [決定事項](docs/DECISIONS.md)
+## Demo / showcase
 
-最初の実例はポリマー設計を予定しています。[草案](examples/polymer-design.draft.json) には未確定要件があり、実行可能な科学的事例ではありません。実際の API 接続と事例／デモ検証後に GitHub で公開します。P3 の限定的な論文事例は検証済みで、より広い科学的評価と公開リリースは未完了です。
+公開 Demo は次の 4 点を短時間で示すことを目的とします。
 
-キー、非公開原文、実行ワークスペースは Git に保存しないでください。同梱デモは合成資料のみです。調査は手動で開始し、標準の定期実行はありません。
+1. research question → frozen research specification
+2. source attempts と実際の coverage
+3. claim → evidence → source locator
+4. verified conclusion と unresolved review item の分離
 
-## ローカル RAG（D18）
+撮影手順、asset naming、60–90 秒 storyboard は [Demo showcase guide](docs/DEMO_SHOWCASE.md) にまとめています。
 
-```powershell
-.venv\Scripts\python -m pip install ".[rag-mcp]"
-.venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
-```
+## 現在の制約
 
-ローカル RAG は設定済み catalog だけを読み、Codex 資格情報の読取りや生成モデル呼出しを行いません。CLI 操作は `prepare`、`import`、`search`、`context`、`document`、`status`、`rebuild` です。`prepare` は解析だけをキャッシュし、`rebuild` は既存 evidence からベクトルだけを移行します。[ローカル利用ガイド](docs/RAG_USAGE.ja.md)、[実行時の説明](docs/RAG_RUNTIME.md)、[ステージ境界](docs/RAG_STAGE.md)、[独立受入記録](docs/RAG_ACCEPTANCE.md) を参照してください。
+public preview は、live model + source API の完全な end-to-end 調査、完全な patent-family coverage、scan PDF OCR、desktop preview の cross-library semantic search、無人 production monitoring、法的意見や FTO 判断を意味しません。
 
-## OA 文献収集
+credential、private original、runtime workspace、model cache は Git に含めないでください。
 
-`literature` は独立した OpenAlex 検索・OA PDF 収集モジュールであり、RAG や科学的選別ではありません。検証機能を導入し、提供済みなら検証済み23件の manifest を使います。
+## License / Citation
 
-```powershell
-.venv\Scripts\python -m pip install ".[literature]"
-.venv\Scripts\python -m research_harness.literature search --config examples\aem_oa_reviews.json --output .local\aem-candidates.json
-.venv\Scripts\python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\aem-pdfs --limit 23
-```
-
-`anonymous: true` はキーなし検索を明示し、それ以外では `OPENALEX_API_KEY` が必要です。AEM 検索例は OpenAlex type ラベルがレビューを取りこぼすため `review_only: false` とします。ダウンローダーは可読性、同一性、任意の `expected_min_pages` を検証し、不足時は `partial` と終了コード 4 を返します。
-
-## オフライン調査と監視（D19 P1）
-
-調査サービスは、8つのホスト agent ロール、検索と再試行の記録、PDF/XML/テキストの証拠、固定された技術調査報告・文献レビュー、およびルール版と人手判断の履歴を保持する特許監視を提供します。合成データによる中国語・英語・日本語の出力に対応します。
-
-```powershell
-.venv\Scripts\python -m pip install ".[investigation]"
-.venv\Scripts\rh investigate --workspace .local\investigation doctor
-```
-
-[利用ガイド](docs/INVESTIGATION_USAGE.ja.md) · [実装記録](docs/D19_P1_IMPLEMENTATION.md) · [独立検証と範囲](docs/D19_P1_ACCEPTANCE.md)。この段階は明示的な合成ソースとホスト/replay 結果を使用し、実モデル・情報源 API や OS スケジュールを起動しません。既存の D18 RAG と文献収集は独立したサービスです。
+[Apache License 2.0](LICENSE) で公開しています。技術・研究用途で参照する場合は [`CITATION.cff`](CITATION.cff) を利用してください。

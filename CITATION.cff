@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use CirootHarness in research or technical work, please cite this software."
+title: "CirootHarness: an auditable research harness for patents and scientific literature"
+type: software
+authors:
+  - name: "Siyuan-chat"
+repository-code: "https://github.com/Siyuan-chat/autoSearch-Harness"
+url: "https://github.com/Siyuan-chat/autoSearch-Harness"
+version: "0.1.1"
+date-released: "2026-09-28"
+license: "Apache-2.0"
+keywords:
+  - research-agent
+  - patent-search
+  - scientific-literature
+  - evidence-traceability
+  - rag
+  - langgraph
+  - ai4science
