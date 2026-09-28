@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1050" viewBox="0 0 1800 1050" role="img">
+<title>CirootHarness 架构</title>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 8 4 0 8Z" fill="#2870df"/></marker><marker id="review" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#704dcc"/></marker></defs>
+<rect width="1800" height="1050" fill="white"/>
+<g font-family="Arial, Microsoft YaHei, Yu Gothic, sans-serif" fill="#10254d">
+<text x="900" y="65" font-size="52" font-weight="700" text-anchor="middle" data-max-width="1740">CirootHarness 架构</text>
+<text x="900" y="104" font-size="25" font-weight="400" text-anchor="middle" data-max-width="1720">面向专利与科学文献的本地优先、可审计 AI 调查系统</text>
+<rect x="24" y="135" width="1752" height="130" rx="16" fill="#f2f7ff" stroke="#aacaff" stroke-width="1.5"/>
+<text x="50" y="173" font-size="29" font-weight="700" text-anchor="start" data-max-width="360">使用入口</text>
+<text x="50" y="207" font-size="19" font-weight="400" text-anchor="start" data-max-width="360">通过多种方式使用 CirootHarness</text>
+<rect x="430" y="152" width="300" height="90" rx="16" fill="white" stroke="#80b4ff" stroke-width="1.5"/>
+<g transform="translate(452 175)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="36" height="25" rx="2"/><path d="M20 27v9M10 36h20"/></g>
+<text x="515" y="186" font-size="25" font-weight="700" text-anchor="start" data-max-width="200">GUI</text>
+<text x="515" y="217" font-size="17" font-weight="400" text-anchor="start" data-max-width="200">交互式桌面应用</text>
+<path d="M580 242 V276 H900" fill="none" stroke="#2870df" stroke-width="3"/>
+<rect x="780" y="152" width="300" height="90" rx="16" fill="white" stroke="#80b4ff" stroke-width="1.5"/>
+<g transform="translate(802 175)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="36" height="34" rx="4"/><path d="m10 10 8 8-8 8m14 0h8"/></g>
+<text x="865" y="186" font-size="25" font-weight="700" text-anchor="start" data-max-width="200">CLI</text>
+<text x="865" y="217" font-size="17" font-weight="400" text-anchor="start" data-max-width="200">命令行接口</text>
+<path d="M930 242 V276 H900" fill="none" stroke="#2870df" stroke-width="3"/>
+<rect x="1130" y="152" width="300" height="90" rx="16" fill="white" stroke="#80b4ff" stroke-width="1.5"/>
+<g transform="translate(1152 175)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="20" cy="6" r="5"/><circle cx="6" cy="32" r="5"/><circle cx="34" cy="32" r="5"/><path d="m17 11-9 16m15-16 9 16"/></g>
+<text x="1215" y="186" font-size="25" font-weight="700" text-anchor="start" data-max-width="200">Codex / MCP</text>
+<text x="1215" y="217" font-size="17" font-weight="400" text-anchor="start" data-max-width="200">程序化集成</text>
+<path d="M1280 242 V276 H900" fill="none" stroke="#2870df" stroke-width="3"/>
+<path d="M900 276 V294" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="24" y="302" width="1752" height="350" rx="16" fill="#f1fbf6" stroke="#97ddc4" stroke-width="1.5"/>
+<text x="50" y="342" font-size="29" font-weight="700" text-anchor="start" data-max-width="1650">核心调查流程</text>
+<text x="50" y="376" font-size="21" font-weight="400" text-anchor="start" data-max-width="1650">从研究问题到经过核查、可审计的结果</text>
+<rect x="38" y="398" width="182" height="208" rx="16" fill="#f1f6ff" stroke="#2870df" stroke-width="1.5"/>
+<circle cx="62" cy="422" r="16" fill="#2870df"/>
+<text x="62" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">1</text>
+<text x="129" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">研究需求</text>
+<text x="129" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">问题、范围、</text>
+<text x="129" y="565" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">约束条件</text>
+<path d="M220 500 H232" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="232" y="398" width="182" height="208" rx="16" fill="#f0faf5" stroke="#259a73" stroke-width="1.5"/>
+<circle cx="256" cy="422" r="16" fill="#259a73"/>
+<text x="256" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">2</text>
+<text x="323" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">ResearchSpec</text>
+<text x="323" y="487" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">冻结</text>
+<text x="323" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">校验并版本化</text>
+<text x="323" y="565" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">调查输入</text>
+<path d="M414 500 H426" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="426" y="398" width="182" height="208" rx="16" fill="#f6f2ff" stroke="#704dcc" stroke-width="1.5"/>
+<circle cx="450" cy="422" r="16" fill="#704dcc"/>
+<text x="450" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">3</text>
+<text x="517" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">调查规划</text>
+<text x="517" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">检索计划、任务图</text>
+<path d="M608 500 H620" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="620" y="398" width="182" height="208" rx="16" fill="#fff9eb" stroke="#d59400" stroke-width="1.5"/>
+<circle cx="644" cy="422" r="16" fill="#d59400"/>
+<text x="644" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">4</text>
+<text x="711" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">来源采集</text>
+<text x="711" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">论文、专利、</text>
+<text x="711" y="565" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">本地资料库</text>
+<path d="M802 500 H814" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="814" y="398" width="182" height="208" rx="16" fill="#f1f6ff" stroke="#2870df" stroke-width="1.5"/>
+<circle cx="838" cy="422" r="16" fill="#2870df"/>
+<text x="838" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">5</text>
+<text x="905" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">原始文档 +</text>
+<text x="905" y="487" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">本地 RAG</text>
+<text x="905" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">原文、索引、检索</text>
+<path d="M996 500 H1008" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1008" y="398" width="182" height="208" rx="16" fill="#f0faf5" stroke="#259a73" stroke-width="1.5"/>
+<circle cx="1032" cy="422" r="16" fill="#259a73"/>
+<text x="1032" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">6</text>
+<text x="1099" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">证据提取</text>
+<text x="1099" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">Evidence ID、引文、</text>
+<text x="1099" y="565" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">原文定位</text>
+<path d="M1190 500 H1202" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1202" y="398" width="182" height="208" rx="16" fill="#f6f2ff" stroke="#704dcc" stroke-width="1.5"/>
+<circle cx="1226" cy="422" r="16" fill="#704dcc"/>
+<text x="1226" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">7</text>
+<text x="1293" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">分析与综合</text>
+<text x="1293" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">发现、主张、</text>
+<text x="1293" y="565" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">报告草稿</text>
+<path d="M1384 500 H1396" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1396" y="398" width="182" height="208" rx="16" fill="#fff9eb" stroke="#d59400" stroke-width="1.5"/>
+<circle cx="1420" cy="422" r="16" fill="#d59400"/>
+<text x="1420" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">8</text>
+<text x="1487" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">核查</text>
+<text x="1487" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">主张 ↔ 证据</text>
+<text x="1487" y="565" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">↔ 原文</text>
+<path d="M1578 500 H1590" fill="none" stroke="#2870df" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1590" y="398" width="182" height="208" rx="16" fill="#f1f6ff" stroke="#2870df" stroke-width="1.5"/>
+<circle cx="1614" cy="422" r="16" fill="#2870df"/>
+<text x="1614" y="429" fill="white" text-anchor="middle" font-size="20" font-weight="700">9</text>
+<text x="1681" y="459" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">报告与</text>
+<text x="1681" y="487" font-size="22" font-weight="700" text-anchor="middle" data-max-width="170">人工复核</text>
+<text x="1681" y="542" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">技术调查、</text>
+<text x="1681" y="565" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">文献综述、</text>
+<text x="1681" y="588" font-size="17" font-weight="400" text-anchor="middle" data-max-width="169">人工决定</text>
+<path d="M1681 606 V630 H1293 V607" fill="none" stroke="#704dcc" stroke-width="3" marker-end="url(#review)"/>
+<text x="1480" y="624" font-size="17" font-weight="400" text-anchor="middle" data-max-width="350">人工复核反馈</text>
+<rect x="24" y="672" width="1450" height="194" rx="16" fill="#f5f7fb" stroke="#c6d5ed" stroke-width="1.5"/>
+<text x="50" y="712" font-size="29" font-weight="700" text-anchor="start" data-max-width="1380">持久状态与审计轨迹</text>
+<text x="50" y="742" font-size="20" font-weight="400" text-anchor="start" data-max-width="1380">本地持久化、可追溯、可复核</text>
+<path d="M261 652 V672" fill="none" stroke="#7891b4" stroke-width="3"/>
+<rect x="50" y="759" width="442" height="87" rx="16" fill="white" stroke="#a0b8df" stroke-width="1.5"/>
+<g transform="translate(68 782)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10V5h13l5 6h18v25H2Z"/></g>
+<text x="126" y="791" font-size="23" font-weight="700" text-anchor="start" data-max-width="350">工作区 / 产物</text>
+<text x="126" y="817" font-size="17" font-weight="400" text-anchor="start" data-max-width="350">报告、导出文件、本地资料</text>
+<path d="M731 652 V672" fill="none" stroke="#7891b4" stroke-width="3"/>
+<rect x="520" y="759" width="442" height="87" rx="16" fill="white" stroke="#a0b8df" stroke-width="1.5"/>
+<g transform="translate(538 782)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="20" cy="7" rx="17" ry="6"/><path d="M3 7v24c0 8 34 8 34 0V7M3 19c0 8 34 8 34 0"/></g>
+<text x="596" y="791" font-size="23" font-weight="700" text-anchor="start" data-max-width="350">SQLite 状态</text>
+<text x="596" y="817" font-size="17" font-weight="400" text-anchor="start" data-max-width="350">运行、任务、问题、人工决定</text>
+<path d="M1201 652 V672" fill="none" stroke="#7891b4" stroke-width="3"/>
+<rect x="990" y="759" width="442" height="87" rx="16" fill="white" stroke="#a0b8df" stroke-width="1.5"/>
+<g transform="translate(1008 782)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="27" height="36" rx="2"/><path d="M13 11h15M13 19h15M13 27h10"/></g>
+<text x="1066" y="791" font-size="23" font-weight="700" text-anchor="start" data-max-width="350">证据追溯</text>
+<text x="1066" y="817" font-size="17" font-weight="400" text-anchor="start" data-max-width="350">文档版本、原文位置、引文</text>
+<rect x="1500" y="672" width="276" height="194" rx="16" fill="white" stroke="#c6d5ed" stroke-width="1.5"/>
+<text x="1520" y="705" font-size="24" font-weight="700" text-anchor="start" data-max-width="236">调查结果状态</text>
+<rect x="1518" y="720" width="240" height="28" rx="16" fill="#e7f5ed" stroke="none" stroke-width="1.5"/>
+<circle cx="1533" cy="734" r="8" fill="#259a73"/>
+<text x="1553" y="741" font-size="18" font-weight="700" text-anchor="start" data-max-width="194">完成</text>
+<rect x="1518" y="753" width="240" height="28" rx="16" fill="#fff6e1" stroke="none" stroke-width="1.5"/>
+<circle cx="1533" cy="767" r="8" fill="#d59400"/>
+<text x="1553" y="774" font-size="18" font-weight="700" text-anchor="start" data-max-width="194">部分完成</text>
+<rect x="1518" y="786" width="240" height="28" rx="16" fill="#fae9ed" stroke="none" stroke-width="1.5"/>
+<circle cx="1533" cy="800" r="8" fill="#c93d55"/>
+<text x="1553" y="807" font-size="18" font-weight="700" text-anchor="start" data-max-width="194">失败 / 不支持</text>
+<text x="1520" y="836" font-size="14" font-weight="400" text-anchor="start" data-max-width="239">系统保留不确定性，</text>
+<text x="1520" y="856" font-size="14" font-weight="400" text-anchor="start" data-max-width="239">而不是把它隐藏起来。</text>
+<rect x="24" y="890" width="1752" height="136" rx="16" fill="#f2f7ff" stroke="#aacaff" stroke-width="1.5"/>
+<g transform="translate(50 930)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="36" height="25" rx="2"/><path d="M20 27v9M10 36h20"/></g>
+<text x="108" y="941" font-size="23" font-weight="700" text-anchor="start" data-max-width="348">本地优先</text>
+<text x="108" y="974" font-size="17" font-weight="400" text-anchor="start" data-max-width="348">资料优先保留在本机</text>
+<path d="M463 910 V1005" fill="none" stroke="#c6d5ed" stroke-width="3"/>
+<g transform="translate(488 930)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m17 14 7-7c10-8 20 3 12 12l-8 8m-5-1-7 7C6 41-4 30 4 21l8-8m1 14 14-14"/></g>
+<text x="546" y="941" font-size="23" font-weight="700" text-anchor="start" data-max-width="348">证据可追溯</text>
+<text x="546" y="974" font-size="17" font-weight="400" text-anchor="start" data-max-width="348">每项主张都能回到来源</text>
+<path d="M901 910 V1005" fill="none" stroke="#c6d5ed" stroke-width="3"/>
+<g transform="translate(926 930)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="20" cy="9" r="6"/><path d="M9 37V28c0-13 22-13 22 0v9M3 37V25m34 0v12"/></g>
+<text x="984" y="941" font-size="23" font-weight="700" text-anchor="start" data-max-width="348">可人工复核</text>
+<text x="984" y="974" font-size="17" font-weight="400" text-anchor="start" data-max-width="348">人工判断是系统设计的一部分</text>
+<path d="M1339 910 V1005" fill="none" stroke="#c6d5ed" stroke-width="3"/>
+<g transform="translate(1364 930)" fill="none" stroke="#2870df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16a16 16 0 0 1 28-7l4 5m0-11v11H26M35 26A16 16 0 0 1 7 33l-4-5m0 11V28h11"/></g>
+<text x="1422" y="941" font-size="23" font-weight="700" text-anchor="start" data-max-width="348">可复现</text>
+<text x="1422" y="974" font-size="17" font-weight="400" text-anchor="start" data-max-width="348">相同输入产生可重复结果</text>
+</g></svg>
