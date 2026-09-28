@@ -26,6 +26,12 @@ test('report binds section claim_ids to claims and renders only their explicit e
   assert.doesNotMatch(html,/data-page="reader"|href="[^"]*reader/i);
 });
 
+test('evidence trace resolves bibliography titles by document_id as well as id',()=>{
+  const html=renderEvidenceTrace({claim:claims[0],evidence,bibliography:[{document_id:'doc-1',title:'Document identity title'}],t,locale});
+  assert.match(html,/Document identity title/);
+  assert.doesNotMatch(html,/>doc-1</);
+});
+
 test('missing reference remains an explicit unavailable item and no inline citation is inferred',()=>{
   const html=renderEvidenceTrace({claim:{claim_id:'c',claim:'A [1] claim',evidence_refs:['missing-id']},evidence:[],bibliography:[],t,locale});
   assert.match(html,/Referenced evidence item unavailable/);
