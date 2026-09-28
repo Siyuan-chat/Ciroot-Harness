@@ -35,6 +35,7 @@ from research_harness.gui.conversation import ConversationError, ConversationSto
 from research_harness.gui.conversation_model_api import controlled_runtime, plan as plan_conversation, validate_api_config
 from research_harness.gui.help import HelpLibrary
 from research_harness.gui.golden_demo import GoldenDemoFacade
+from research_harness.golden_demo import run_golden_demo
 
 
 MODEL_KEY_ENV = {
@@ -61,6 +62,20 @@ def _page(items, limit, cursor):
     end = offset + limit
     next_cursor = base64.urlsafe_b64encode(str(end).encode()).decode().rstrip("=") if end < len(items) else None
     return {"items": items[offset:end], "next_cursor": next_cursor}
+
+
+def _golden_demo_available() -> bool:
+    """Report whether the packaged, deterministic demo inputs are usable."""
+    base = resources.files("research_harness").joinpath("examples", "investigation")
+    names = ("golden-demo-spec.json", "synthetic-runtime.json", "golden-demo-scenario.json")
+    try:
+        for name in names:
+            resource = base.joinpath(name)
+            if not resource.is_file() or not isinstance(json.loads(resource.read_text(encoding="utf-8-sig")), dict):
+                return False
+        return True
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ModuleNotFoundError):
+        return False
 
 
 def load_context_registry(path: str | Path) -> tuple[dict, dict]:
@@ -1315,6 +1330,74 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
             values = svc.status()["runs"]
         return pack(_page(values, limit, cursor))
 
+    @app.get("/api/v1/overview")
+    def overview():
+        """Read-only, scope-bound summary for the product landing page."""
+        workspace = workspace_public(active_workspace_id())
+        selected_library = libraries.get(active_library_id())
+        library = library_public(active_library_id(), selected_library, active_workspace_id())
+        try:
+            library_root = active_library_root()
+            if (library_root / "rag.sqlite").is_file() and (library_root / "qdrant").is_dir():
+                with RagLibrary(library_root, read_only=True) as rag:
+                    status = rag.get_library_status()
+                    allowed = validate_collection_members([item["document_id"] for item in status["documents"]])
+                    library["document_count"] = len(status["documents"]) if allowed is None else sum(item["document_id"] in allowed for item in status["documents"])
+            elif local_library.has_index(library_root) or selected_library.get("runtime_created", False):
+                selected = collection_ids()
+                catalog = local_library.list_documents(library_root, limit=100, document_ids=selected)
+                library["document_count"] = catalog.get("document_count") if catalog.get("next_cursor") is None else None
+            else:
+                library["document_count"] = None
+        except Exception:
+            library["document_count"] = None
+        runs = []
+        open_issue_count = 0
+        issue_count_known = True
+        try:
+            with service() as svc:
+                statuses = svc.status()["runs"][:5]
+                for status in statuses:
+                    run_id = status.get("run_id")
+                    result = report = spec = None
+                    try:
+                        result = svc.get_result(run_id)
+                    except Exception:
+                        pass
+                    try:
+                        report = svc.build_report_data(run_id)
+                    except Exception:
+                        pass
+                    try:
+                        spec = json.loads(svc._run(run_id)["spec"])
+                    except Exception:
+                        pass
+                    claims = report.get("claims") if isinstance(report, dict) else None
+                    verified_count = sum(1 for claim in claims if isinstance(claim, dict) and claim.get("verification") in (True, "verified") or isinstance(claim, dict) and isinstance(claim.get("verification"), dict) and claim["verification"].get("status") == "verified") if isinstance(claims, list) else None
+                    issues = result.get("issues") if isinstance(result, dict) else None
+                    if isinstance(issues, list):
+                        run_open_issues = sum(1 for issue in issues if isinstance(issue, dict) and issue.get("status") == "open")
+                        open_issue_count += run_open_issues
+                    else:
+                        run_open_issues = None
+                        issue_count_known = False
+                    coverage = result.get("coverage") if isinstance(result, dict) else status.get("coverage")
+                    coverage_complete = coverage.get("complete") if isinstance(coverage, dict) and isinstance(coverage.get("complete"), bool) else None
+                    item = {"run_id": run_id, "project_id": spec.get("project_id") if isinstance(spec, dict) else None,
+                            "research_question": report.get("research_question") if isinstance(report, dict) else spec.get("research_question") if isinstance(spec, dict) else None,
+                            "status": status.get("status"), "stage": status.get("stage"),
+                            "synthetic": result.get("synthetic", status.get("synthetic")) if isinstance(result, dict) else status.get("synthetic"),
+                            "outcome": result.get("outcome") if isinstance(result, dict) else status.get("outcome"),
+                            "verified_claim_count": verified_count, "open_issue_count": run_open_issues,
+                            "coverage_complete": coverage_complete}
+                    runs.append(item)
+        except Exception:
+            runs = []
+        return pack({"workspace": {"workspace_id": workspace["workspace_id"], "name": workspace["name"]},
+                     "library": library, "recent_runs": runs,
+                     "review_summary": {"open_run_issue_count": open_issue_count if issue_count_known else None},
+                     "golden_demo": {"available": _golden_demo_available()}})
+
     @app.get("/api/v1/runs/{run_id}")
     def run(run_id: str):
         with service() as svc:
@@ -1871,6 +1954,16 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
         if body:
             raise HTTPException(400, "golden demo request body must be empty")
         return write(idempotency_key, body, golden_demo.run)
+
+    @app.post("/api/v1/demos/golden")
+    def golden_demo_create_compat(body: dict, idempotency_key: str | None = Header(None)):
+        if body:
+            raise HTTPException(400, "golden demo request body must be empty")
+        def action():
+            with service() as svc:
+                result = run_golden_demo(str(active_root()), svc)
+            return {key: result.get(key) for key in ("run_id", "outcome", "synthetic", "candidate_count", "evidence_document_count", "verified_claim_count", "open_issue_count")}
+        return write(idempotency_key, body, action)
 
     if static_dir and Path(static_dir).is_dir():
         @app.get("/", include_in_schema=False)
