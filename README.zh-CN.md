@@ -1,24 +1,86 @@
-# Research Harness
+<p align="center">
+  <img src="assets/ciroot-harness-logo.png" alt="CirootHarness logo" width="220">
+</p>
 
-中文 · [English](README.md) · [日本語](README.ja.md)
+<h1 align="center">CirootHarness</h1>
 
-## CirootHarness Windows 桌面版
+<p align="center">
+  <strong>面向专利与科学文献的可审计 AI 调查框架。</strong><br>
+  把研究问题转换为版本化、证据可追溯、可人工复核的调查报告。
+</p>
 
-下载 GitHub Releases 中的 Windows ZIP，**解压整个 `ResearchHarnessGUI` 文件夹**，运行其中的 `ResearchHarnessGUI.exe`。程序窗口名称为 CirootHarness；EXE 文件名是兼容保留的技术名称。[中文图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)介绍首次启动、工作区、文献库、Agent 对话及本地资料配置。软件本身不附带本机的 23 篇文献、模型缓存、API 密钥或研究工作区。
+<p align="center">
+  中文 · <a href="README.md">English</a> · <a href="README.ja.md">日本語</a>
+</p>
 
-当前发布的是本地桌面候选：可在空白工作区创建文献库，导入可提取文字的 PDF 或 UTF-8 TXT，并进行本地基础文本检索。跨库检索、收费模型端到端调查及原生 WebView2 全流程尚未完成验收。运行真实 API 可能产生费用，需用户自行配置凭据并明确执行。具体边界见[图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)。
+<p align="center">
+  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
+  <img src="https://img.shields.io/badge/status-desktop%20preview-orange" alt="Desktop preview">
+</p>
 
-**2026-09-16 进展：** P3 有界论文案例已通过独立验收，包含新 PDF 的 Docling/RAG 入库、中文双报告正文、标准导出与重开；检索覆盖仍为 partial。P4 单专利族阶段已完成范围设计，OPS 注册审批 pending。[P3 验收](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 计划](docs/D19_P4_PLAN.md) · [替代方案](docs/D19_P4_FALLBACK.md)。
+<p align="center">
+  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/releases">下载 Windows 预览版</a> ·
+  <a href="#运行离线-demo">运行离线 Demo</a> ·
+  <a href="#架构">架构</a> ·
+  <a href="docs/DEVELOPMENT_STATUS.md">工程状态</a>
+</p>
 
-[整体设计文档](docs/SYSTEM_DESIGN.md) · [总架构图](docs/diagrams/harness-overview.svg) · [D19实验方案](docs/INVESTIGATION_EXPERIMENT_PLAN.md)。设计覆盖一次性调查、企业监测与人工分流；已实现能力另有明确状态。
+CirootHarness 是一个本地优先的文献／专利调查 harness。它的目标不只是“生成一个答案”，而是让一次调查结束后仍能检查：当时冻结了什么需求、调用了哪些来源、使用了哪个文档版本、结论对应哪段证据、哪些问题进入了人工复核，以及本轮究竟是完成、部分完成还是失败。
 
-本地文献／专利调查框架。目标流程：自然语言需求 → 版本化 JSON → 检索 → 与冻结参照库比较 → 人工判断与报告。
+> **项目原则：** `partial` 不等于 `completed`；引用只有能够回到原文位置时才算证据；目标设计不能被包装成已经实现的功能。
 
-**D2 合成夹具框架已于 2026-09-09 通过独立验收。** 见[验收报告](docs/FRAMEWORK_ACCEPTANCE.md)。demo 使用合成文本和本地来源／模型函数，实际运行 LangGraph、SQLite、引用核查及中英日报告；无需 API 密钥，不调用外部 API。
+## 为什么做 CirootHarness？
+
+很多 research agent 优先优化最终答案的流畅度。CirootHarness 优先解决另一个问题：**AI 调查结果在生成之后还能不能被审计。**
+
+| 问题 | CirootHarness 的处理方式 |
+| --- | --- |
+| 需求在调查过程中漂移 | 版本化 `ResearchSpec` + 冻结运行输入 |
+| 结论无法追溯 | Evidence ID 绑定 document version 与 locator |
+| 引用幻觉 | 引文归属、quote 与原文匹配检查 |
+| 检索失败被悄悄忽略 | 显式 `complete` / `partial` / `failed` / `unsupported` |
+| 模糊结论 | 持久化 human-review issue 与决定历史 |
+| 私有资料 | local-first 文档存储与 RAG 路径 |
+| 难以复现 | 冻结输入、结构化运行状态与持久产物 |
+
+## 目前已经能做什么
+
+CirootHarness 目前仍是持续开发中的公开预览版，不是已经完成的生产级研究服务。
+
+| 能力 | 当前状态 |
+| --- | --- |
+| Windows 桌面预览版 | 已提供 portable prerelease；原生 WebView2 交互尚未完整验收 |
+| 本地工作区与文献库 | 可创建 workspace/library；导入可提取文字的 PDF 和 UTF-8 TXT |
+| 本地基础文本检索 | 桌面预览版可用 |
+| 离线调查 Demo | 使用确定性合成来源；运行 LangGraph、SQLite、引用检查 |
+| 多语言报告 | fixture 流程支持中、英、日输出 |
+| 本地 RAG | Docling/FastEmbed/Qdrant 路径已有验收记录 |
+| OA 文献采集 | OpenAlex 检索与 OA PDF 采集模块 |
+| Investigation service | 已实现验收范围内的 evidence/report/review/monitoring primitives |
+| 有界论文案例 | P3 已通过新 PDF 入库、RAG、报告导出与重开检查 |
+| Live 专利工作流 | 仍在推进，不能把目标设计当成已验收端到端能力 |
+
+详细阶段边界统一放在 [工程状态](docs/DEVELOPMENT_STATUS.md)。
 
 ## 快速开始
 
-需要 Python 3.11+，在 Windows 源码目录执行：
+### 1. Windows 桌面预览版
+
+从 [GitHub Releases](https://github.com/Siyuan-chat/autoSearch-Harness/releases) 下载当前 portable ZIP，**完整解压** `ResearchHarnessGUI` 文件夹，然后运行：
+
+```text
+ResearchHarnessGUI.exe
+```
+
+窗口品牌名称为 **CirootHarness**；EXE 文件名暂时保留旧技术名称以保持兼容。
+
+发布包不附带作者本机的私有文献、模型缓存或 API 密钥。首次启动可以创建工作区和文献库，导入可提取文字的 PDF / UTF-8 TXT，并进行本地基础文本检索。当前 GUI 边界见 [中文图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)。
+
+### 2. 运行离线 Demo
+
+需要 Python 3.11+。
 
 ```powershell
 python -m venv .venv
@@ -27,38 +89,36 @@ python -m venv .venv
 .venv\Scripts\rh status --workspace .local\demo
 ```
 
-安装会下载声明的依赖，demo 本身离线运行。macOS/Linux 对应 `.venv/bin/python`、`.venv/bin/rh`；当前独立运行验收针对 Windows。
+macOS / Linux 使用 `.venv/bin/python` 与 `.venv/bin/rh`。
 
-demo 生成两条合成候选、核查后的判断、一条人工问题、三份 HTML、三份 Markdown、规范 JSON 和人工清单 CSV。打开命令返回的报告目录即可阅读。
+Demo 本身离线运行、不需要 API key。它会生成合成候选、已核查 findings、人工复核问题、HTML/Markdown 报告、规范 JSON 和 review CSV。
 
-## 当前能力
+**合成 Demo 数据与真实科学证据始终明确分开。**
 
-- ResearchSpec 校验、手改后的自动修订、冻结运行输入。
-- 本地文本原文与证据，参照快照和新发现分离。
-- 可替换的 fixture 来源／模型函数与最小 LangGraph 流程。
-- 引用归属／原文匹配、持久人工决定、候选上限和明确的部分完成／失败状态。
-- 供未来 GUI 调用的共享 Python 服务、结构化结果、安全错误、产物引用和进度回调。
+## 架构
 
-真实模型／来源 API、OpenAlex/EPO、生产向量 RAG、PDF/OCR、独立 chat、恢复和 GUI **尚未接入 D2**。安装可选依赖不会自动启用这些功能。未支持的 live/chat 路径明确拒绝；`lexical_test_only` 仅保留测试兼容。当前由宿主助手澄清需求并整理 JSON。
+目标系统从研究问题开始，经过规格化、检索、证据提取、核查、人工复核与报告生成。
 
-[中文指南](docs/USER_GUIDE.zh-CN.md) · [当前范围](docs/SCOPE_AUDIT.md) · [数据／适配器契约](docs/CONTRACTS.md) · [验收 K01–K07](docs/ACCEPTANCE.md) · [需求](docs/PRD.md) · [架构](docs/ARCHITECTURE.md) · [决策](docs/DECISIONS.md)
+![CirootHarness architecture](docs/diagrams/harness-overview.png)
 
-后续首个案例为聚合物设计。[案例草案](examples/polymer-design.draft.json) 仍有待定需求，不是可运行的科学案例。P3 有界论文案例已验收，更广泛科学评价仍待完成；桌面候选发布不代表科研案例或全部 GUI 门槛通过。
+这张图描述的是**整体设计**。已经实现／已经验收的范围单独维护，避免把规划组件误写成现有能力。
 
-密钥、私有原文和运行工作区不要提交 Git。包内演示仅含合成材料。产品调查由用户手动启动，没有默认后台定时任务。
+参见 [整体设计](docs/SYSTEM_DESIGN.md)、[架构说明](docs/ARCHITECTURE.md) 与 [工程状态](docs/DEVELOPMENT_STATUS.md)。
 
-## 本地 RAG（D18）
+## 本地 RAG
 
 ```powershell
 .venv\Scripts\python -m pip install ".[rag-mcp]"
 .venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
 ```
 
-本地 RAG 只读取配置的 catalog，不读取 Codex 凭据，也不调用生成模型。CLI 操作为 `prepare`、`import`、`search`、`context`、`document`、`status`、`rebuild`；`prepare` 只缓存解析，`rebuild` 只从既有证据迁移向量。参见[本地使用指南](docs/RAG_USAGE.zh-CN.md)、[运行时说明](docs/RAG_RUNTIME.md)、[阶段边界](docs/RAG_STAGE.md)和[独立验收记录](docs/RAG_ACCEPTANCE.md)。
+本地 RAG 只读取明确配置的 catalog，不读取 Codex 凭据，也不会自行调用生成模型。
 
-## 开放文献采集
+参见 [RAG 使用说明](docs/RAG_USAGE.zh-CN.md)、[运行时说明](docs/RAG_RUNTIME.md)、[阶段边界](docs/RAG_STAGE.md)、[验收记录](docs/RAG_ACCEPTANCE.md)。
 
-`literature` 是独立的 OpenAlex 检索和 OA PDF 采集模块，不是 RAG 或科学筛选。安装校验器后，可在提供时使用已核验的 23 项清单：
+## OA 文献采集
+
+`literature` 模块负责 OpenAlex 检索与 OA PDF 采集；它与科学筛选、RAG 刻意分离。
 
 ```powershell
 .venv\Scripts\python -m pip install ".[literature]"
@@ -66,15 +126,57 @@ demo 生成两条合成候选、核查后的判断、一条人工问题、三份
 .venv\Scripts\python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\aem-pdfs --limit 23
 ```
 
-`anonymous: true` 明确执行无密钥查询；否则设置 `OPENALEX_API_KEY`。AEM 检索示例使用 `review_only: false`，因为 OpenAlex type 标签会遗漏综述，调用者须筛选记录。下载器校验可读性、身份和记录可选的 `expected_min_pages`；不足时返回 `partial` 和退出码 4。
+## Investigation service
 
-## 离线调查与监测（D19 P1）
-
-调查服务提供八个宿主 agent 角色、查询与重试记账、PDF/XML/文本证据、冻结的技术调查报告与文献综述，以及保留规则版本和人工决定历史的专利监测。离线夹具支持中文、英文、日文产物。
+调查层已经包含 host-agent 角色、source-query 记账、证据记录、冻结报告、人工复核历史和专利监测 primitives。
 
 ```powershell
 .venv\Scripts\python -m pip install ".[investigation]"
 .venv\Scripts\rh investigate --workspace .local\investigation doctor
 ```
 
-[使用指南](docs/INVESTIGATION_USAGE.zh-CN.md) · [实现记录](docs/D19_P1_IMPLEMENTATION.md) · [独立验收与边界](docs/D19_P1_ACCEPTANCE.md)。本阶段使用显式合成来源及宿主/replay 结果，不启用真实模型/来源 API 或系统定时任务。D18 本地 RAG 与文献采集模块保持独立。
+参见 [使用说明](docs/INVESTIGATION_USAGE.zh-CN.md)、[实现记录](docs/D19_P1_IMPLEMENTATION.md)、[验收边界](docs/D19_P1_ACCEPTANCE.md)。
+
+## Demo 与公开展示
+
+公开 Demo 应在很短时间内证明四件事：
+
+1. 一个自然语言问题如何变成冻结的研究规格；
+2. 系统实际搜索了什么、哪些来源成功或失败；
+3. 报告主张如何回到 evidence 与原文位置；
+4. 已验证结论与未解决人工问题如何被明确分开。
+
+截图命名、60–90 秒视频脚本、README hero 资产和真实性规则见 [Demo 展示指南](docs/DEMO_SHOWCASE.md)。
+
+## 当前边界
+
+公开预览版**不代表**以下能力已经生产可用：
+
+- live 模型 + live source API 的完整端到端调查；
+- 完整专利族检索覆盖；
+- 扫描版 PDF OCR；
+- 桌面预览版中的跨库语义检索；
+- 无人值守的生产监控；
+- 法律意见、FTO 意见或可专利性结论。
+
+API key、私有原文、运行工作区和模型缓存应保持在 Git 仓库之外。
+
+## 文档入口
+
+- [工程状态](docs/DEVELOPMENT_STATUS.md)
+- [整体设计](docs/SYSTEM_DESIGN.md)
+- [架构](docs/ARCHITECTURE.md)
+- [PRD](docs/PRD.md)
+- [数据／适配器契约](docs/CONTRACTS.md)
+- [框架验收](docs/FRAMEWORK_ACCEPTANCE.md)
+- [RAG 验收](docs/RAG_ACCEPTANCE.md)
+- [调查方案](docs/INVESTIGATION_EXPERIMENT_PLAN.md)
+- [中文用户指南](docs/USER_GUIDE.zh-CN.md)
+
+## 引用
+
+如果 CirootHarness 对科研或技术工作有帮助，请使用仓库中的 [`CITATION.cff`](CITATION.cff) 进行引用。
+
+## License
+
+本项目采用 [Apache License 2.0](LICENSE)。

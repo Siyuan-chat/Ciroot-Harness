@@ -1,20 +1,88 @@
-# Research Harness
+<p align="center">
+  <img src="assets/ciroot-harness-logo.png" alt="CirootHarness logo" width="220">
+</p>
 
-[中文 README 与 Windows GUI 使用说明](README.zh-CN.md) · English · [日本語](README.ja.md)
+<h1 align="center">CirootHarness</h1>
 
-**2026-09-16 checkpoint:** the bounded P3 paper case passed independent acceptance, including new-PDF Docling/RAG ingestion, two Chinese report bodies, export and reopen checks. Search coverage remains partial. P4 single-family patent work is planned; OPS registration is pending. [P3 acceptance](docs/D19_P3_LOOP2_ACCEPTANCE.md) · [P4 plan](docs/D19_P4_PLAN.md) · [Fallback design](docs/D19_P4_FALLBACK.md).
+<p align="center">
+  <strong>Auditable AI research for patents and scientific literature.</strong><br>
+  Turn a research question into a versioned, evidence-linked, reviewable research report.
+</p>
 
-[Integrated system design (Chinese)](docs/SYSTEM_DESIGN.md) · [Architecture diagram](docs/diagrams/harness-overview.svg) · [D19 experiment plan](docs/INVESTIGATION_EXPERIMENT_PLAN.md). These describe the target design; implementation status is stated separately.
+<p align="center">
+  <a href="README.zh-CN.md">中文</a> · English · <a href="README.ja.md">日本語</a>
+</p>
 
-**CirootHarness Windows desktop candidate:** [Chinese quick start and current limits](docs/GUI_QUICKSTART.zh-CN.md). The downloadable package contains no local research corpus, API keys, or model cache; paid research calls require explicit configuration and execution.
+<p align="center">
+  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
+  <img src="https://img.shields.io/badge/status-desktop%20preview-orange" alt="Desktop preview">
+</p>
 
-A local literature/patent investigation framework. The target workflow is natural-language requirements → versioned JSON → retrieval → comparison with a frozen reference library → human review and reports.
+<p align="center">
+  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/releases">Download Windows preview</a> ·
+  <a href="#run-the-offline-demo">Run the offline demo</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="docs/DEVELOPMENT_STATUS.md">Engineering status</a>
+</p>
 
-**D2 fixture framework independently accepted on 2026-09-09.** See the [acceptance report](docs/FRAMEWORK_ACCEPTANCE.md). The demo uses synthetic text and local source/model callables. It runs real LangGraph, SQLite and citation verification, producing Chinese, English and Japanese reports. It needs no API keys and makes no external API calls.
+CirootHarness is a local-first research harness for literature and patent investigation. Its focus is not just generating an answer: it preserves the research specification, source attempts, document versions, evidence locations, review decisions, and execution outcome so that a result can be inspected after the model finishes.
+
+> **Project principle:** `partial` is not `completed`, a citation is not evidence until it can be traced back to the source, and target architecture is not presented as implemented functionality.
+
+## Why CirootHarness?
+
+Typical research agents optimize for a fluent final answer. CirootHarness is being built around a different requirement: **a research result should remain auditable after generation**.
+
+| Concern | CirootHarness approach |
+| --- | --- |
+| Requirements drift | Versioned `ResearchSpec` with frozen run inputs |
+| Untraceable claims | Evidence IDs linked to document versions and locators |
+| Citation hallucination | Quote ownership and source-text verification |
+| Silent retrieval failures | Explicit `complete` / `partial` / `failed` / `unsupported` states |
+| Ambiguous conclusions | Persistent human-review issues and decision history |
+| Private corpora | Local-first document storage and RAG path |
+| Reproducibility | Frozen inputs, durable artifacts, structured run state |
+
+## What works today
+
+CirootHarness is an active preview, not a finished production research service.
+
+| Capability | Current state |
+| --- | --- |
+| Windows desktop preview | Portable prerelease for local library workflows; native WebView2 interaction is not fully accepted |
+| Local workspace and library | Create workspaces/libraries; import text-extractable PDF and UTF-8 TXT |
+| Local basic text search | Available in the desktop preview |
+| Offline investigation demo | Deterministic synthetic sources; LangGraph + SQLite + citation checks |
+| Multilingual reports | Chinese, English and Japanese outputs in the fixture workflow |
+| Local RAG | Docling/FastEmbed/Qdrant-based workflow with recorded acceptance |
+| OA literature collection | OpenAlex search and OA-PDF collection module |
+| Investigation service | Evidence, report, review and monitoring primitives are implemented for the accepted offline scope |
+| Bounded paper case | P3 case accepted with new-PDF ingestion, RAG, report export and reopen checks |
+| Live patent workflow | Still in progress; do not treat the target design as an accepted end-to-end capability |
+
+For the detailed stage-by-stage boundary, see [Engineering status](docs/DEVELOPMENT_STATUS.md).
 
 ## Quick start
 
-Python 3.11+ is required. In a Windows source checkout:
+### 1. Try the Windows desktop preview
+
+Download the current portable ZIP from [GitHub Releases](https://github.com/Siyuan-chat/autoSearch-Harness/releases), extract the **entire** `ResearchHarnessGUI` folder, and run:
+
+```text
+ResearchHarnessGUI.exe
+```
+
+The window is branded **CirootHarness**. The executable name is currently retained for compatibility.
+
+The preview starts without bundled private documents, model caches, or API keys. The accepted package checks cover workspace and library creation, text-extractable PDF or UTF-8 TXT import, local basic search, and a bounded first-send flow through the packaged page. Native WebView2 interaction remains unverified. See the [Chinese GUI guide](docs/GUI_QUICKSTART.zh-CN.md) for the current boundaries.
+
+### 2. Run the offline demo
+
+Python 3.11+ is required.
+
+**Windows**
 
 ```powershell
 python -m venv .venv
@@ -23,38 +91,45 @@ python -m venv .venv
 .venv\Scripts\rh status --workspace .local\demo
 ```
 
-Installation downloads the declared dependencies; the demo itself is offline. On macOS/Linux use `.venv/bin/python` and `.venv/bin/rh`; independent runtime acceptance currently targets Windows.
+**macOS / Linux**
 
-The default demo produces two synthetic candidates, verified findings, one human-review issue, three HTML reports, three Markdown reports, canonical JSON and review CSV. Open the returned report directory to read the HTML.
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install .
+.venv/bin/rh demo --workspace .local/demo
+.venv/bin/rh status --workspace .local/demo
+```
 
-## Available now
+The demo itself is offline and requires no API key. It produces synthetic candidates, verified findings, a human-review issue, HTML/Markdown reports, canonical JSON, and a review CSV.
 
-- Validated ResearchSpec, automatic revisions for manual edits and frozen run inputs.
-- Local text originals/evidence, separate reference snapshots and discoveries.
-- Replaceable fixture source/model callables in a minimal LangGraph workflow.
-- Citation ownership/quote checks, persistent review decisions, candidate limits and explicit partial/failed outcomes.
-- Shared Python services with structured results, safe errors, artifact references and progress callbacks for a future GUI.
+Synthetic demo material is deliberately separated from real scientific evidence.
 
-Real model/source APIs, OpenAlex/EPO, production vector RAG, PDF/OCR, standalone chat, recovery and GUI are **not integrated in D2**. Installing optional dependencies does not enable them. Unsupported live/chat paths are refused; `lexical_test_only` is retained only for test compatibility. The host assistant currently clarifies requirements and supplies JSON.
+## Architecture
 
-[English guide](docs/USER_GUIDE.en.md) · [Current scope](docs/SCOPE_AUDIT.md) · [Contracts/adapters](docs/CONTRACTS.md) · [Acceptance K01–K07](docs/ACCEPTANCE.md) · [Requirements](docs/PRD.md) · [Architecture](docs/ARCHITECTURE.md) · [Decisions](docs/DECISIONS.md)
+The target system takes a research question through specification, retrieval, evidence extraction, verification, human review, and report generation.
 
-The first later case is polymer design. [Its draft](examples/polymer-design.draft.json) has unresolved requirements and is not runnable scientific evidence. The bounded P3 paper case is accepted; broader scientific evaluation remains pending. Publishing the desktop candidate does not certify a live research workflow.
+![CirootHarness architecture](docs/diagrams/harness-overview.png)
 
-Keep credentials, private originals and runtime workspaces outside Git. Packaged demo material is synthetic. Product investigations are manually triggered, with no default background schedule.
+The diagram describes the integrated design. **Implemented/accepted scope is tracked separately** so that planned components are not confused with working product behavior.
 
-## Local RAG (D18)
+Read the [integrated system design](docs/SYSTEM_DESIGN.md), [architecture notes](docs/ARCHITECTURE.md), and [engineering status](docs/DEVELOPMENT_STATUS.md).
+
+## Local RAG
+
+Install the RAG/MCP extras:
 
 ```powershell
 .venv\Scripts\python -m pip install ".[rag-mcp]"
 .venv\Scripts\python -m research_harness.rag --workspace .local\aem-rag status
 ```
 
-The local RAG reads only the configured catalog, does not read Codex credentials, and does not call a generation model. Its CLI operations are `prepare`, `import`, `search`, `context`, `document`, `status`, and `rebuild`; `prepare` only caches parsing, while `rebuild` migrates vectors from existing evidence. See the [local usage guide](docs/RAG_USAGE.en.md), [runtime notes](docs/RAG_RUNTIME.md), [stage boundary](docs/RAG_STAGE.md), and [independent acceptance record](docs/RAG_ACCEPTANCE.md).
+The local RAG reads only the configured catalog. It does not read Codex credentials and does not invoke a generation model by itself.
+
+See [RAG usage](docs/RAG_USAGE.en.md), [runtime notes](docs/RAG_RUNTIME.md), [stage boundary](docs/RAG_STAGE.md), and [acceptance record](docs/RAG_ACCEPTANCE.md).
 
 ## OA literature collection
 
-`literature` is a separate OpenAlex search and OA-PDF collection module, not RAG or scientific screening. Install its validator, then use the verified 23-item manifest when supplied:
+The `literature` module performs OpenAlex search and OA-PDF collection. It is intentionally separate from scientific screening and RAG.
 
 ```powershell
 .venv\Scripts\python -m pip install ".[literature]"
@@ -62,15 +137,57 @@ The local RAG reads only the configured catalog, does not read Codex credentials
 .venv\Scripts\python -m research_harness.literature download --manifest examples\aem_oa_manifest.json --output .local\aem-pdfs --limit 23
 ```
 
-`anonymous: true` explicitly performs a no-key search; otherwise set `OPENALEX_API_KEY`. The AEM search example uses `review_only: false`: OpenAlex type labels miss reviews, so callers screen records. The downloader verifies readability, identity and optional record-specific `expected_min_pages`; incomplete results return `partial` and exit code 4.
+## Investigation service
 
-## Offline investigation and monitoring (D19 P1)
-
-The investigation service provides eight host-agent roles, source-query accounting, PDF/XML/text evidence, frozen technical reports and literature reviews, and versioned patent monitoring with human-review history. The offline fixture path supports Chinese, English and Japanese outputs.
+The investigation layer contains host-agent roles, source-query accounting, evidence records, frozen reports, review history, and patent-monitoring primitives.
 
 ```powershell
 .venv\Scripts\python -m pip install ".[investigation]"
 .venv\Scripts\rh investigate --workspace .local\investigation doctor
 ```
 
-[Host usage](docs/INVESTIGATION_USAGE.en.md) · [Implementation](docs/D19_P1_IMPLEMENTATION.md) · [Independent acceptance and limits](docs/D19_P1_ACCEPTANCE.md). This stage uses explicit synthetic sources and host/replay results; it enables no live model/source API or OS schedule. Existing D18 RAG and OA collection remain separate services.
+See [investigation usage](docs/INVESTIGATION_USAGE.en.md), [implementation record](docs/D19_P1_IMPLEMENTATION.md), and [accepted scope](docs/D19_P1_ACCEPTANCE.md).
+
+## Demo and showcase
+
+The public demo should prove four things quickly:
+
+1. a question becomes a frozen research specification;
+2. the system records what it searched and what actually succeeded;
+3. claims can be opened back to evidence and source locations;
+4. the final report distinguishes verified conclusions from unresolved review items.
+
+The capture plan, screenshot naming convention, 60–90 second demo storyboard, and truthfulness rules live in [Demo showcase guide](docs/DEMO_SHOWCASE.md).
+
+## Current boundaries
+
+The current public preview should **not** be interpreted as all of the following being production-ready:
+
+- live model + live source API end-to-end investigation;
+- complete patent-family search coverage;
+- OCR for scanned PDFs;
+- cross-library semantic search in the desktop preview;
+- unattended production monitoring;
+- a legal opinion, freedom-to-operate opinion, or patentability determination.
+
+Credentials, private originals, runtime workspaces, and model caches should stay outside Git.
+
+## Documentation
+
+- [Engineering status](docs/DEVELOPMENT_STATUS.md)
+- [System design](docs/SYSTEM_DESIGN.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Product requirements](docs/PRD.md)
+- [Data and adapter contracts](docs/CONTRACTS.md)
+- [Framework acceptance](docs/FRAMEWORK_ACCEPTANCE.md)
+- [RAG acceptance](docs/RAG_ACCEPTANCE.md)
+- [Investigation plan](docs/INVESTIGATION_EXPERIMENT_PLAN.md)
+- [User guide](docs/USER_GUIDE.en.md)
+
+## Citation
+
+If CirootHarness is useful in academic or technical work, please cite the repository using [`CITATION.cff`](CITATION.cff).
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
