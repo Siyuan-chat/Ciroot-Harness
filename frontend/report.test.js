@@ -27,7 +27,7 @@ test('report binds section claim_ids to claims and renders only their explicit e
 });
 
 test('evidence trace resolves bibliography titles by document_id as well as id',()=>{
-  const html=renderEvidenceTrace({claim:claims[0],evidence,bibliography:[{document_id:'doc-1',title:'Document identity title'}],t,locale});
+  const html=renderEvidenceTrace({claim:claims[0],evidence:[evidence],bibliography:[{document_id:'doc-1',title:'Document identity title'}],t,locale});
   assert.match(html,/Document identity title/);
   assert.doesNotMatch(html,/>doc-1</);
 });
