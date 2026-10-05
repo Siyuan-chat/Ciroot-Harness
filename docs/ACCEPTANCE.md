@@ -1,8 +1,28 @@
+> 当前执行入口：[INTEGRATION_STAGE.md](INTEGRATION_STAGE.md)（2026-10-05，用户批准 S0–S6 实施）。下文历史阶段的“仅设计/不实现 GUI”等表述保留其历史范围，不限制本轮；实际通过状态按本轮固定候选记录。
+
 > 当前整体设计见 [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)，当前 D19 详细实验与 F/A/E/O/M 门槛见 [INVESTIGATION_EXPERIMENT_PLAN.md](INVESTIGATION_EXPERIMENT_PLAN.md)。下文历史编号和通过记录保留，不能用历史 D2/D18 验收替代 D19 真实调查、写作或企业监测验收。
 
 > D19 v0.2 拟增验收（2026-09-10）：除真实调查链外，增加技术调查报告/文献综述双出口的结构实质、事实一致性、正文支持与独立导出恢复 O01–O04，详见 [调查方案第13节](INVESTIGATION_EXPERIMENT_PLAN.md#13-双出口与产品内多-agent-工作流v02)。这是设计门槛，尚无通过结果，不改变历史 D2/D18 验收记录。
 
+## 本轮固定候选记录（2026-10-05）
+
+S0 基线合并子候选：协调者验收前端 79 项 Node 测试、语法检查、构建以及 Edge DOM 检查通过；DOM 实际点击 7 次，延迟响应离开/重进恢复、重试幂等身份和无页面异常通过。GUI Demo/Overview 7 项通过。该 DOM 记录使用本地合成 HTTP 服务，不等于原生 EXE 或真实调查验收。CI 已纳入 13 个轻量确定性测试文件与前端构建；重依赖和原生安装另行执行。
+
+当前 CI 所列 13 个 Python 测试文件在本地固定候选合并后独立运行，108 项通过（21.74 秒）；这不是已运行的 GitHub Actions 记录。本地原有 51 个独有文件仍存在，实施前副本保留。
+
+S1 调用/收据修正子候选：协调者在固定候选上运行 provider、context、model API、GUI API、C1、契约与 GUI 重开/会话检查，58 项通过。覆盖两连接竞争派发、结果未知终态、重复/迟到响应、收据篡改与事务回滚。收据是应用层捕获，不宣称供应商实际内部输入；没有发出真实模型调用。
+
+S1 解析/报告修订子候选：协调者独立离线回归 48 项通过。另在现有完整 GUI Python 环境使用真实 FastEmbed multilingual-e5-small、LlamaIndex splitter 与 Qdrant 对 synthetic 文本做 smoke；Python audit 阻止 socket connect/DNS，4 次本地嵌入操作范围内验证新修订产生、旧证据文本/locator/源字节不变、默认检索使用新修订。产物在 `.local/integration-20261005/rag-real-smoke/acceptance.json`。这不等于 PDF/Docling 全量解析或科学案例验收；调查核心修订透传另行验证。
+
+S1 报告出口子候选：协调者在 Luna 停止写入后运行报告数据、报告导出与 Golden Demo 定向回归，33 项通过。覆盖额外正文、标题、方法标签绕过、伪引句、版本绑定、未接受翻译及导出篡改。该结果是工程门槛，不等于对真实研究结论的科学验收。
+
+S1 最后调查核心透传候选：parse binding、RAG bridge、C1、model API、契约、报告数据、导出和 Golden Demo 独立运行 58 项通过。新任务与注册库快照对解析修订精确绑定，旧运行使用冻结文本且 legacy 证据兼容。S1 工程门槛放行进入 S2；模型与来源的新真实运行仍需要独立数值预算。
+
+既有 EPO 候选只读回查：10 个清单产物哈希一致，8 项主张的引句/文档/版本/定位链接一致；35 个原始 OPS XML 节点均能定位，5 个连续文本精确匹配、30 个需空白归一化匹配，无非空白差异。没有据此追加科学语义通过声明。
+
 # 独立测试与验收方案 D1
+
+GUI 新阶段的实际独立验收记录见 [GUI_ACCEPTANCE.md](GUI_ACCEPTANCE.md)；下文历史 D1/D2 门槛保持原样。
 
 > D19 v0.3：拟新增企业监测 M01–M08，覆盖公司/数据外发隔离、多周期增量、恢复积压、双边证据判定、人工历史及真实持续运行。合成测试、公开资料路径、保密执行器与无人值守运行分开验收；效果阈值待公司冻结样本和漏检代价后确定。详见 [调查方案第14节](INVESTIGATION_EXPERIMENT_PLAN.md)，尚无通过结果。
 

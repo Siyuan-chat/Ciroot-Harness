@@ -14,6 +14,19 @@ test('same-origin reads and writes use contract path, token and idempotency key'
   assert.equal(calls[1].options.headers['x-session-token'],'local-token');
   assert.ok(calls[1].options.headers['idempotency-key']);
 });
+test('review inbox is a bounded scoped read and does not send write or idempotency metadata',async()=>{
+  const calls=[];globalThis.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,status:200,json:async()=>({schema_version:'1',items:[],unavailable_runs:[],next_cursor:null})}};
+  const scope={workspaceId:'ws-review',libraryId:'lib-review',collectionId:'collection-review'};
+  await api.reviewInbox('Y3Vyc29y',scope,50);
+  const {url,options}=calls[0];
+  assert.equal(url,'/api/v1/review-inbox?limit=50&cursor=Y3Vyc29y');
+  assert.equal(options.method,'GET');
+  assert.equal(options.headers['X-Workspace-Id'],scope.workspaceId);
+  assert.equal(options.headers['X-Library-Id'],scope.libraryId);
+  assert.equal(options.headers['X-Collection-Id'],scope.collectionId);
+  assert.equal(Object.hasOwn(options.headers,'idempotency-key'),false);
+  assert.equal(options.body,undefined);
+});
 test('mutations retain the initiating project and library scope after a UI context switch',async()=>{
   const calls=[];globalThis.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,status:200,json:async()=>({schema_version:'1'})}};
   await api.advance('run-a',{workspaceId:'project-a',libraryId:'library-a',collectionId:'group-a'});

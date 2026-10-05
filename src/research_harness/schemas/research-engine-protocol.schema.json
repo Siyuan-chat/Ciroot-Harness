@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-engine-protocol.schema.json",
+  "title": "Supervised research engine JSONL protocol",
+  "$defs": {
+    "identity": {
+      "type": "object", "required": ["run_id", "task_id", "task_version"],
+      "properties": {"run_id": {"type": "string", "minLength": 1}, "task_id": {"type": "string", "minLength": 1}, "task_version": {"type": "integer", "minimum": 1}},
+      "additionalProperties": false
+    },
+    "citation": {
+      "type": "object", "required": ["citation_id", "evidence_id", "document_id", "version_id", "locator", "quote"],
+      "properties": {"citation_id": {"type": "string", "minLength": 1}, "evidence_id": {"type": "string", "minLength": 1}, "document_id": {"type": "string", "minLength": 1}, "version_id": {"type": "string", "minLength": 1}, "parse_revision_id": {"type": ["string", "null"]}, "locator": {"type": "object"}, "quote": {"type": "string", "minLength": 1}}, "additionalProperties": true
+    },
+    "draft": {
+      "type": "object", "required": ["sections", "claims", "citations", "coverage_gaps"],
+      "properties": {"sections": {"type": "array", "items": {"type": "object"}}, "claims": {"type": "array", "items": {"type": "object"}}, "citations": {"type": "array", "items": {"$ref": "#/$defs/citation"}}, "coverage_gaps": {"type": "array", "items": {"type": "object"}}},
+      "additionalProperties": true
+    },
+    "envelope": {
+      "type": "object", "required": ["run_id", "task", "evidence", "profile", "limits"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "task": {"type": "object", "required": ["task_id", "task_version", "role", "task_type", "payload", "output_schema"], "properties": {"task_id": {"type": "string", "minLength": 1}, "task_version": {"type": "integer", "minimum": 1}, "role": {"type": "string", "minLength": 1}, "task_type": {"type": "string", "minLength": 1}, "payload": {"type": "object"}, "output_schema": {"type": "object"}}, "additionalProperties": true},
+        "evidence": {"type": "array", "items": {"type": "object", "required": ["evidence_id", "document_id", "version_id", "text", "locator"], "properties": {"evidence_id": {"type": "string"}, "document_id": {"type": "string"}, "version_id": {"type": "string"}, "parse_revision_id": {"type": ["string", "null"]}, "legacy": {"type": "boolean"}, "text": {"type": "string"}, "locator": {"type": "object"}}, "additionalProperties": true}},
+        "profile": {"type": "object", "properties": {"engine": {"type": "string"}, "version": {"type": "string"}, "runtime_python": {"type": "string"}, "enabled": {"type": "boolean"}, "max_output_tokens": {"type": "integer", "minimum": 1}, "max_tokens": {"type": "integer", "minimum": 1}, "settings": {"type": "object"}}, "additionalProperties": false},
+        "limits": {"type": "object", "required": ["max_rpc_requests", "max_output_bytes"], "properties": {"max_rpc_requests": {"type": "integer", "minimum": 0}, "max_output_bytes": {"type": "integer", "minimum": 1}, "timeout_seconds": {"type": "number", "exclusiveMinimum": 0}}, "additionalProperties": true}
+      },
+      "additionalProperties": true
+    }
+  }
+}

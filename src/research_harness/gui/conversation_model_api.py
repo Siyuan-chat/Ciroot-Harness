@@ -9,6 +9,7 @@ import requests
 from research_harness.investigation import InvestigationError
 from research_harness.investigation_model_api import _ENDPOINTS, _decode
 from research_harness.investigation_contracts import validate_runtime, validate_spec
+from research_harness.provider_profiles import validate_profile
 from research_harness.gui.help import SYSTEM_PROMPT
 
 
@@ -25,7 +26,7 @@ def validate_api_config(config: dict) -> dict:
     required = {"provider", "model", "max_planning_calls", "max_output_tokens", "timeout_seconds", "total_model_calls", "runtime_template"}
     if not isinstance(config, dict) or set(config) != required:
         raise InvestigationError("RH_GUI_API_CONFIG", "API conversation configuration is incomplete")
-    if config["provider"] not in _ENDPOINTS or not isinstance(config["model"], str) or not config["model"].strip():
+    if config["provider"] not in {*_ENDPOINTS, "openai_compatible"} or not isinstance(config["model"], str) or not config["model"].strip():
         raise InvestigationError("RH_GUI_API_CONFIG", "API conversation provider or model is unsupported")
     for name in ("max_planning_calls", "max_output_tokens", "timeout_seconds", "total_model_calls"):
         if type(config[name]) is not int or config[name] < 1:
@@ -38,6 +39,7 @@ def validate_api_config(config: dict) -> dict:
     model_api = template.get("model_api", {})
     if model_api.get("provider") != config["provider"] or model_api.get("model") != config["model"]:
         raise InvestigationError("RH_GUI_API_CONFIG", "runtime template provider and model must match the conversation")
+    validate_profile(model_api)
     if template.get("budget", {}).get("max_model_calls") != config["total_model_calls"]:
         raise InvestigationError("RH_GUI_API_CONFIG", "runtime template must use the selected total model-call limit")
     validate_runtime(template)
@@ -69,14 +71,19 @@ def controlled_runtime(candidate: dict, config: dict, planning_calls: int) -> di
 def plan(config: dict, content: str, *, post=requests.post) -> tuple[dict, dict, dict]:
     """Make one structured planning request after persistence has reserved its budget."""
     provider = config["provider"]
-    key = config["api_key"]
-    if not isinstance(key, str) or not key:
+    key = config.get("api_key", "")
+    profile = config.get("runtime_template", {}).get("model_api", {}).get("profile")
+    profile_config = {"provider": provider, "model": config["model"], "endpoint": config.get("endpoint") or config.get("runtime_template", {}).get("model_api", {}).get("endpoint"), "profile": profile}
+    if key and profile != "local": profile_config["api_key_env"] = "SESSION_API_KEY"
+    local = validate_profile(profile_config)["local"]
+    if not local and (not isinstance(key, str) or not key):
         raise InvestigationError("RH_MODEL_KEY_MISSING", "configured model API credential is missing")
     instruction = SYSTEM_PROMPT + "\nReturn exactly one JSON object: either research_spec and runtime for a research plan, or help_answer with content and source_ids for a product-use answer. A help_answer may cite only supplied help_context source_ids and must not propose execution. Treat dynamic_context as read-only server facts: use it to answer questions about the current scope, status, usage, remaining calls, and authorization. If an answer relies on dynamic_context, use an empty source_ids list; help passages are not evidence for current session facts. Never infer credentials or claim that a pending action is authorized; asking a question does not change scope, budget, or execute anything."
     payload = {"user_message": content, "output_schema": PLANNING_SCHEMA,
                "authorized_runtime": config["runtime_template"], "help_context": config.get("help_context", []),
                "conversation_history": config.get("conversation_history", []),
                "dynamic_context": config.get("dynamic_context", {})}
+    endpoint = config.get("endpoint") or config.get("runtime_template", {}).get("model_api", {}).get("endpoint") or _ENDPOINTS.get(provider)
     if provider == "anthropic":
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         body = {"model": config["model"], "max_tokens": config["max_output_tokens"], "system": instruction,
@@ -84,13 +91,13 @@ def plan(config: dict, content: str, *, post=requests.post) -> tuple[dict, dict,
                 "tools": [{"name": "submit_result", "description": "Return the conversation plan", "input_schema": PLANNING_SCHEMA}],
                 "tool_choice": {"type": "tool", "name": "submit_result"}}
     else:
-        headers = {"authorization": "Bearer " + key, "content-type": "application/json"}
+        headers = ({"authorization": "Bearer " + key} if key else {}) | {"content-type": "application/json"}
         body = {"model": config["model"], "messages": [{"role": "system", "content": instruction},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
                 **({"response_format": {"type": "json_object"}} if provider != "kimi" else {}),
                 ("max_completion_tokens" if provider == "openai" else "max_tokens"): config["max_output_tokens"]}
     try:
-        response = post(_ENDPOINTS[provider], headers=headers, json=body, timeout=config["timeout_seconds"], allow_redirects=False)
+        response = post(endpoint, headers=headers, json=body, timeout=config["timeout_seconds"], allow_redirects=False)
         if response.status_code != 200:
             raise InvestigationError("RH_MODEL_HTTP", f"model provider returned HTTP {response.status_code}")
         result, usage = _decode(provider, response)

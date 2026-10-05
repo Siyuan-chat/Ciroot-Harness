@@ -1,0 +1,98 @@
+{
+  "engine": "rag",
+  "run_id": "synthetic-rag",
+  "frozen_result": true,
+  "run_mode": "offline_synthetic",
+  "synthetic_only": true,
+  "comparison": {
+    "corpus_digest": "sha256:b194e3f17f09bb7bca34ffe2832184eff9a37b87b4283746e81f8d899cd903a5",
+    "question_digest": "sha256:6ef1436cb2ef9c832ff59eb1d88526b56f901130c8900de304cb8500bff061c7",
+    "model": {
+      "provider": "synthetic",
+      "model": "none",
+      "version": "fixture-v1"
+    },
+    "budget": {
+      "max_model_calls": 0,
+      "max_embedding_calls": 0,
+      "max_downloads": 0
+    }
+  },
+  "claims": [
+    {
+      "claim_id": "rag-claim-1",
+      "text": "The synthetic fixture reports 12 MPa."
+    }
+  ],
+  "citations": [
+    {
+      "citation_id": "rag-citation-1",
+      "claim_id": "rag-claim-1",
+      "evidence_id": "syn-ev-01",
+      "document_id": "syn-doc-01",
+      "version_id": "syn-v1",
+      "parse_revision_id": "syn-parse-1",
+      "locator": "page:1/paragraph:1",
+      "quote": "Synthetic membrane reached 12 MPa"
+    }
+  ],
+  "coverage": {
+    "dimensions": [
+      {
+        "dimension_id": "value_extraction",
+        "status": "covered"
+      },
+      {
+        "dimension_id": "condition_context",
+        "status": "partial"
+      }
+    ],
+    "gaps": [
+      {
+        "dimension_id": "source_coverage",
+        "reason": "synthetic fixture contains one passage"
+      }
+    ]
+  },
+  "source_outcomes": [
+    {
+      "source": "synthetic-rag",
+      "status": "success_with_results"
+    },
+    {
+      "source": "synthetic-empty",
+      "status": "success_empty"
+    },
+    {
+      "source": "synthetic-unavailable",
+      "status": "failure"
+    }
+  ],
+  "trace": {
+    "calls": [
+      {
+        "kind": "retrieval",
+        "dispatch": "synthetic",
+        "outcome": "accepted"
+      },
+      {
+        "kind": "model",
+        "dispatch": "cache_hit",
+        "outcome": "accepted"
+      }
+    ]
+  },
+  "recovery_checks": [
+    {
+      "check_id": "rag-reopen-demo",
+      "check_type": "reopen",
+      "record_origin": "synthetic_fixture",
+      "core_ledger_ref": "fixture-only-not-core-ledger",
+      "expected_state": "completed",
+      "observed_state": "completed",
+      "reserved_calls_before": 0,
+      "reserved_calls_after": 0,
+      "measured_ms": 1.0
+    }
+  ]
+}

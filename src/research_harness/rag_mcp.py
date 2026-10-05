@@ -34,8 +34,9 @@ SERVER_INSTRUCTIONS = (
     "from the user's request, while retaining the original question for the answer. Do not use a hard-coded translation table or guess facts or numbers. "
     "When a paper title is complete and uniquely identified, use DOI or document filters and do not put the title into a topical query. "
     "Find direct evidence first, then use context for surrounding support. Direct Chinese/Japanese cross-language vector retrieval is not validated here and must not be claimed as passed. "
-    "search_evidence filters are document_ids, version_ids, doi, year_min, year_max, and types; filters combine with AND. "
-    "Evidence locators use physical PDF page numbers. get_evidence_context reads neighboring chunks from the same document version. "
+    "search_evidence filters are document_ids, version_ids, revision_ids, doi, year_min, year_max, and types; filters combine with AND. "
+    "Evidence locators use physical PDF page numbers. Every evidence result identifies its parse_revision_id; re-parsing the same source creates new evidence IDs while preserving old evidence. "
+    "Search defaults to the current parse revision for each selected source version; use revision_ids to inspect an older parse revision. get_evidence_context reads neighbors only from the same document version and parse revision. "
     "A review article's statement is a review retelling, not automatically primary experimental evidence."
 )
 
@@ -128,7 +129,7 @@ def create_mcp_server(rag: RagMCPServer) -> Any:
     async def search_evidence(query: str, top_k: int = 8, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         return rag.search_evidence(query, top_k=top_k, filters=filters)
 
-    @mcp.tool(name="get_evidence_context", description="Read neighboring evidence from the same document version.", annotations=ToolAnnotations(readOnlyHint=True))
+    @mcp.tool(name="get_evidence_context", description="Read neighboring evidence from the same document version and parse revision.", annotations=ToolAnnotations(readOnlyHint=True))
     async def get_evidence_context(evidence_id: str, before: int = 1, after: int = 1) -> dict[str, Any]:
         return rag.get_evidence_context(evidence_id, before=before, after=after)
 

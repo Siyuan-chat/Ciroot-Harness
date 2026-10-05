@@ -1,6 +1,26 @@
-> Current integrated design: [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md), D19 v1.0, 2026-09-10. This file preserves accepted legacy contracts and proposed extensions. D19 contracts are design requirements, not yet implemented schema guarantees; accepted D2/D18 behavior remains protected.
+> 当前执行入口：[INTEGRATION_STAGE.md](INTEGRATION_STAGE.md)（2026-10-05，用户批准 S0–S6 实施）。下文历史阶段的“仅设计/不实现 GUI”等表述保留其历史范围，不限制本轮；实际通过状态按本轮固定候选记录。
+
+> Current integrated design: [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md), D19 v1.0, 2026-09-10. The local GUI projection is specified separately in [GUI_API_CONTRACT.md](GUI_API_CONTRACT.md). This file preserves accepted legacy contracts and proposed extensions. D19 contracts are design requirements, not yet implemented schema guarantees; accepted D2/D18 behavior remains protected.
 
 > D19 v0.2 proposed extension (2026-09-10; not implemented): see [Investigation plan, section 13](INVESTIGATION_EXPERIMENT_PLAN.md#13-双出口与产品内多-agent-工作流v02) for report_spec, role-scoped ModelTask, supported synthesis claims, section-to-evidence mapping, dual deliverables and immutable report versions. Extend existing domain objects; preserve accepted D2 behavior. These proposed fields are not yet executable schema guarantees.
+
+## S1 report-block-v1（2026-10-05）
+
+源 `version_id` 按文档身份和源字节哈希固定；`parse_revision_id` 独立绑定解析/分块配置与输出哈希。同一源的重解析追加新证据，旧证据 ID、文本、locator 与源文件不覆盖。默认检索使用当前源及其当前修订；显式 `revision_ids` 可访问旧修订，邻文窗口不能跨修订。重解析历史源不切换文档当前源版本。只读旧库不迁移，缺少修订表时从既有解析和证据推导 legacy 修订身份。
+
+S1 首版报告使用 `report_contract=report-block-v1`，冻结报告保留该契约。读者正文由独立核验器接受且满足原文绑定检查的 claim 投影生成；自由正文与自由标题保存在 `raw_model_output`，不直接进入正式章节。章节标题为固定本地化标签。定位、连续引句匹配、finding 绑定和独立核验接受状态分别记录，引句匹配不能代表语义支持。
+
+若证据含 `parse_revision_id`，新 claim 必须匹配该修订，调查任务与导出均检查；历史未携带此字段的证据继续保留原契约，不补造修订通过记录。冻结任务保存实际证据与修订，不因库重解析重新检索。
+
+模型调用收据保存应用层 prepared request、prompt/template 哈希、运行/任务版本、profile、输入 refs、检索选择或明确空值、预算与授权结果，响应在解码前保存。原子领取与状态转移防重复派发；已发送但结果未知的调用保留额度与未决状态，不自动重发。密钥不写收据。收据不声称代表供应商内部输入；缓存与网络执行分别记录的引擎扩展尚待 S2 实现。
+
+导出重新验证原始核验输入、claim、块及章节绑定；篡改后的正文不能直接导出。语言提示是启发式；未接受的翻译或被截出的草稿以问题记录使报告为 `partial`，而流程 `stage=completed` 可同时成立。无新版标记的历史报告继续按旧契约读取，不追溯声称满足新版门槛。
+
+### report-block-v2 扩展
+
+新投影使用 `report_contract_version=report-block-v2`，四类块为 `fact`、`explanation`、`method`、`gap`。前三类文本均从独立接受的 claim 组织；改分类不能绕过事实门槛。`gap` 仅由冻结 coverage 状态和受限问题代码投影，不复制模型自由缺口正文。导出重算原始核验输入及块绑定。v1 冻结报告继续只读兼容，不改写为 v2。
+
+写作任务新增可选 `section_kind`／`block_kind`，只允许前三类；用户或模型不能提交 `gap` 来绕过核查。分类入口由当前核心候选整合；投影组件已独立通过 36 项，服务完整入口仍随核心固定候选验收。
 
 # Data and application contracts — D1
 
@@ -222,3 +242,11 @@ max_estimated_cost_usd applies to generation-model cost estimates using configur
 ## D17 开放采集契约（2026-09-10）
 
 `search(config)` 返回 records、search_status、queries（请求范围、分页状态、失败和截断）。`download(manifest, output, limit=...)` 返回 outcome、valid_pdf_count、received_bytes、逐文献记录和产物。CLI 和未来 AI 工具复用函数。数据源 key 从环境读取，与 LLM key 分离；日志和配置不保存秘密。record 保留 title、doi、year、authors、type、locations 以及宿主筛选理由，案例可指定 expected_min_pages。许可和版本按实际下载位置记录；身份匹配/可解析不等于正文完整，发现预览或页数不足进入 review。具体字段见 [OA_COLLECTION](OA_COLLECTION.md)，本契约不改变旧 ReportData。
+
+## S2 可选研究进程协议
+
+`research-engine-jsonl/1` 的监督器使用配置的绝对 Python 路径与 argv 启动，不使用 shell。任务身份由 run_id、task_id、task_version 三项绑定；每个 RPC request_id 唯一，只允许 model_call、embedding 和 retrieve_frozen。父进程回传结果与核心 call ID；工作进程不持有供应商凭据或调查数据库路径。行大小、总输出、调用数和期限有界；终态后迟到消息、重复请求、非法 JSON、EOF 与非零退出分别作为失败记录，不能自动重新启动。
+
+引用解析要求唯一冻结 evidence_id，且 document/version/parse revision/locator 与冻结输入相等；连续引句存在多个位置时进入复核。无解析修订的旧证据必须显式标 legacy，不能用缺失字段冒充新修订。外部章节与主张仍为 draft，引用通过只证明定位关系，下游语义核查与报告门槛继续适用。
+
+JSONL 和 Python 审计钩子属于应用层约束；本机子进程不能被称为对恶意可执行文件的操作系统沙箱。只有受控、锁定的工作进程可以启用。容器的网络隔离另行记录实际宿主验收。实际研究进程验收与合成协议测试分别留存，不以协议测试代替库内部行为检查。

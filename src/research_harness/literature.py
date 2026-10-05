@@ -186,6 +186,37 @@ def _close(response: Any) -> None:
         close()
 
 
+def _read_search_payload(response: Any, maximum: int) -> tuple[Any, int]:
+    """Read one search response under an explicit byte ceiling.
+
+    Test doubles may expose only ``json()``; production requests responses are
+    streamed and measured from the received bytes before JSON decoding.
+    """
+    headers = getattr(response, "headers", {}) or {}
+    length = headers.get("Content-Length") if isinstance(headers, Mapping) else None
+    try:
+        if length is not None and int(length) > maximum:
+            raise LiteratureError("response_too_large", "search response exceeds its byte limit")
+    except (TypeError, ValueError):
+        pass
+    iterator = getattr(response, "iter_content", None)
+    if callable(iterator):
+        chunks=[]; size=0
+        for chunk in iterator(65536):
+            if not chunk: continue
+            size += len(chunk)
+            if size > maximum:
+                raise LiteratureError("response_too_large", "search response exceeds its byte limit")
+            chunks.append(chunk)
+        raw=b"".join(chunks)
+        if not raw and callable(getattr(response,"json",None)):
+            payload=response.json()
+            return payload,len(json.dumps(payload,ensure_ascii=False,separators=(",",":")).encode("utf-8"))
+        return json.loads(raw.decode("utf-8")), size
+    payload = response.json()
+    return payload, len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
 def search(config: Mapping[str, Any], *, session: Any = None, on_attempt: Any = None, max_retries: int = MAX_RETRIES) -> dict[str, Any]:
     """Search OpenAlex with bounded cursor pagination and save raw candidates."""
     if type(max_retries) is not int or max_retries < 0: raise LiteratureError("invalid_input", "max_retries must be a non-negative integer")
@@ -204,6 +235,9 @@ def search(config: Mapping[str, Any], *, session: Any = None, on_attempt: Any = 
     indexes: dict[str, int] = {}
     query_status: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
+    max_response_bytes = config.get("max_response_bytes", 5 * 1024 * 1024)
+    if type(max_response_bytes) is not int or max_response_bytes < 1:
+        raise LiteratureError("invalid_input", "max_response_bytes must be positive")
     for query in queries:
         start_cursor = start_cursors.get(query)
         if len(records) >= max_candidates:
@@ -221,11 +255,15 @@ def search(config: Mapping[str, Any], *, session: Any = None, on_attempt: Any = 
             params = {"search": query, "filter": ",".join(filters), "sort": sort, "cursor": cursor, "per-page": min(page_size or 100, max_candidates - len(records))}
             response = None
             for attempt in range(max_retries + 1):
+                receipt = {"phase":"prepared", "kind":"search", "query":query, "cursor":cursor,
+                    "attempt":attempt+1, "method":"GET", "url":OPENALEX_URL, "params":dict(params),
+                    "header_names":sorted(headers), "max_response_bytes":max_response_bytes}
                 if on_attempt is not None:
-                    on_attempt({"kind": "search", "query": query, "cursor": cursor, "attempt": attempt + 1})
+                    on_attempt(receipt)
                 try:
-                    response = client.get(OPENALEX_URL, params=params, headers=headers, timeout=(5, timeout_seconds), allow_redirects=False)
+                    response = client.get(OPENALEX_URL, params=params, headers=headers, timeout=(5, timeout_seconds), allow_redirects=False, stream=True)
                 except requests.RequestException:
+                    if on_attempt is not None: on_attempt({**receipt, "phase":"outcome_unknown"})
                     if attempt == max_retries:
                         failures.append({"query": query, "code": "network_error"})
                         state = "failed"
@@ -233,6 +271,27 @@ def search(config: Mapping[str, Any], *, session: Any = None, on_attempt: Any = 
                         time.sleep(0.25)
                     continue
                 status = getattr(response, "status_code", 0)
+                try:
+                    payload, received_bytes = _read_search_payload(response, max_response_bytes)
+                    if on_attempt is not None: on_attempt({**receipt, "phase":"received", "status_code":status, "response_bytes":received_bytes})
+                except requests.RequestException:
+                    if on_attempt is not None: on_attempt({**receipt, "phase":"outcome_unknown"})
+                    _close(response)
+                    failures.append({"query": query, "code": "network_error"})
+                    state = "failed"
+                    break
+                except LiteratureError:
+                    if on_attempt is not None: on_attempt({**receipt, "phase":"response_rejected", "status_code":status, "response_bytes":max_response_bytes})
+                    _close(response)
+                    failures.append({"query": query, "code": "response_too_large"})
+                    state = "failed"
+                    break
+                except (ValueError, AttributeError, requests.JSONDecodeError):
+                    if on_attempt is not None: on_attempt({**receipt, "phase":"response_rejected", "status_code":status, "response_bytes":0})
+                    _close(response)
+                    failures.append({"query": query, "code": "invalid_response"})
+                    state = "failed"
+                    break
                 if status in (401, 403):
                     _close(response)
                     failures.append({"query": query, "code": "authentication_failed"})
@@ -256,7 +315,6 @@ def search(config: Mapping[str, Any], *, session: Any = None, on_attempt: Any = 
             if response is None or state == "failed":
                 break
             try:
-                payload = response.json()
                 results = payload.get("results")
                 meta = payload.get("meta")
                 if not isinstance(results, list) or not isinstance(meta, dict):

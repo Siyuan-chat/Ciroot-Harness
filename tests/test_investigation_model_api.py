@@ -71,11 +71,15 @@ def test_api_runner_completes_synthetic_chain_and_reopens_without_new_calls(tmp_
         first = service.get_pending_tasks(run)[0]
         with pytest.raises(InvestigationError):
             service.reserve_model_call(run, first["task_id"], first["task_version"] + 1)
-        assert advance_api_run(service, run, post=fake_post)["status"] == "completed"
+        result = advance_api_run(service, run, post=fake_post)
+        assert result["status"] == "partial" and result["stage"] == "completed"
         assert service.get_artifacts(run)
         used = service.status(run)["budget"]["reserved_model_calls"]
+        assert used == len(calls) == 8
+        assert all(row[0] == "accepted" for row in service.db.execute("SELECT status FROM model_api_calls"))
+        assert {issue["code"] for issue in service.get_result(run)["issues"]} >= {"RH_SECTION_DRAFT", "RH_SECTION_TITLE_DRAFT"}
     with InvestigationService(tmp_path) as service:
-        assert advance_api_run(service, run, post=fake_post)["status"] == "completed"
+        assert advance_api_run(service, run, post=fake_post)["status"] == "partial"
         assert service.status(run)["budget"]["reserved_model_calls"] == used == len(calls)
 
 

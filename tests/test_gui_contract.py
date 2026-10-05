@@ -184,9 +184,10 @@ def test_http_synthetic_flow_export_restart_without_network(tmp_path, monkeypatc
                 assert response.status_code == 200, response.text
             advanced = client.post(f"/api/v1/runs/{run_id}/advance",json={},headers={**headers,"idempotency-key":f"advance-{step}"})
             assert advanced.status_code == 200, advanced.text
-        assert state["status"] == "completed", state
+        assert state["status"] == "partial" and state["stage"] == "completed", state
         result = client.get(f"/api/v1/runs/{run_id}/result").json()["result"]
         assert result["synthetic"] is True
+        assert {issue["code"] for issue in result["issues"]} >= {"RH_SECTION_DRAFT", "RH_SECTION_TITLE_DRAFT"}
         report = client.get(f"/api/v1/runs/{run_id}/report-data").json()["report_data"]
         assert {item["deliverable_type"] for item in report["sections"]} == {"technical_report","literature_review"}
         export = client.post(f"/api/v1/runs/{run_id}/export",json={},headers={**headers,"idempotency-key":"export"})
@@ -196,7 +197,8 @@ def test_http_synthetic_flow_export_restart_without_network(tmp_path, monkeypatc
         assert all(item["name"] for item in artifacts)
         assert client.get(f"/api/v1/artifacts/{artifacts[0]['artifact_id']}").status_code == 200
     with TestClient(create_app(tmp_path,token="new"),base_url="http://127.0.0.1") as client:
-        assert client.get(f"/api/v1/runs/{run_id}").json()["status"] == "completed"
+        restored = client.get(f"/api/v1/runs/{run_id}").json()
+        assert restored["status"] == "partial" and restored["stage"] == "completed"
         assert client.get(f"/api/v1/runs/{run_id}/report-data").json()["report_data"]["synthetic"] is True
         assert client.get(f"/api/v1/runs/{run_id}/artifacts").json()["items"]
 

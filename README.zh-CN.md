@@ -4,6 +4,8 @@
 
 <h1 align="center">CirootHarness</h1>
 
+S0–S6 整合正在按离线候选推进。研究引擎、多地区专利来源和部署见 [整合指南](docs/INTEGRATION_GUIDE.zh-CN.md)、[当前验收状态](docs/INTEGRATION_STAGE.md) 和 [待激活清单](docs/INTEGRATION_ACTIVATION.md)。组件测试通过不代表真实 API 或科学效果已经验收。
+
 <p align="center">
   <strong>面向专利与科学文献的可审计 AI 调查框架。</strong><br>
   把研究问题转换为版本化、证据可追溯、可人工复核的调查报告。
@@ -54,7 +56,7 @@ CirootHarness 目前仍是持续开发中的公开预览版，不是已经完成
 | Windows 桌面预览版 | 已提供 portable prerelease；原生 WebView2 交互尚未完整验收 |
 | 本地工作区与文献库 | 可创建 workspace/library；导入可提取文字的 PDF 和 UTF-8 TXT |
 | 本地基础文本检索 | 桌面预览版可用 |
-| 离线调查 Demo | 使用确定性合成来源；运行 LangGraph、SQLite、引用检查 |
+| 离线调查 Demo | 基于真实 InvestigationService 的确定性合成 [Golden Demo](docs/GOLDEN_DEMO.md)；离线运行、不需要 API key，预期状态为 `partial`。 |
 | 多语言报告 | fixture 流程支持中、英、日输出 |
 | 本地 RAG | Docling/FastEmbed/Qdrant 路径已有验收记录 |
 | OA 文献采集 | OpenAlex 检索与 OA PDF 采集模块 |
@@ -78,28 +80,51 @@ ResearchHarnessGUI.exe
 
 发布包不附带作者本机的私有文献、模型缓存或 API 密钥。首次启动可以创建工作区和文献库，导入可提取文字的 PDF / UTF-8 TXT，并进行本地基础文本检索。当前 GUI 边界见 [中文图形界面使用说明](docs/GUI_QUICKSTART.zh-CN.md)。
 
+发布包页面的有界首次发送检查已通过，原生 WebView2 交互仍未验证。
+
+<a id="运行离线-demo"></a>
+
 ### 2. 运行离线 Demo
 
-需要 Python 3.11+。
+**Public Golden Demo**
+
+需要 Python 3.11+。安装依赖可能需要网络，Demo 执行本身离线。
+
+**Windows**
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install .
-.venv\Scripts\rh demo --workspace .local\demo
-.venv\Scripts\rh status --workspace .local\demo
+.venv\Scripts\python -m pip install ".[investigation]"
+.venv\Scripts\rh investigate --workspace .local/golden-demo golden-demo
 ```
 
-macOS / Linux 使用 `.venv/bin/python` 与 `.venv/bin/rh`。
+**macOS / Linux**
 
-Demo 本身离线运行、不需要 API key。它会生成合成候选、已核查 findings、人工复核问题、HTML/Markdown 报告、规范 JSON 和 review CSV。
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install ".[investigation]"
+.venv/bin/rh investigate --workspace .local/golden-demo golden-demo
+```
 
-**合成 Demo 数据与真实科学证据始终明确分开。**
+通过真实 InvestigationService 运行固定的确定性合成调查场景，不需要 API key，也不需要网络访问。
+
+Golden Demo 故意包含一份格式异常的合成 XML 文档，因此预期结果是 `partial`，而不是 `completed`。
+
+它冻结 ResearchSpec，记录来源与查询尝试，生成带证据的已核查主张和未解决的规范化问题，并导出技术调查报告与文献综述。持久结果和重开方法见 [Golden Demo 指南](docs/GOLDEN_DEMO.md)。
+
+旧 `rh demo` 保留为框架测试夹具演示，见 [用户指南](docs/USER_GUIDE.zh-CN.md)。
+
+合成 Demo 数据与真实科学证据始终明确分开，不代表真实来源调查验收。
 
 ## 架构
 
+下图用于快速理解 CirootHarness 的公开产品架构。详细工程设计和各阶段验收边界仍以对应技术文档为准。
+
 目标系统从研究问题开始，经过规格化、检索、证据提取、核查、人工复核与报告生成。
 
-![CirootHarness architecture](docs/diagrams/harness-overview.png)
+![CirootHarness 架构](docs/diagrams/cirootharness-architecture.zh-CN.png)
+
+[查看完整 PNG](docs/diagrams/cirootharness-architecture.zh-CN.png) · [可编辑 SVG](docs/diagrams/cirootharness-architecture.zh-CN.svg)
 
 这张图描述的是**整体设计**。已经实现／已经验收的范围单独维护，避免把规划组件误写成现有能力。
 
@@ -163,6 +188,7 @@ API key、私有原文、运行工作区和模型缓存应保持在 Git 仓库�
 
 ## 文档入口
 
+- [Golden Demo](docs/GOLDEN_DEMO.md)
 - [工程状态](docs/DEVELOPMENT_STATUS.md)
 - [整体设计](docs/SYSTEM_DESIGN.md)
 - [架构](docs/ARCHITECTURE.md)

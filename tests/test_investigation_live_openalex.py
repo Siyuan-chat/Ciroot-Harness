@@ -10,7 +10,8 @@ from research_harness.investigation_sources import SourceError
 
 def _runtime():
     return {"mode": "host", "data_mode": "live", "allow_network": True,
-            "budget": {"max_tasks": 8, "max_source_calls": 4, "max_pages_per_query": 2,
+            "budget": {"max_tasks": 8, "max_source_calls": 4, "max_source_bytes": 65536,
+                       "max_source_response_bytes": 32768, "max_pages_per_query": 2,
                        "max_downloads": 1, "max_download_calls": 2, "max_download_bytes": 1024},
             "sources": {"openalex": {"anonymous": True, "year_min": 2020,
                                          "sort": "relevance_score:desc", "page_size": 5,
@@ -83,6 +84,28 @@ def test_live_pending_page_is_not_resent(monkeypatch, tmp_path):
         assert result[1:] == ("partial", "uncertain prior source call") and not calls
 
 
+def test_real_transport_timeout_is_unknown_and_not_resent(monkeypatch, tmp_path):
+    calls=[]
+    class Session:
+        def get(self,*args,**kwargs):
+            calls.append(kwargs)
+            raise literature.requests.Timeout("synthetic timeout")
+    import research_harness.investigation_sources as sources
+    monkeypatch.setattr(sources.literature.requests,"Session",Session)
+    runtime=_runtime()
+    with InvestigationService(tmp_path) as service:
+        run=service.create_investigation(_spec(),runtime,{"reference_evidence":[]})["run_id"]
+        first=service._search_live_pages(run,"q-timeout","query",runtime)
+        second=service._search_live_pages(run,"q-timeout","query",runtime)
+        row=service.db.execute("SELECT status,result FROM source_attempts WHERE run_id=?",(run,)).fetchone()
+        assert first[1]=="partial" and second[1:]==("partial","uncertain prior source call")
+        assert len(calls)==1 and row["status"]=="outcome_unknown"
+        receipt=json.loads(row["result"])
+        assert receipt["request_receipt_status"]=="recorded" and receipt["outcome"]=="unknown"
+        budget=service.status(run)["budget"]
+        assert budget["reserved_source_calls"]==1 and budget["reserved_source_bytes"]==runtime["budget"]["max_source_response_bytes"]
+
+
 def test_live_http_budget_counts_failed_attempts(monkeypatch, tmp_path):
     calls = []
     class FakeTransport:
@@ -115,7 +138,9 @@ def test_live_collector_retries_rate_limited_http_then_persists_page(monkeypatch
         assert service._search_live_pages(run, "q1", "query", _runtime())[1] == "complete"
         assert sleeps == [2.0]
         rows=list(service.db.execute("SELECT status,result FROM source_attempts WHERE run_id=? ORDER BY attempt",(run,)))
-        assert [row["status"] for row in rows] == ["RH_SOURCE_SOURCE_UNAVAILABLE", "success"]
+        assert [row["status"] for row in rows] == ["RH_SOURCE_HTTP_429", "success"]
+        first_receipt=json.loads(rows[0]["result"])
+        assert first_receipt["request_receipt_status"] == "recorded" and first_receipt["http_status"] == 429
         assert json.loads(rows[-1]["result"])["candidates"][0]["doi"] == "10.1/x"
 
 
@@ -204,6 +229,32 @@ def test_service_download_403_is_a_failed_http_attempt(monkeypatch, tmp_path):
         service._acquire_live_documents(run,runtime,{"W1"})
         status=service.db.execute("SELECT status FROM source_attempts WHERE run_id=? AND query_id='download'",(run,)).fetchone()["status"]
         assert status == "RH_SOURCE_HTTP_403"
+
+
+def test_service_download_success_records_prepared_physical_call_and_shared_bytes(monkeypatch,tmp_path):
+    body=b"%PDF-synthetic-offline-body"
+    class Response:
+        status_code=200;headers={"Content-Type":"application/pdf"}
+        def iter_content(self,chunk_size=65536):yield body
+        def close(self):pass
+    calls=[]
+    class Session:
+        def get(self,url,**kwargs):calls.append((url,kwargs));return Response()
+    monkeypatch.setattr(literature.requests,"Session",Session)
+    monkeypatch.setattr(literature,"_safe_url",lambda value:value)
+    monkeypatch.setattr(literature,"_pdf_check",lambda data,record:(1,True,False))
+    with InvestigationService(tmp_path) as service:
+        runtime=_runtime();run=service.create_investigation(_spec(),runtime,{"reference_evidence":[]})["run_id"]
+        document={"document_id":"W1","version":"openalex-metadata","source":"openalex",**_record("10.1/first","https://files.example/first.pdf")}
+        service.db.execute("INSERT INTO discovery_documents VALUES (?,?,?)",(run,"W1",json.dumps(document)));service.db.commit()
+        service._acquire_live_documents(run,runtime,{"W1"})
+        row=service.db.execute("SELECT status,result FROM source_attempts WHERE run_id=? AND query_id='download'",(run,)).fetchone()
+        assert len(calls)==1 and row["status"]=="success"
+        receipt=json.loads(row["result"])
+        assert receipt["request_receipt_status"]=="recorded" and receipt["received_bytes"]==len(body)
+        budget=service.status(run)["budget"]
+        assert budget["reserved_source_calls"]==1 and budget["received_source_bytes"]==len(body)
+        assert budget["received_download_bytes"]==len(body) and budget["reserved_source_bytes"]==0
 
 
 def test_screen_order_is_preserved_at_live_download_boundary(monkeypatch, tmp_path):

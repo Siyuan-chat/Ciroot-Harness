@@ -51,8 +51,11 @@ class OpenAlexTransport:
                 "sort": config.get("sort", "relevance_score:desc"),
                 "anonymous": bool(config.get("anonymous")), "api_key_env": config.get("api_key_env", "OPENALEX_API_KEY"),
                 "timeout_seconds": config.get("timeout_seconds", 30),
+                "max_response_bytes": self.runtime.get("budget", {}).get("max_source_response_bytes", 0),
                 "start_cursors": {query_id: cursor} if cursor else {},
             }, session=self.session, on_attempt=self.on_attempt, max_retries=0)
+        except SourceError:
+            raise
         except literature.LiteratureError as error:
             raise SourceError("RH_SOURCE_" + error.code.upper(), "OpenAlex request failed") from error
         state = result["queries"][0]
@@ -118,7 +121,7 @@ def normalize(document):
 
 def _evidence(document,text,locator,blob):
     version=str(document.get("version","synthetic-v1")); identity=json.dumps([document["document_id"],version,locator,text],ensure_ascii=False,sort_keys=True,separators=(",",":"))
-    return {"evidence_id":"ev-"+hashlib.sha256(identity.encode()).hexdigest()[:12],"document_id":document["document_id"],"version_id":version,"text":text,"quote":text,"locator":locator,"content_type":document.get("content_type","text/plain"),"content_sha256":hashlib.sha256(blob if blob is not None else text.encode()).hexdigest()}
+    return {"evidence_id":"ev-"+hashlib.sha256(identity.encode()).hexdigest()[:12],"document_id":document["document_id"],"version_id":version,"text":text,"quote":text,"locator":locator,"content_type":document.get("content_type","text/plain"),"content_sha256":hashlib.sha256(blob if blob is not None else text.encode()).hexdigest(),**({"legacy_unversioned":True} if document.get("legacy_unversioned") is True else {})}
 
 def baseline_snapshot(references, runtime):
     """Freeze only policy-authorized synthetic references before planning."""

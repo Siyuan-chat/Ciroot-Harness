@@ -18,3 +18,7 @@ rh investigate --workspace .local/golden-demo report RUN_ID --languages en
 ```
 
 The first command reads the stored result; the second regenerates exports from frozen ReportData. The demo proves deterministic service orchestration and export behavior. It is not a scientific result or a live-source/model acceptance.
+
+## GUI entry
+
+Current source builds expose **Try Offline Demo** using the same canonical service path. See the [GUI Golden Demo guide](GUI_GOLDEN_DEMO.md) for startup, result/evidence/review navigation and the published-ZIP boundary. The existing desktop preview release does not acquire this feature automatically.

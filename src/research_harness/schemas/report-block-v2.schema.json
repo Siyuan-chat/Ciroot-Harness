@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-harness.local/schemas/report-block-v2.schema.json",
+  "title": "Research Harness ReportBlock v2",
+  "type": "object",
+  "required": ["report_contract_version", "sections"],
+  "properties": {
+    "report_contract_version": {"const": "report-block-v2"},
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["deliverable_type", "language", "section_id", "title", "body", "claim_ids", "blocks"],
+        "properties": {
+          "deliverable_type": {"type": "string"},
+          "language": {"type": "string"},
+          "section_id": {"type": "string"},
+          "title": {"type": "string"},
+          "body": {"type": "string"},
+          "claim_ids": {"type": "array", "items": {"type": "string"}},
+          "blocks": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["block_id", "kind", "claim_id", "text"],
+                  "properties": {
+                    "block_id": {"type": "string"},
+                    "kind": {"enum": ["fact", "explanation", "method"]},
+                    "claim_id": {"type": "string"},
+                    "text": {"type": "string"}
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": ["block_id", "kind", "issue_refs", "coverage_refs", "text"],
+                  "properties": {
+                    "block_id": {"type": "string"},
+                    "kind": {"const": "gap"},
+                    "issue_refs": {"type": "array", "items": {"type": "string", "pattern": "^RH_[A-Z0-9_]+$"}},
+                    "coverage_refs": {"type": "array", "items": {"const": "coverage.complete"}},
+                    "text": {"type": "string"}
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

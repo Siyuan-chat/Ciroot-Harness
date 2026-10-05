@@ -16,6 +16,7 @@ import asyncio
 import html
 import io
 import contextvars
+from urllib.parse import urlsplit
 from importlib import resources
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -31,6 +32,8 @@ from research_harness.investigation import InvestigationService, InvestigationEr
 from research_harness.rag import RagLibrary, RagError
 from research_harness.gui import local_library
 from research_harness.investigation_model_api import run_model_task
+from research_harness.golden_demo import run_golden_demo
+from research_harness.gui.golden_demo import GoldenDemoFacade
 from research_harness.gui.conversation import ConversationError, ConversationStore
 from research_harness.gui.conversation_model_api import controlled_runtime, plan as plan_conversation, validate_api_config
 from research_harness.gui.help import HelpLibrary
@@ -62,6 +65,20 @@ def _page(items, limit, cursor):
     return {"items": items[offset:end], "next_cursor": next_cursor}
 
 
+def _golden_demo_available() -> bool:
+    """Return whether the deterministic demo inputs are present in the package."""
+    base = resources.files("research_harness").joinpath("examples", "investigation")
+    names = ("golden-demo-spec.json", "synthetic-runtime.json", "golden-demo-scenario.json")
+    try:
+        return all(
+            resource.is_file()
+            and isinstance(json.loads(resource.read_text(encoding="utf-8-sig")), dict)
+            for resource in (base.joinpath(name) for name in names)
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ModuleNotFoundError):
+        return False
+
+
 def load_context_registry(path: str | Path) -> tuple[dict, dict]:
     """Read trusted local registrations; browser requests can only choose IDs."""
     config_path=Path(path).resolve()
@@ -78,10 +95,36 @@ def load_context_registry(path: str | Path) -> tuple[dict, dict]:
     return normalize(data.get("workspaces",{})), normalize(data.get("libraries",{}))
 
 
+def _allowed_hostnames(values: list[str] | str | None) -> set[str]:
+    if values is None:
+        values = ["127.0.0.1", "localhost", "testserver"]
+    elif isinstance(values, str):
+        values = values.split(",")
+    hosts = set()
+    for raw in values:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        value = raw.strip().lower().rstrip(".")
+        if value.startswith("[") and value.endswith("]"):
+            value = value[1:-1]
+            if ":" not in value:
+                raise ValueError("bracketed allowed_hosts values must be IPv6 addresses")
+        elif ":" in value or "/" in value or "*" in value:
+            raise ValueError("allowed_hosts must contain exact hostnames without ports or wildcards")
+        hosts.add(value)
+    if not hosts:
+        raise ValueError("allowed_hosts must contain at least one hostname")
+    return hosts
+
+
 def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, token: str | None = None,
                library_workspace: str | Path | None = None, desktop_shutdown=None,
                mcp_python: str | Path | None = None,
-               registered_workspaces: dict | None = None, registered_libraries: dict | None = None) -> FastAPI:
+               registered_workspaces: dict | None = None, registered_libraries: dict | None = None,
+               profile: str = "research", allowed_hosts: list[str] | str | None = None) -> FastAPI:
+    if profile != "research":
+        raise ValueError("the mutable research application only supports profile='research'; use demo_app for demo")
+    hostnames = _allowed_hostnames(allowed_hosts)
     root = Path(workspace).resolve()
     root.mkdir(parents=True, exist_ok=True)
     help_library = HelpLibrary()
@@ -382,7 +425,13 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
         request_id = uuid.uuid4().hex
         host = request.headers.get("host", "")
         origin = request.headers.get("origin")
-        if host.split(":")[0] not in {"127.0.0.1", "localhost"} or (origin and origin not in {"http://" + host, "https://" + host}):
+        try:
+            request_host = (request.url.hostname or "").lower().rstrip(".")
+            origin_url = urlsplit(origin) if origin else None
+            origin_invalid = bool(origin and (origin_url.scheme not in {"http", "https"} or origin_url.netloc.lower() != host.lower() or origin_url.path or origin_url.query or origin_url.fragment or origin_url.username or origin_url.password))
+        except ValueError:
+            request_host, origin_invalid = "", True
+        if request_host not in hostnames or origin_invalid:
             return JSONResponse({"schema_version":"1","code":"RH_GUI_ORIGIN","message":"origin is not allowed","retryable":False,"request_id":request_id}, status_code=403)
         protected_read = (request.url.path == "/api/v1/queue" or request.url.path.startswith("/api/v1/queue/")
                           or request.url.path.startswith("/api/v1/control/clients/"))
@@ -1313,6 +1362,159 @@ def create_app(workspace: str | Path, *, static_dir: str | Path | None = None, t
         with service() as svc:
             values = svc.status()["runs"]
         return pack(_page(values, limit, cursor))
+
+    golden_demo_facade = GoldenDemoFacade(root)
+
+    @app.get("/api/v1/overview")
+    def overview():
+        workspace = workspaces[active_workspace_id()]
+        library = libraries[active_library_id()]
+        try:
+            index_status = library_status(library)
+        except Exception:
+            index_status = None
+        document_count = None
+        try:
+            library_root = active_library_root()
+            if (library_root / "rag.sqlite").is_file() and (library_root / "qdrant").is_dir():
+                with RagLibrary(library_root, read_only=True) as rag:
+                    library_state = rag.get_library_status()
+                    allowed = validate_collection_members([item["document_id"] for item in library_state["documents"]])
+                    document_count = len(library_state["documents"]) if allowed is None else len(allowed)
+            elif local_library.has_index(library_root) or library.get("runtime_created", False):
+                listed = local_library.list_documents(library_root, limit=100, document_ids=collection_ids())
+                document_count = listed.get("document_count")
+        except Exception:
+            document_count = None
+
+        recent = []
+        open_issue_count = 0
+        issue_count_known = True
+        with service() as svc:
+            runs = svc.status()["runs"][:5]
+            for item in runs:
+                run_id = item.get("run_id")
+                result = report = spec = None
+                try:
+                    result = svc.get_result(run_id)
+                except Exception:
+                    pass
+                try:
+                    report = svc.build_report_data(run_id)
+                except Exception:
+                    pass
+                try:
+                    spec = json.loads(svc._run(run_id)["spec"])
+                except Exception:
+                    pass
+                claims = report.get("claims") if isinstance(report, dict) else None
+                if isinstance(claims, list):
+                    verified_count = sum(1 for claim in claims if claim.get("verification") in (True, "verified") or isinstance(claim.get("verification"), dict) and claim["verification"].get("status") == "verified")
+                else:
+                    verified_count = None
+                issues = result.get("issues") if isinstance(result, dict) else None
+                if isinstance(issues, list):
+                    run_open_issues = sum(1 for issue in issues if issue.get("status") == "open")
+                    open_issue_count += run_open_issues
+                else:
+                    run_open_issues = None
+                    issue_count_known = False
+                coverage = result.get("coverage") if isinstance(result, dict) else item.get("coverage")
+                coverage_complete = coverage.get("complete") if isinstance(coverage, dict) and isinstance(coverage.get("complete"), bool) else None
+                recent.append({
+                    "run_id": run_id,
+                    "project_id": spec.get("project_id") if isinstance(spec, dict) else None,
+                    "research_question": (report or {}).get("research_question") if isinstance(report, dict) else spec.get("research_question") if isinstance(spec, dict) else None,
+                    "outcome": result.get("outcome") if isinstance(result, dict) else item.get("outcome"),
+                    "stage": item.get("stage"),
+                    "synthetic": result.get("synthetic", item.get("synthetic")) if isinstance(result, dict) else item.get("synthetic"),
+                    "verified_claim_count": verified_count,
+                    "open_issue_count": run_open_issues,
+                    "coverage_complete": coverage_complete,
+                })
+        return pack({
+            "workspace": {"workspace_id": active_workspace_id(), "name": workspace["name"]},
+            "library": {"library_id": active_library_id(), "name": library["name"], "index_status": index_status, "document_count": document_count},
+            "recent_runs": recent,
+            "review_summary": {"open_run_issue_count": open_issue_count if issue_count_known else None},
+            "golden_demo": {"available": _golden_demo_available()},
+        })
+
+    @app.get("/api/v1/review-inbox")
+    def review_inbox(limit: int = 50, cursor: str | None = None):
+        """Read-only workspace projection of run issues; monitor reviews stay separate."""
+        try:
+            with service() as svc:
+                runs_page = _page(svc.status()["runs"], limit, cursor)
+                items = []
+                unavailable_runs = []
+                for run in runs_page["items"]:
+                    run_id = run.get("run_id") if isinstance(run, dict) else None
+                    if not run_id:
+                        continue
+                    try:
+                        result = svc.get_result(run_id)
+                    except Exception:
+                        unavailable_runs.append({"run_id": run_id, "run_status": run.get("status"), "issue_count": None})
+                        continue
+                    issues = result.get("issues") if isinstance(result, dict) else None
+                    if not isinstance(issues, list):
+                        unavailable_runs.append({"run_id": run_id, "run_status": run.get("status"), "issue_count": None})
+                        continue
+                    for index, issue in enumerate(issues):
+                        entry = issue if isinstance(issue, dict) else {}
+                        items.append({
+                            "kind": "run_issue",
+                            "actionable": False,
+                            "decision_actions": [],
+                            "run_id": run_id,
+                            "run_status": run.get("status"),
+                            "outcome": result.get("outcome"),
+                            "synthetic": result.get("synthetic", run.get("synthetic")),
+                            "issue_index": index,
+                            "issue_id": entry.get("issue_id"),
+                            "title": entry.get("title"),
+                            "code": entry.get("code"),
+                            "status": entry.get("status"),
+                            "message": entry.get("message"),
+                            "reason": entry.get("reason"),
+                            "document_id": entry.get("document_id"),
+                            "source": entry.get("source"),
+                            "impact": entry.get("impact"),
+                        })
+        except ValueError as exc:
+            raise HTTPException(400, f"RH_GUI_REVIEW_INBOX_PAGE:{exc}") from exc
+        return pack({
+            "items": items,
+            "next_cursor": runs_page["next_cursor"],
+            "workspace_id": active_workspace_id(),
+            "monitor_reviews_included": False,
+            "unavailable_runs": unavailable_runs,
+        })
+
+    @app.get("/api/v1/golden-demo")
+    def golden_demo_read():
+        return golden_demo_facade.read()
+
+    @app.get("/api/v1/golden-demo/runs/{run_id}")
+    def golden_demo_run_read(run_id: str):
+        return golden_demo_facade.read(run_id)
+
+    @app.post("/api/v1/golden-demo")
+    def golden_demo_create(body: dict, idempotency_key: str | None = Header(None)):
+        if body:
+            raise HTTPException(400, "golden demo request body must be empty")
+        return write(idempotency_key, body, lambda: {"demo": golden_demo_facade.run()["demo"]})
+
+    @app.post("/api/v1/demos/golden")
+    def golden_demo(body: dict, idempotency_key: str | None = Header(None)):
+        if body != {}:
+            raise HTTPException(400, "RH_GUI_GOLDEN_DEMO_ARGUMENT:request body must be empty")
+        def action():
+            with service() as svc:
+                result = run_golden_demo(str(active_root()), svc)
+            return {key: result[key] for key in ("run_id", "outcome", "synthetic", "candidate_count", "evidence_document_count", "verified_claim_count", "open_issue_count")}
+        return write(idempotency_key, body, action)
 
     @app.get("/api/v1/runs/{run_id}")
     def run(run_id: str):

@@ -1,0 +1,6 @@
+# Optional offline structural-analysis dependencies.
+# Versions selected for Python >=3.11; both are BSD-3-Clause.
+# API references: NetworkX DiGraph/find_cycle and scikit-learn TfidfVectorizer/cosine_similarity.
+# Project licenses: https://pypi.org/project/networkx/3.6.1/ and https://pypi.org/project/scikit-learn/1.9.1/
+networkx==3.6.1
+scikit-learn==1.9.1

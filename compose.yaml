@@ -1,0 +1,130 @@
+services:
+  research:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        RH_BUILD_HEAD: ${RH_BUILD_HEAD:-unknown}
+        RH_DIRTY_FILE_HASHES_JSON: ${RH_DIRTY_FILE_HASHES_JSON:-}
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    environment:
+      RH_PROFILE: research
+      RH_HOST: 0.0.0.0
+      RH_PORT: "8765"
+      RH_ALLOWED_HOSTS: ${RH_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      RH_WORKSPACE: /var/lib/research-harness/workspace
+      RH_LIBRARY_WORKSPACE: /var/lib/research-harness/library
+      RH_STATIC_DIR: /app/frontend/dist
+    ports:
+      - "127.0.0.1:${RH_PORT:-8765}:8765"
+    volumes:
+      - rh_workspace:/var/lib/research-harness/workspace
+      - rh_library:/var/lib/research-harness/library
+    restart: unless-stopped
+
+  demo:
+    profiles: [demo]
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+      args:
+        RH_BUILD_HEAD: ${RH_BUILD_HEAD:-unknown}
+        RH_DIRTY_FILE_HASHES_JSON: ${RH_DIRTY_FILE_HASHES_JSON:-}
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    environment:
+      RH_PROFILE: demo
+      RH_HOST: 0.0.0.0
+      RH_PORT: "8765"
+      RH_ALLOWED_HOSTS: ${RH_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      RH_DEMO_SNAPSHOT: /app/deployment/demo_snapshot
+    ports:
+      - "127.0.0.1:${RH_DEMO_PORT:-8766}:8765"
+    networks: [demo_internal]
+    restart: unless-stopped
+
+# Optional engine variables identify the isolated runtime only; normal run config must explicitly activate it.
+  research_paperqa:
+    profiles: [paperqa]
+    build:
+      context: .
+      dockerfile: Dockerfile.research
+      args:
+        RH_BUILD_HEAD: ${RH_BUILD_HEAD:-unknown}
+        RH_DIRTY_FILE_HASHES_JSON: ${RH_DIRTY_FILE_HASHES_JSON:-}
+        RH_ENGINE_PROFILE: paperqa
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    environment:
+      RH_PROFILE: research
+      RH_HOST: 0.0.0.0
+      RH_PORT: "8765"
+      RH_ALLOWED_HOSTS: ${RH_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      RH_WORKSPACE: /var/lib/research-harness/workspace
+      RH_LIBRARY_WORKSPACE: /var/lib/research-harness/library
+      RH_STATIC_DIR: /app/frontend/dist
+      RH_RESEARCH_ENGINE_NAME: paperqa
+      RH_RESEARCH_ENGINE_PYTHON_EXECUTABLE: /opt/research-engine/bin/python
+    ports:
+      - "127.0.0.1:${RH_PAPERQA_PORT:-8767}:8765"
+    volumes:
+      - rh_paperqa_workspace:/var/lib/research-harness/workspace
+      - rh_paperqa_library:/var/lib/research-harness/library
+    restart: unless-stopped
+
+  research_storm:
+    profiles: [storm]
+    build:
+      context: .
+      dockerfile: Dockerfile.research
+      args:
+        RH_BUILD_HEAD: ${RH_BUILD_HEAD:-unknown}
+        RH_DIRTY_FILE_HASHES_JSON: ${RH_DIRTY_FILE_HASHES_JSON:-}
+        RH_ENGINE_PROFILE: storm
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    environment:
+      RH_PROFILE: research
+      RH_HOST: 0.0.0.0
+      RH_PORT: "8765"
+      RH_ALLOWED_HOSTS: ${RH_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      RH_WORKSPACE: /var/lib/research-harness/workspace
+      RH_LIBRARY_WORKSPACE: /var/lib/research-harness/library
+      RH_STATIC_DIR: /app/frontend/dist
+      RH_RESEARCH_ENGINE_NAME: storm
+      RH_RESEARCH_ENGINE_PYTHON_EXECUTABLE: /opt/research-engine/bin/python
+    ports:
+      - "127.0.0.1:${RH_STORM_PORT:-8768}:8765"
+    volumes:
+      - rh_storm_workspace:/var/lib/research-harness/workspace
+      - rh_storm_library:/var/lib/research-harness/library
+    restart: unless-stopped
+
+volumes:
+  rh_workspace:
+  rh_library:
+  rh_paperqa_workspace:
+  rh_paperqa_library:
+  rh_storm_workspace:
+  rh_storm_library:
+
+networks:
+  demo_internal:
+    internal: true

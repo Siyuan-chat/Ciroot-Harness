@@ -54,8 +54,10 @@ def test_conversations_are_workspace_scoped_idempotent_and_scripted_execution_is
         executed = client.post(f"/api/v1/conversations/{conversation_id}/execute", json={}, headers={**one, "idempotency-key": "execute-1"})
         assert executed.status_code == 200, executed.text
         result = _wait(client, conversation_id, one)
-        assert result["status"] == "completed"
-        assert client.get(f"/api/v1/runs/{result['run_id']}/result", headers=one).json()["result"]["synthetic"] is True
+        assert result["status"] == "partial"
+        run_result = client.get(f"/api/v1/runs/{result['run_id']}/result", headers=one).json()["result"]
+        assert run_result["synthetic"] is True
+        assert {issue["code"] for issue in run_result["issues"]} >= {"RH_SECTION_DRAFT", "RH_SECTION_TITLE_DRAFT"}
         replay = client.post(f"/api/v1/conversations/{conversation_id}/execute", json={}, headers={**one, "idempotency-key": "execute-1"})
         assert replay.json()["replayed"] is True and replay.json()["run_id"] == result["run_id"]
         assert client.post(f"/api/v1/conversations/{conversation_id}/execute", json={}, headers={**one, "idempotency-key": "execute-other"}).status_code == 409
@@ -63,7 +65,7 @@ def test_conversations_are_workspace_scoped_idempotent_and_scripted_execution_is
     with TestClient(create_app(tmp_path / "host", token="next", registered_workspaces=workspaces,
                                registered_libraries={"shared": {"path": tmp_path / "library", "workspace_ids": ["one", "two"]}}), base_url="http://127.0.0.1") as client:
         restored = client.get(f"/api/v1/conversations/{conversation_id}", headers={"x-workspace-id": "one", "x-library-id": "shared"}).json()["conversation"]
-        assert restored["run_id"] == result["run_id"] and restored["status"] == "completed"
+        assert restored["run_id"] == result["run_id"] and restored["status"] == "partial"
 
 
 def test_conversation_rejects_scripted_budget_mismatch_and_can_stop_reply(tmp_path):

@@ -1,4 +1,6 @@
-> 当前整体需求与设计入口：[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)（D19 v1.0，2026-09-10）。下文保留历史需求和阶段补充；D18 实际完成记录见 RAG_ACCEPTANCE.md。持续企业监测及人工分流采用当前整合设计，不受旧 D2 执行范围限制；本轮仍仅交付设计。
+> 当前执行入口：[INTEGRATION_STAGE.md](INTEGRATION_STAGE.md)（2026-10-05，用户批准 S0–S6 实施）。下文历史阶段的“仅设计/不实现 GUI”等表述保留其历史范围，不限制本轮；实际通过状态按本轮固定候选记录。
+
+> 当前整体需求与设计入口：[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)（D19 v1.0，2026-09-10）。下文保留历史需求和阶段补充；D18 实际完成记录见 RAG_ACCEPTANCE.md。GUI 新阶段入口见 [GUI_FRONTEND_PLAN.md](GUI_FRONTEND_PLAN.md)，实际验收状态见 [GUI_ACCEPTANCE.md](GUI_ACCEPTANCE.md)。持续企业监测及人工分流采用当前整合设计，不受旧 D2 执行范围限制；本轮仍仅交付设计。
 
 > D19 v0.2 需求增补（2026-09-10，设计阶段）：最终交付支持技术调查报告、文献综述或两者，交付目标参与前期调查规划。两者共享可定位证据，分别组织技术比较与跨文献主题综合，并经正文核查后导出。角色职责、范围与新增验收见 [调查方案第13节](INVESTIGATION_EXPERIMENT_PLAN.md#13-双出口与产品内多-agent-工作流v02)。本次增补不启动产品实现。
 

@@ -12,6 +12,16 @@ export function stableTurnIdentity(content, requestScope, previous) {
   if (previous?.content === content && previous?.scopeKey === scopeKey) return previous;
   return { content, scopeKey, requestId: crypto.randomUUID() };
 }
+let goldenDemoRequestId = '';
+export function goldenDemoIdentity(fresh=false) {
+  if (fresh) goldenDemoRequestId = crypto.randomUUID();
+  if (!goldenDemoRequestId) {
+    try { goldenDemoRequestId = localStorage.getItem('rh-golden-demo-request') || ''; } catch {}
+  }
+  if (!goldenDemoRequestId) goldenDemoRequestId = crypto.randomUUID();
+  try { localStorage.setItem('rh-golden-demo-request', goldenDemoRequestId); } catch {}
+  return goldenDemoRequestId;
+}
 export function conversationIdFromCreate(data) {
   const id = data?.conversation_id;
   if (typeof id !== 'string' || !id) throw new ApiError({code:'RH_GUI_CONVERSATION_CREATE_RESPONSE',message:'创建会话响应缺少 conversation_id'},200);
@@ -83,6 +93,11 @@ export const api = {
   cancelCommand: (id,requestScope) => request(`/queue/${encodeURIComponent(id)}/cancel`,{method:'POST',body:{},requestScope}),
   resumeQueue: (requestScope,reviewedCommandIds=[]) => request('/queue/resume',{method:'POST',body:reviewedCommandIds.length?{reviewed_command_ids:reviewedCommandIds,confirm_needs_review:true}:{},requestScope}),
   library: (cursor,requestScope) => request('/library?limit=50' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),{requestScope}),
+  overview: requestScope => request('/overview', {requestScope}),
+  reviewInbox: (cursor, requestScope, limit=50) => request('/review-inbox?limit=' + encodeURIComponent(limit) + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''), {requestScope}),
+  goldenDemo: (requestScope, idempotencyKey) => request('/demos/golden', {method:'POST',body:{},requestScope,idempotencyKey}),
+  readGoldenDemo: () => request('/golden-demo',{unscoped:true}),
+  runGoldenDemo: idempotencyKey => request('/golden-demo',{method:'POST',body:{},unscoped:true,idempotencyKey}),
   searchEvidence: (query, topK=8,requestScope) => request(`/library/search?q=${encodeURIComponent(query)}&top_k=${encodeURIComponent(topK)}`,{requestScope}),
   createLibrary: (name,requestScope,idempotencyKey) => request('/libraries',{method:'POST',body:{name},requestScope,idempotencyKey}),
   uploadLibraryFile,

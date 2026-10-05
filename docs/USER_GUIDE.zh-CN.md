@@ -1,6 +1,6 @@
 # 中文使用指南：D2 fixture 框架
 
-本阶段证明离线框架和扩展接口。真实 API、生产 RAG、PDF/OCR、独立聊天和 GUI 尚未接入；安装可选依赖不代表已支持。自然语言需求由当前宿主助手逐项澄清，整理为 ResearchSpec JSON。产品调查默认手动启动。
+本页保留 D2 合成 fixture 的使用方法。当前项目已经扩展本地 RAG、PDF 解析和桌面 GUI；相应入口见 [GUI 快速开始](GUI_QUICKSTART.zh-CN.md)。正在实施的研究引擎、多地区专利来源与部署整合，以 [S0–S6 状态](INTEGRATION_STAGE.md) 为准；组件测试通过不等于真实 API 已激活。自然语言需求由当前宿主助手逐项澄清，整理为 ResearchSpec JSON。产品调查默认手动启动。
 
 ## 安装和默认演示
 

@@ -40,13 +40,77 @@ jobs:
         run: python -m compileall -q src
 
       - name: Run deterministic smoke tests
+        env:
+          TEST_KEY: offline-only-key
         run: |
           pytest -q \
             tests/test_harness.py \
             tests/test_investigation_contracts.py \
             tests/test_gui_api_conversation.py \
+            tests/test_gui_golden_demo.py \
+            tests/test_gui_overview.py \
+            tests/test_investigation_c1.py \
+            tests/test_investigation_epo.py \
+            tests/test_investigation_model_api.py \
+            tests/test_investigation_reporting.py \
+            tests/test_provider_profiles.py \
+            tests/test_investigation_context.py \
             tests/test_investigation_report_data.py \
             tests/test_golden_demo.py
+
+  integration-offline-smoke:
+    name: Offline protocol, source and deployment checks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install offline-test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[investigation]" pytest fastapi httpx pypdfium2
+
+      - name: Run protocol failure-injection tests
+        env:
+          TEST_KEY: offline-only-key
+        run: pytest -q tests/test_research_engines.py tests/test_engine_citations.py tests/test_research_engine_gateway.py tests/test_storm_worker.py
+
+      - name: Run source, evaluation and deployment checks
+        env:
+          TEST_KEY: offline-only-key
+        run: |
+          pytest -q \
+            tests/test_integration_evaluation.py \
+            tests/test_patent_analysis.py \
+            tests/test_patent_analysis_adapter.py \
+            tests/test_investigation_rag_bridge.py \
+            tests/test_investigation_parse_revision_binding.py \
+            tests/test_patent_source_gateway.py \
+            tests/test_integration_service_source_boundary.py \
+            tests/test_investigation_live_openalex.py \
+            tests/test_literature.py \
+            tests/test_paperqa_worker.py \
+            tests/test_investigation_sources_c2.py \
+            tests/test_patent_sources_batch1.py \
+            tests/test_patent_sources_batch2.py \
+            tests/test_patent_sources_batch3.py \
+            tests/test_deployment_profiles.py \
+            tests/test_locked_requirements.py \
+            tests/test_delivery_preparation.py
 
   frontend:
     name: Frontend checks
@@ -70,3 +134,6 @@ jobs:
 
       - name: Frontend tests
         run: npm test
+
+      - name: Frontend production build
+        run: npm run build

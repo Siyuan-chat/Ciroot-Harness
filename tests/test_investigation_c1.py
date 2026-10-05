@@ -22,11 +22,16 @@ def answer(task):
     return {"verification": {"status": "supported", "conclusion": "Supported by normalized synthetic evidence.", "supported_claim_refs": [0]}}
 
 def finish(service, run):
-    while service.status(run)["status"] != "completed":
+    for _ in range(40):
+        state=service.status(run)
+        if state["status"] in {"completed","partial","failed","policy_blocked","stopped"}:
+            assert state["stage"] == "completed" and state["status"] in {"completed","partial"}, state
+            return state
         for task in service.get_pending_tasks(run):
             result = answer(task)
             assert service.submit_model_result(run, task["task_id"], result, task["task_version"])["status"] == "accepted"
         service.advance_investigation(run)
+    raise AssertionError(service.status(run))
 
 def test_c1_valid_chain_is_real_and_persistent(tmp_path):
     service = InvestigationService(tmp_path)
@@ -39,6 +44,8 @@ def test_c1_valid_chain_is_real_and_persistent(tmp_path):
     service.close(); service = InvestigationService(tmp_path)
     finish(service, run)
     state, result = service.status(run), service.get_result(run)
+    assert state["status"] == "partial" and state["stage"] == "completed"
+    assert {issue["code"] for issue in result["issues"]} >= {"RH_SECTION_DRAFT", "RH_SECTION_TITLE_DRAFT"}
     assert [x["node"] for x in state["stage_trace"]] == ["planning_gate", "source_task", "acquire_normalize", "analysis_task", "verification_gate"]
     assert result["conclusion"] == "Supported by normalized synthetic evidence."
     assert result["findings"][0]["evidence_ids"]
@@ -79,10 +86,13 @@ def test_c1_two_source_reservation_is_atomic(tmp_path):
 
 def test_c1_non_supported_verification_is_partial(tmp_path):
     service = InvestigationService(tmp_path); run = service.create_investigation(SPEC, RUNTIME, SCENARIO)["run_id"]
-    while service.status(run)["stage"] != "verification" or not any(x["role"] == "verification" for x in service.get_pending_tasks(run)):
+    for _ in range(40):
+        if service.status(run)["stage"] == "verification" and any(x["role"] == "verification" for x in service.get_pending_tasks(run)):
+            break
         for task in service.get_pending_tasks(run):
             service.submit_model_result(run, task["task_id"], answer(task), task["task_version"])
         service.advance_investigation(run)
+    else: raise AssertionError(service.status(run))
     task = service.get_pending_tasks(run)[0]
     partial = {"verification": {"status": "insufficient", "conclusion": "Evidence remains insufficient.", "supported_claim_refs": []}}
     service.submit_model_result(run, task["task_id"], partial, task["task_version"])
@@ -94,10 +104,12 @@ def test_c2_normalization_failure_is_frozen_and_partial(tmp_path):
     scenario = json.loads(json.dumps(SCENARIO))
     scenario["sources"][1].update(content_type="application/pdf", base64_bytes="bm90IGEgcGRm")
     service = InvestigationService(tmp_path); run = service.create_investigation(SPEC, RUNTIME, scenario)["run_id"]
-    while service.status(run)["outcome"] not in ("completed", "partial"):
+    for _ in range(40):
+        if service.status(run)["outcome"] in ("completed", "partial"): break
         for task in service.get_pending_tasks(run):
             service.submit_model_result(run, task["task_id"], answer(task), task["task_version"])
         service.advance_investigation(run)
+    else: raise AssertionError(service.status(run))
     result = service.get_result(run); report = service.build_report_data(run)
     assert result["outcome"] == "partial"
     assert any(issue["code"] == "RH_NORMALIZE_PDF" for issue in result["issues"])

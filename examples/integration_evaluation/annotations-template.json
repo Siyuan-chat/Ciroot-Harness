@@ -1,0 +1,37 @@
+{
+  "schema_version": "integration-annotation-template/1",
+  "template_only": true,
+  "synthetic_case_id": "synthetic-integration-case-v1",
+  "claims": [
+    {
+      "engine": "rag",
+      "claim_id": "rag-claim-1",
+      "label": null,
+      "annotator": null,
+      "source_locator": null,
+      "comparison_conditions": null,
+      "reason": null,
+      "review_seconds": null
+    },
+    {
+      "engine": "paperqa",
+      "claim_id": "paperqa-claim-1",
+      "label": null,
+      "annotator": null,
+      "source_locator": null,
+      "comparison_conditions": null,
+      "reason": null,
+      "review_seconds": null
+    },
+    {
+      "engine": "storm",
+      "claim_id": "storm-claim-1",
+      "label": null,
+      "annotator": null,
+      "source_locator": null,
+      "comparison_conditions": null,
+      "reason": null,
+      "review_seconds": null
+    }
+  ]
+}

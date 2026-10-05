@@ -1,0 +1,44 @@
+{
+  "schema_version": "1",
+  "run_id": "synthetic-run-patent-001",
+  "input_id": "synthetic-patent-input-001",
+  "selection_reason": "Synthetic fixture demonstrates the adapter contract only; no case selection or research conclusion is represented.",
+  "publications": [
+    {
+      "publication_id": "SYNTHETIC-PUB-001",
+      "version_id": "SYNTHETIC-V1",
+      "parse_revision_id": "SYNTHETIC-PR1",
+      "language": "en",
+      "family_ids": ["SYNTHETIC-FAMILY-001"],
+      "classifications": [{"scheme": "SYNTHETIC-IPC", "code": "SYNTHETIC-CODE-001"}],
+      "citations": [],
+      "source_evidence": [
+        {
+          "evidence_id": "SYNTHETIC-EV-001",
+          "publication_id": "SYNTHETIC-PUB-001",
+          "version_id": "SYNTHETIC-V1",
+          "parse_revision_id": "SYNTHETIC-PR1",
+          "locator": {"kind": "synthetic", "value": "claim-1"},
+          "text": "1. A synthetic ion-conductive polymer composition."
+        }
+      ],
+      "claims": [
+        {
+          "claim_number": 1,
+          "text": "1. A synthetic ion-conductive polymer composition.",
+          "language": "en",
+          "source_bindings": [
+            {
+              "evidence_id": "SYNTHETIC-EV-001",
+              "publication_id": "SYNTHETIC-PUB-001",
+              "version_id": "SYNTHETIC-V1",
+              "parse_revision_id": "SYNTHETIC-PR1",
+              "locator": {"kind": "synthetic", "value": "claim-1"},
+              "quote": "1. A synthetic ion-conductive polymer composition."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

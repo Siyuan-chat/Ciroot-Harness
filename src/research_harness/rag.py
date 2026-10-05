@@ -22,7 +22,7 @@ from typing import Any, Iterable, Iterator
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 _LEGACY_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-_ALLOWED_FILTERS = {"document_ids", "version_ids", "doi", "year_min", "year_max", "types"}
+_ALLOWED_FILTERS = {"document_ids", "version_ids", "revision_ids", "doi", "year_min", "year_max", "types"}
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]")
 _WORD_RE = re.compile(r"[\w-]+", re.UNICODE)
 _CHUNK_SIZE = 200
@@ -111,12 +111,33 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             );
             CREATE INDEX IF NOT EXISTS rag_evidence_version ON rag_evidence(version_id, ordinal);
             CREATE TABLE IF NOT EXISTS rag_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS rag_parse_revisions (
+              parse_revision_id TEXT PRIMARY KEY, version_id TEXT NOT NULL,
+              parser_fingerprint TEXT NOT NULL, parser_config TEXT NOT NULL,
+              output_sha256 TEXT NOT NULL, page_count INTEGER,
+              coverage TEXT NOT NULL, errors TEXT NOT NULL,
+              evidence_count INTEGER NOT NULL, created REAL NOT NULL,
+              UNIQUE(version_id, parser_fingerprint, output_sha256),
+              FOREIGN KEY(version_id) REFERENCES rag_versions(version_id)
+            );
+            CREATE TABLE IF NOT EXISTS rag_evidence_parse_revisions (
+              evidence_id TEXT PRIMARY KEY, parse_revision_id TEXT NOT NULL,
+              FOREIGN KEY(evidence_id) REFERENCES rag_evidence(evidence_id),
+              FOREIGN KEY(parse_revision_id) REFERENCES rag_parse_revisions(parse_revision_id)
+            );
+            CREATE INDEX IF NOT EXISTS rag_evidence_parse_revision ON rag_evidence_parse_revisions(parse_revision_id);
+            CREATE TABLE IF NOT EXISTS rag_parse_state (
+              version_id TEXT PRIMARY KEY, current_revision_id TEXT NOT NULL,
+              FOREIGN KEY(version_id) REFERENCES rag_versions(version_id),
+              FOREIGN KEY(current_revision_id) REFERENCES rag_parse_revisions(parse_revision_id)
+            );
             """
         )
             version_columns = {row[1] for row in self._db.execute("PRAGMA table_info(rag_versions)")}
             if "source_path" not in version_columns:
                 self._db.execute("ALTER TABLE rag_versions ADD COLUMN source_path TEXT")
             self._db.commit()
+        self._parse_revision_tables = self._tables_exist("rag_parse_revisions", "rag_evidence_parse_revisions", "rag_parse_state")
         self._embedder: Any | None = None
         self._qdrant: Any | None = None
         self._converter: Any | None = None
@@ -141,7 +162,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             saved = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
             if not saved:
                 raise RagError("RH_RAG_INDEX_INCOMPLETE", "read-only RAG index configuration is missing")
-            if saved["value"] != self._index_fingerprint():
+            if not self._same_embedding_config(saved["value"], self._index_fingerprint()):
                 raise RagError("RH_RAG_CONFIG_MISMATCH", "read-only RAG index configuration differs")
         try:
             from fastembed import TextEmbedding
@@ -179,10 +200,24 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
     def _index_fingerprint(self) -> str:
         preprocessing = "fastembed-0.8-mean-pooling-normalized-e5-query-passage" if self.embedding_model == DEFAULT_EMBEDDING_MODEL else "fastembed-0.8-mean-pooling"
         try:
-            versions = {"fastembed": package_version("fastembed"), "docling": package_version("docling"), "llama_index_core": package_version("llama-index-core")}
+            fastembed_version = package_version("fastembed")
         except PackageNotFoundError as exc:
             raise RagError("RH_RAG_DEPENDENCY", "RAG dependencies are not installed") from exc
-        return json.dumps({"embedding_model": self.embedding_model, "embedding_dimension": _EMBEDDING_DIMENSION, "embedding_preprocessing": preprocessing, **versions, "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP, "parser": _PARSER_FINGERPRINT}, sort_keys=True)
+        return json.dumps({"embedding_model": self.embedding_model, "embedding_dimension": _EMBEDDING_DIMENSION, "embedding_preprocessing": preprocessing, "fastembed": fastembed_version}, sort_keys=True)
+
+    @staticmethod
+    def _same_embedding_config(saved: str, current: str) -> bool:
+        keys = ("embedding_model", "embedding_dimension", "embedding_preprocessing", "fastembed")
+        try:
+            previous, requested = json.loads(saved), json.loads(current)
+            return all(previous.get(key) == requested.get(key) for key in keys)
+        except (TypeError, ValueError):
+            return False
+
+    def _tables_exist(self, *names: str) -> bool:
+        rows = self._db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        existing = {row["name"] for row in rows}
+        return all(name in existing for name in names)
 
     def _active_collection(self) -> str:
         row = self._db.execute("SELECT value FROM rag_config WHERE key='active_collection'").fetchone()
@@ -200,8 +235,11 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
     def _ensure_index_config(self) -> None:
         fingerprint = self._index_fingerprint()
         saved = self._db.execute("SELECT value FROM rag_config WHERE key='index_fingerprint'").fetchone()
-        if saved and saved["value"] != fingerprint and self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0]:
-            raise RagError("RH_RAG_CONFIG_MISMATCH", "index configuration differs from the existing evidence")
+        if saved and saved["value"] != fingerprint:
+            if self._same_embedding_config(saved["value"], fingerprint):
+                self._db.execute("UPDATE rag_config SET value=? WHERE key='index_fingerprint'", (fingerprint,))
+            elif self._db.execute("SELECT COUNT(*) FROM rag_evidence").fetchone()[0]:
+                raise RagError("RH_RAG_CONFIG_MISMATCH", "embedding configuration differs; rebuild the index before use")
         if not saved:
             self._db.execute("INSERT INTO rag_config VALUES ('index_fingerprint', ?)", (fingerprint,))
         if not self._db.execute("SELECT 1 FROM rag_config WHERE key='active_collection'").fetchone():
@@ -324,6 +362,50 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         except Exception:
             return "unavailable"
 
+    def _parser_configuration(self) -> dict[str, Any]:
+        try:
+            splitter_version = package_version("llama-index-core")
+        except Exception:
+            splitter_version = "unavailable"
+        return {"parser": _PARSER_FINGERPRINT, "docling": self._docling_version(),
+                "chunker": "llama-index-sentence-splitter", "chunker_version": splitter_version,
+                "chunk_size": _CHUNK_SIZE, "chunk_overlap": _CHUNK_OVERLAP}
+
+    @staticmethod
+    def _parse_revision_id(version_id: str, source_sha256: str, parser_config: dict[str, Any], output_sha256: str) -> tuple[str, str]:
+        config_sha256 = hashlib.sha256(json.dumps(parser_config, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        identity = json.dumps({"version_id": version_id, "source_sha256": source_sha256,
+                               "parser_config_sha256": config_sha256, "output_sha256": output_sha256},
+                              sort_keys=True, separators=(",", ":"))
+        return "pr-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24], config_sha256
+
+    def _legacy_parse_revision_id(self, version_id: str) -> str:
+        version = self._db.execute("SELECT content_sha256,parser FROM rag_versions WHERE version_id=?", (version_id,)).fetchone()
+        if self._parse_revision_tables:
+            rows = self._db.execute("SELECT e.evidence_id,e.text,e.locator,e.section,e.role,e.quality FROM rag_evidence e LEFT JOIN rag_evidence_parse_revisions p ON p.evidence_id=e.evidence_id WHERE e.version_id=? AND p.evidence_id IS NULL ORDER BY e.ordinal,e.evidence_id", (version_id,)).fetchall()
+        else:
+            rows = self._db.execute("SELECT evidence_id,text,locator,section,role,quality FROM rag_evidence WHERE version_id=? ORDER BY ordinal,evidence_id", (version_id,)).fetchall()
+        if not version or not version["parser"] or not version["content_sha256"] or not rows:
+            return "pr-unresolved-" + hashlib.sha256(version_id.encode("utf-8")).hexdigest()[:24]
+        output_sha = hashlib.sha256(json.dumps([tuple(row) for row in rows], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+        identity = json.dumps({"legacy": True, "version_id": version_id, "source_sha256": version["content_sha256"],
+                               "parser": version["parser"], "evidence_output_sha256": output_sha}, sort_keys=True, separators=(",", ":"))
+        return "pr-legacy-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+    def _revision_for_evidence(self, evidence_id: str, version_id: str) -> str:
+        if self._parse_revision_tables:
+            row = self._db.execute("SELECT parse_revision_id FROM rag_evidence_parse_revisions WHERE evidence_id=?", (evidence_id,)).fetchone()
+            if row:
+                return row["parse_revision_id"]
+        return self._legacy_parse_revision_id(version_id)
+
+    def _current_parse_revision_id(self, version_id: str) -> str:
+        if self._parse_revision_tables:
+            row = self._db.execute("SELECT current_revision_id FROM rag_parse_state WHERE version_id=?", (version_id,)).fetchone()
+            if row:
+                return row["current_revision_id"]
+        return self._legacy_parse_revision_id(version_id)
+
     def _parse_cache_path(self, digest: str) -> tuple[Path, dict[str, str]]:
         key = {"content_sha256": digest, "parser": _PARSER_FINGERPRINT, "docling": self._docling_version()}
         name = hashlib.sha256(json.dumps(key, sort_keys=True).encode("utf-8")).hexdigest()
@@ -377,6 +459,69 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             for text in splitter.split_text(block["text"]):
                 yield {**block, "text": text, "quality": "Docling layout/provenance extraction; reading order may need source check"}
 
+    def _build_parse_revision(self, source: Path, document_id: str, version_id: str, digest: str) -> tuple[dict[str, Any], list[dict[str, Any]], Any, Any]:
+        blocks, pages, coverage, parse_errors, _cache_reused = self._parse_with_cache(source, digest)
+        embedder, qdrant, splitter = self._components()
+        chunks = list(self._chunks(blocks, splitter))
+        if not chunks:
+            raise RagError("RH_RAG_PARSE_FAILED", "parser returned no usable evidence")
+        parser_config = self._parser_configuration()
+        output_sha256 = hashlib.sha256(json.dumps(chunks, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        parse_revision_id, parser_fingerprint = self._parse_revision_id(version_id, digest, parser_config, output_sha256)
+        evidence = []
+        for ordinal, chunk in enumerate(chunks, 1):
+            evidence_id = "ev-" + hashlib.sha256(f"{version_id}:{parse_revision_id}:{ordinal}".encode()).hexdigest()[:24]
+            evidence.append({"evidence_id": evidence_id, "ordinal": ordinal, "document_id": document_id,
+                             "version_id": version_id, "parse_revision_id": parse_revision_id, **chunk})
+        revision = {"parse_revision_id": parse_revision_id, "version_id": version_id,
+                    "parser_fingerprint": parser_fingerprint,
+                    "parser_config": json.dumps(parser_config, sort_keys=True, separators=(",", ":")),
+                    "output_sha256": output_sha256, "source_sha256": digest,
+                    "page_count": pages, "coverage": coverage,
+                    "errors": list(parse_errors), "evidence_count": len(evidence)}
+        return revision, evidence, embedder, qdrant
+
+    def _revision_indexed(self, parse_revision_id: str) -> bool:
+        version_id = None
+        if self._parse_revision_tables:
+            row = self._db.execute("SELECT version_id FROM rag_parse_revisions WHERE parse_revision_id=?", (parse_revision_id,)).fetchone()
+            version_id = row["version_id"] if row else None
+        if version_id is None:
+            for row in self._db.execute("SELECT version_id FROM rag_versions"):
+                if self._legacy_parse_revision_id(row["version_id"]) == parse_revision_id:
+                    version_id = row["version_id"]
+                    break
+        if version_id and self._current_parse_revision_id(version_id) == parse_revision_id:
+            return self._version_is_indexed(version_id)
+        return self._revision_indexed_exact(parse_revision_id)
+
+    def _revision_indexed_exact(self, parse_revision_id: str) -> bool:
+        if parse_revision_id.startswith("pr-legacy-") or parse_revision_id.startswith("pr-unresolved-"):
+            for row in self._db.execute("SELECT version_id FROM rag_versions"):
+                if self._legacy_parse_revision_id(row["version_id"]) == parse_revision_id:
+                    return self._legacy_version_indexed(row["version_id"])
+            return False
+        row = self._db.execute("SELECT evidence_count FROM rag_parse_revisions WHERE parse_revision_id=?", (parse_revision_id,)).fetchone()
+        if not row or not row["evidence_count"]:
+            return False
+        try:
+            from qdrant_client import QdrantClient, models
+            if self._qdrant is None:
+                self._qdrant = QdrantClient(path=str(self.root / "qdrant"))
+            collection = self._active_collection()
+            if not self._qdrant.collection_exists(collection):
+                return False
+            query_filter = models.Filter(must=[models.FieldCondition(key="parse_revision_id", match=models.MatchValue(value=parse_revision_id))])
+            return self._qdrant.count(collection, count_filter=query_filter, exact=True).count == row["evidence_count"]
+        except RagError:
+            raise
+        except RuntimeError as exc:
+            raise RagError("RH_RAG_BUSY", "RAG workspace index is in use") from exc
+        except ImportError as exc:
+            raise RagError("RH_RAG_DEPENDENCY", "RAG dependencies are not installed") from exc
+        except Exception as exc:
+            raise RagError("RH_RAG_INDEX_UNAVAILABLE", "could not inspect the vector index") from exc
+
     def import_library(self, catalog_path: str | Path, *, limit: int | None = None) -> dict[str, Any]:
         if limit is not None and (not isinstance(limit, int) or limit < 1):
             raise RagError("RH_RAG_INVALID_INPUT", "limit must be a positive integer")
@@ -396,23 +541,16 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             try:
                 digest = hashlib.sha256(source.read_bytes()).hexdigest()
                 old = self._db.execute("SELECT version_id FROM rag_versions WHERE document_id=? AND content_sha256=?", (document_id, digest)).fetchone()
+                version_id = old["version_id"] if old else "ver-" + hashlib.sha256(f"{document_id}:{digest}".encode()).hexdigest()[:24]
                 self._ensure_index_config()
-                if old and self._version_is_indexed(old["version_id"]):
-                    reused += 1; documents.append({"document_id": document_id, "version_id": old["version_id"], "parse_status": "reused"}); continue
-                blocks, pages, coverage, parse_errors, _cache_reused = self._parse_with_cache(source, digest)
-                _embedder, qdrant, splitter = self._components()
-                chunks = list(self._chunks(blocks, splitter))
-                if not chunks:
-                    raise RagError("RH_RAG_PARSE_FAILED", "Docling returned no usable evidence")
-                version_id = "ver-" + hashlib.sha256(f"{document_id}:{digest}".encode()).hexdigest()[:24]
-                evidence = []
-                for ordinal, chunk in enumerate(chunks, 1):
-                    evidence_id = "ev-" + hashlib.sha256(f"{version_id}:{ordinal}".encode()).hexdigest()[:24]
-                    evidence.append({"evidence_id": evidence_id, "ordinal": ordinal, "version_id": version_id, **chunk})
-                self._index(evidence, qdrant, _embedder)
+                revision, evidence, embedder, qdrant = self._build_parse_revision(source, document_id, version_id, digest)
+                current_revision = self._current_parse_revision_id(version_id) if old else None
+                if old and current_revision == revision["parse_revision_id"] and self._version_is_indexed(version_id):
+                    reused += 1; documents.append({"document_id": document_id, "version_id": version_id, "parse_revision_id": revision["parse_revision_id"], "parse_status": "reused", "evidence_count": len(evidence)}); continue
+                self._index(evidence, qdrant, embedder)
                 raw_path = self._copy_source(source, version_id)
-                self._store_document(record, raw_path, document_id, version_id, digest, pages, coverage, parse_errors, evidence)
-                imported += 1; documents.append({"document_id": document_id, "version_id": version_id, "parse_status": "completed", "evidence_count": len(evidence)})
+                self._store_document(record, raw_path, document_id, version_id, digest, revision, evidence)
+                imported += 1; documents.append({"document_id": document_id, "version_id": version_id, "parse_revision_id": revision["parse_revision_id"], "parse_status": "completed", "evidence_count": len(evidence)})
             except RagError as exc:
                 self._db.rollback()
                 self._record_failure(record, source, document_id, exc)
@@ -423,6 +561,51 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 failed += 1; errors.append({"document_id": document_id, **_safe_error("RH_RAG_FAILED", "document import failed")})
         outcome = "completed" if not failed else "partial" if imported or reused else "failed"
         return {"outcome": outcome, "imported": imported, "reused": reused, "failed": failed, "documents": documents, "errors": errors}
+
+    def reparse_document(self, document_id: str, version_id: str | None = None) -> dict[str, Any]:
+        if self.read_only:
+            raise RagError("RH_RAG_READ_ONLY", "RAG workspace is read only")
+        document = self._db.execute("SELECT * FROM rag_documents WHERE document_id=?", (document_id,)).fetchone()
+        if not document:
+            raise RagError("RH_RAG_NOT_FOUND", "document was not found")
+        selected_version = version_id or document["current_version_id"]
+        if not selected_version:
+            raise RagError("RH_RAG_NOT_FOUND", "document has no source version to reparse")
+        version = self._db.execute("SELECT * FROM rag_versions WHERE version_id=? AND document_id=?", (selected_version, document_id)).fetchone()
+        if not version:
+            raise RagError("RH_RAG_NOT_FOUND", "source version does not belong to this document")
+        return self._reparse_version(version, dict(document))
+
+    def reparse_version(self, version_id: str, *, document_id: str | None = None) -> dict[str, Any]:
+        if self.read_only:
+            raise RagError("RH_RAG_READ_ONLY", "RAG workspace is read only")
+        version = self._db.execute("SELECT * FROM rag_versions WHERE version_id=?", (version_id,)).fetchone()
+        if not version or (document_id is not None and version["document_id"] != document_id):
+            raise RagError("RH_RAG_NOT_FOUND", "source version was not found")
+        document = self._db.execute("SELECT * FROM rag_documents WHERE document_id=?", (version["document_id"],)).fetchone()
+        if not document:
+            raise RagError("RH_RAG_NOT_FOUND", "document was not found")
+        return self._reparse_version(version, dict(document))
+
+    def _reparse_version(self, version: Any, document: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_index_config()
+        source_value = version["source_path"]
+        source = Path(source_value)
+        if not source.is_absolute():
+            source = (self.root / source).resolve()
+        if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != version["content_sha256"]:
+            raise RagError("RH_RAG_SOURCE_UNAVAILABLE", "immutable source bytes for this version are unavailable")
+        revision, evidence, embedder, qdrant = self._build_parse_revision(source, document["document_id"], version["version_id"], version["content_sha256"])
+        existing = self._db.execute("SELECT 1 FROM rag_parse_revisions WHERE parse_revision_id=?", (revision["parse_revision_id"],)).fetchone()
+        indexed = bool(existing and self._revision_indexed(revision["parse_revision_id"]))
+        if not indexed:
+            self._index(evidence, qdrant, embedder)
+        record = {"title": document["title"], "doi": document["doi"], "year": document["year"], "type": document["document_type"]}
+        self._store_document(record, source, document["document_id"], version["version_id"], version["content_sha256"], revision, evidence,
+                             update_document_metadata=version["version_id"] == document.get("current_version_id"))
+        return {"outcome": "completed", "document_id": document["document_id"], "version_id": version["version_id"],
+                "parse_revision_id": revision["parse_revision_id"], "evidence_count": revision["evidence_count"],
+                "reused": indexed}
 
     def prepare_library(self, catalog_path: str | Path, *, limit: int | None = None) -> dict[str, Any]:
         """Populate reusable parse artifacts without creating evidence or vectors."""
@@ -469,6 +652,12 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         return {"outcome": outcome, "prepared": prepared, "reused": reused, "failed": failed, "documents": documents, "errors": errors}
 
     def _version_is_indexed(self, version_id: str) -> bool:
+        revision_id = self._current_parse_revision_id(version_id)
+        if revision_id.startswith("pr-legacy-") or revision_id.startswith("pr-unresolved-"):
+            return self._legacy_version_indexed(version_id)
+        return self._revision_indexed_exact(revision_id)
+
+    def _legacy_version_indexed(self, version_id: str) -> bool:
         count = self._db.execute("SELECT COUNT(*) FROM rag_evidence WHERE version_id=?", (version_id,)).fetchone()[0]
         if not count:
             return False
@@ -491,8 +680,18 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
 
     def _copy_source(self, source: Path, version_id: str) -> Path:
         destination = self.root / "raw" / f"{version_id}{source.suffix.casefold()}"
-        if not destination.exists():
-            destination.write_bytes(source.read_bytes())
+        expected = hashlib.sha256(source.read_bytes()).hexdigest()
+        if destination.exists():
+            if hashlib.sha256(destination.read_bytes()).hexdigest() != expected:
+                raise RagError("RH_RAG_SOURCE_IMMUTABLE", "stored raw source differs from the source version")
+        else:
+            temporary = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_bytes(source.read_bytes())
+                temporary.replace(destination)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
         return destination
 
     def _record_failure(self, record: dict[str, Any], source: Path, document_id: str, error: RagError) -> None:
@@ -500,12 +699,29 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         self._db.execute("UPDATE rag_documents SET parse_status='failed',coverage='unknown',errors=? WHERE document_id=? AND current_version_id IS NULL", (json.dumps([error.to_dict()]), document_id))
         self._db.commit()
 
-    def _store_document(self, record: dict[str, Any], source: Path, document_id: str, version_id: str, digest: str, pages: int | None, coverage: str, errors: list[str], evidence: list[dict[str, Any]]) -> None:
-        self._db.execute("INSERT OR IGNORE INTO rag_documents VALUES (?,?,?,?,?,?,?,?,?,?)", (document_id, str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, "completed", coverage, json.dumps(errors)))
-        self._db.execute("UPDATE rag_documents SET title=?,doi=?,year=?,document_type=?,source_path=?,current_version_id=?,parse_status='completed',coverage=?,errors=? WHERE document_id=?", (str(record.get("title") or source.name), record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, coverage, json.dumps(errors), document_id))
-        self._db.execute("INSERT INTO rag_versions (version_id,document_id,content_sha256,parser,page_count,coverage,errors,source_path,created) VALUES (?,?,?,?,?,?,?,?,strftime('%s','now'))", (version_id, document_id, digest, _PARSER_FINGERPRINT, pages, coverage, json.dumps(errors), str(source)))
-        self._db.executemany("INSERT INTO rag_evidence VALUES (?,?,?,?,?,?,?,?,?)", [(value["evidence_id"], document_id, version_id, value["ordinal"], value["text"], json.dumps(value["locator"]), value["section"], value["role"], value["quality"]) for value in evidence])
-        self._db.commit()
+    def _store_document(self, record: dict[str, Any], source: Path, document_id: str, version_id: str, digest: str, revision: dict[str, Any], evidence: list[dict[str, Any]], *, update_document_metadata: bool = True) -> None:
+        title = str(record.get("title") or source.name)
+        errors = json.dumps(revision["errors"])
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            self._db.execute("INSERT OR IGNORE INTO rag_documents VALUES (?,?,?,?,?,?,?,?,?,?)", (document_id, title, record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, "completed", revision["coverage"], errors))
+            self._db.execute("INSERT OR IGNORE INTO rag_versions (version_id,document_id,content_sha256,parser,page_count,coverage,errors,source_path,created) VALUES (?,?,?,?,?,?,?,?,strftime('%s','now'))", (version_id, document_id, digest, _PARSER_FINGERPRINT, revision["page_count"], revision["coverage"], errors, str(source)))
+            if update_document_metadata:
+                self._db.execute("UPDATE rag_documents SET title=?,doi=?,year=?,document_type=?,source_path=?,current_version_id=?,parse_status='completed',coverage=?,errors=? WHERE document_id=?", (title, record.get("doi"), record.get("year"), record.get("type"), str(source), version_id, revision["coverage"], errors, document_id))
+            exists = self._db.execute("SELECT 1 FROM rag_parse_revisions WHERE parse_revision_id=?", (revision["parse_revision_id"],)).fetchone()
+            if not exists:
+                self._db.execute("INSERT INTO rag_parse_revisions VALUES (?,?,?,?,?,?,?,?,?,strftime('%s','now'))", (revision["parse_revision_id"], version_id, revision["parser_fingerprint"], revision["parser_config"], revision["output_sha256"], revision["page_count"], revision["coverage"], errors, revision["evidence_count"]))
+                self._db.executemany("INSERT INTO rag_evidence VALUES (?,?,?,?,?,?,?,?,?)", [(value["evidence_id"], document_id, version_id, value["ordinal"], value["text"], json.dumps(value["locator"], ensure_ascii=False), value["section"], value["role"], value["quality"]) for value in evidence])
+                self._db.executemany("INSERT INTO rag_evidence_parse_revisions VALUES (?,?)", [(value["evidence_id"], revision["parse_revision_id"]) for value in evidence])
+            else:
+                existing_count = self._db.execute("SELECT COUNT(*) FROM rag_evidence_parse_revisions WHERE parse_revision_id=?", (revision["parse_revision_id"],)).fetchone()[0]
+                if existing_count != revision["evidence_count"]:
+                    raise RagError("RH_RAG_REVISION_INCOMPLETE", "parse revision evidence is incomplete")
+            self._db.execute("INSERT OR REPLACE INTO rag_parse_state VALUES (?,?)", (version_id, revision["parse_revision_id"]))
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
 
     def _embed_inputs(self, texts: list[str], *, query: bool) -> list[str]:
         if self.embedding_model != DEFAULT_EMBEDDING_MODEL:
@@ -518,17 +734,42 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         collection = collection or self._active_collection()
         ordered = sorted(enumerate(evidence), key=lambda value: len(value[1]["text"]))
         vectors = list(embedder.embed(self._embed_inputs([item["text"] for _, item in ordered], query=False), batch_size=_EMBEDDING_BATCH_SIZE))
-        if not vectors:
+        if len(vectors) != len(evidence):
             raise RagError("RH_RAG_INDEX_FAILED", "embedding returned no vectors")
         by_position = {position: vector for (position, _), vector in zip(ordered, vectors)}
         if not qdrant.collection_exists(collection):
             qdrant.create_collection(collection, vectors_config=models.VectorParams(size=len(vectors[0]), distance=models.Distance.COSINE))
-        points = [models.PointStruct(id=str(uuid.UUID(hashlib.sha256(item["evidence_id"].encode()).hexdigest()[:32])), vector=by_position[position].tolist(), payload={"evidence_id": item["evidence_id"], "version_id": item["version_id"] if "version_id" in item else None}) for position, item in enumerate(evidence)]
+        points = []
+        for position, item in enumerate(evidence):
+            payload = {"evidence_id": item["evidence_id"], "version_id": item.get("version_id")}
+            if item.get("parse_revision_id"):
+                payload["parse_revision_id"] = item["parse_revision_id"]
+            points.append(models.PointStruct(id=str(uuid.UUID(hashlib.sha256(item["evidence_id"].encode()).hexdigest()[:32])), vector=by_position[position].tolist(), payload=payload))
         qdrant.upsert(collection, points=points, wait=True)
+        try:
+            if collection.startswith("evidence-rebuild-"):
+                indexed_count = qdrant.count(collection, exact=True).count
+                expected_count = len(evidence)
+            else:
+                revision_ids = {item.get("parse_revision_id") for item in evidence}
+                if len(revision_ids) != 1 or not next(iter(revision_ids)):
+                    raise RagError("RH_RAG_INDEX_FAILED", "indexed evidence does not belong to one parse revision")
+                parse_revision_id = next(iter(revision_ids))
+                count_filter = models.Filter(must=[models.FieldCondition(key="parse_revision_id", match=models.MatchValue(value=parse_revision_id))])
+                indexed_count = qdrant.count(collection, count_filter=count_filter, exact=True).count
+                expected_count = len(evidence)
+            if indexed_count != expected_count:
+                raise RagError("RH_RAG_INDEX_FAILED", "indexed evidence count did not match the parse revision")
+        except RagError:
+            raise
+        except Exception as exc:
+            raise RagError("RH_RAG_INDEX_FAILED", "could not verify indexed evidence count") from exc
 
     def rebuild_index(self) -> dict[str, Any]:
         """Build a complete temporary vector collection, then make it active."""
         evidence = [dict(row) for row in self._db.execute("SELECT evidence_id,version_id,text FROM rag_evidence ORDER BY evidence_id")]
+        for item in evidence:
+            item["parse_revision_id"] = self._revision_for_evidence(item["evidence_id"], item["version_id"])
         if not evidence:
             return {"outcome": "completed", "indexed": 0, "collection": self._active_collection(), "embedding_model": self._stored_embedding_model()}
         try:
@@ -568,7 +809,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         if filters is None: return {}
         if not isinstance(filters, dict) or set(filters) - _ALLOWED_FILTERS:
             raise RagError("RH_RAG_INVALID_INPUT", "unsupported search filter")
-        list_fields = {"document_ids", "version_ids", "doi", "types"}
+        list_fields = {"document_ids", "version_ids", "revision_ids", "doi", "types"}
         for field in list_fields - {"doi"}:
             if field in filters and (not isinstance(filters[field], list) or not all(isinstance(value, str) and value for value in filters[field])):
                 raise RagError("RH_RAG_INVALID_INPUT", "filter values are invalid")
@@ -580,7 +821,7 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         return filters
 
     def _candidates(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
-        clauses = ["e.version_id=d.current_version_id"] if "version_ids" not in filters else ["1=1"]
+        clauses = ["e.version_id=d.current_version_id"] if "version_ids" not in filters and "revision_ids" not in filters else ["1=1"]
         values: list[Any] = []
         mapping = {"document_ids": "e.document_id", "version_ids": "e.version_id", "doi": "d.doi", "types": "d.document_type"}
         for key, column in mapping.items():
@@ -590,25 +831,46 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
                 clauses.append(f"{column} IN ({','.join('?' for _ in item_values)})"); values.extend(item_values)
         for key, op in (("year_min", ">="), ("year_max", "<=")):
             if key in filters: clauses.append(f"d.year {op} ?"); values.append(filters[key])
-        rows = self._db.execute("SELECT e.*,d.title,d.doi,d.year,d.document_type,v.source_path FROM rag_evidence e JOIN rag_documents d ON d.document_id=e.document_id JOIN rag_versions v ON v.version_id=e.version_id WHERE " + " AND ".join(clauses), values).fetchall()
-        return [dict(row) for row in rows]
+        rows = self._db.execute("SELECT e.*,d.title,d.doi,d.year,d.document_type,d.current_version_id,v.source_path,v.content_sha256 AS source_sha256 FROM rag_evidence e JOIN rag_documents d ON d.document_id=e.document_id JOIN rag_versions v ON v.version_id=e.version_id WHERE " + " AND ".join(clauses), values).fetchall()
+        revision_filter = set(filters.get("revision_ids", [])) if "revision_ids" in filters else None
+        candidates = []
+        for row in rows:
+            item = dict(row)
+            revision_id = self._revision_for_evidence(item["evidence_id"], item["version_id"])
+            if revision_filter is not None:
+                if revision_id not in revision_filter:
+                    continue
+            elif revision_id != self._current_parse_revision_id(item["version_id"]):
+                continue
+            item["parse_revision_id"] = revision_id
+            candidates.append(item)
+        return candidates
 
     def search_evidence(self, query: str, *, top_k: int = 8, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         if not isinstance(query, str) or not query.strip() or not isinstance(top_k, int) or not 1 <= top_k <= 30:
             raise RagError("RH_RAG_INVALID_INPUT", "query and top_k are invalid")
         filters = self._valid_filters(filters); candidates = self._candidates(filters)
-        if not candidates: return {"query": query, "items": [], "snapshot_version_ids": [], "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": 0, "vector_hits": 0, "coverage_limits": ["no evidence in selected scope"]}}
+        if not candidates: return {"query": query, "items": [], "snapshot_version_ids": [], "snapshot_parse_revision_ids": [], "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": 0, "vector_hits": 0, "coverage_limits": ["no evidence in selected scope"]}}
         embedder, qdrant, _splitter = self._components()
-        candidate_versions = sorted({item["version_id"] for item in candidates})
+        candidate_revisions = sorted({item["parse_revision_id"] for item in candidates})
         collection = self._active_collection()
-        if not qdrant.collection_exists(collection) or not all(self._version_is_indexed(version_id) for version_id in candidate_versions):
+        if not qdrant.collection_exists(collection) or not all(self._revision_indexed(revision_id) for revision_id in candidate_revisions):
             raise RagError("RH_RAG_INDEX_INCOMPLETE", "selected evidence is not fully indexed")
         query_vector = list(embedder.embed(self._embed_inputs([query], query=True), batch_size=_EMBEDDING_BATCH_SIZE))[0].tolist()
         allowed = {item["evidence_id"] for item in candidates}
         vector_scores: dict[str, float] = {}
         from qdrant_client import models
-        query_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchAny(any=candidate_versions))])
-        hits = qdrant.query_points(collection, query=query_vector, query_filter=query_filter, limit=len(candidates)).points
+        hits = []
+        indexed_revisions = [value for value in candidate_revisions if not value.startswith(("pr-legacy-", "pr-unresolved-"))]
+        if indexed_revisions:
+            revision_filter = models.Filter(must=[models.FieldCondition(key="parse_revision_id", match=models.MatchAny(any=indexed_revisions))])
+            hits.extend(qdrant.query_points(collection, query=query_vector, query_filter=revision_filter, limit=sum(1 for item in candidates if item["parse_revision_id"] in indexed_revisions)).points)
+        legacy_versions = sorted({item["version_id"] for item in candidates if item["parse_revision_id"].startswith(("pr-legacy-", "pr-unresolved-"))})
+        if legacy_versions:
+            version_filter = models.Filter(must=[models.FieldCondition(key="version_id", match=models.MatchAny(any=legacy_versions))])
+            placeholders = ",".join("?" for _ in legacy_versions)
+            all_version_evidence = self._db.execute(f"SELECT COUNT(*) FROM rag_evidence WHERE version_id IN ({placeholders})", legacy_versions).fetchone()[0]
+            hits.extend(qdrant.query_points(collection, query=query_vector, query_filter=version_filter, limit=all_version_evidence).points)
         vector_scores = {hit.payload["evidence_id"]: float(hit.score) for hit in hits if hit.payload and hit.payload.get("evidence_id") in allowed}
         try:
             from rank_bm25 import BM25Okapi
@@ -631,11 +893,11 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         for rank, evidence_id in enumerate(lexical_ranked, 1):
             scores[evidence_id] += 1 / (_RRF_K + rank)
         ranked = sorted(candidates, key=lambda item: (scores[item["evidence_id"]], item["evidence_id"]), reverse=True)[:top_k]
-        return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["BM25 plus reciprocal-rank fusion; PDF layout tables retain Docling extraction quality notes"]}}
+        return {"query": query, "items": [self._item(item, scores[item["evidence_id"]]) for item in ranked], "snapshot_version_ids": sorted({item["version_id"] for item in ranked}), "snapshot_parse_revision_ids": sorted({item["parse_revision_id"] for item in ranked}), "diagnostics": {"mode": "hybrid", "embedding_model": self._stored_embedding_model(), "lexical_hits": sum(value > 0 for value in lexical_scores.values()), "vector_hits": len(vector_scores), "coverage_limits": ["BM25 plus reciprocal-rank fusion; PDF layout tables retain Docling extraction quality notes"]}}
 
     @staticmethod
     def _item(row: dict[str, Any], score: float | None = None) -> dict[str, Any]:
-        item = {key: row[key] for key in ("evidence_id", "document_id", "version_id", "text", "title", "doi", "year", "document_type", "source_path", "section", "role", "quality")}
+        item = {key: row[key] for key in ("evidence_id", "document_id", "version_id", "parse_revision_id", "source_sha256", "text", "title", "doi", "year", "document_type", "source_path", "section", "role", "quality") if key in row}
         item["locator"] = json.loads(row["locator"])
         if score is not None: item["score"] = score
         return item
@@ -645,7 +907,9 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
             raise RagError("RH_RAG_INVALID_INPUT", "context window must be between zero and three")
         hit = self._db.execute("SELECT * FROM rag_evidence WHERE evidence_id=?", (evidence_id,)).fetchone()
         if not hit: raise RagError("RH_RAG_NOT_FOUND", "evidence was not found")
-        rows = [dict(row) for row in self._db.execute("SELECT e.*,d.title,d.doi,d.year,d.document_type,v.source_path FROM rag_evidence e JOIN rag_documents d ON d.document_id=e.document_id JOIN rag_versions v ON v.version_id=e.version_id WHERE e.document_id=? AND e.version_id=? ORDER BY e.ordinal", (hit["document_id"], hit["version_id"]))]
+        parse_revision_id = self._revision_for_evidence(evidence_id, hit["version_id"])
+        rows = self._candidates({"version_ids": [hit["version_id"]], "revision_ids": [parse_revision_id]})
+        rows.sort(key=lambda row: row["ordinal"])
         position = next(index for index, row in enumerate(rows) if row["evidence_id"] == evidence_id)
         hit_row = rows[position]
         def duplicate_caption(row: dict[str, Any]) -> bool:
@@ -653,13 +917,36 @@ class RagLibrary(AbstractContextManager["RagLibrary"]):
         left = [row for row in reversed(rows[:position]) if not duplicate_caption(row)][:before]
         right = [row for row in rows[position + 1:] if not duplicate_caption(row)][:after]
         selected = list(reversed(left)) + [hit_row] + right
-        return {"evidence_id": evidence_id, "items": [self._item(row) for row in selected]}
+        return {"evidence_id": evidence_id, "parse_revision_id": parse_revision_id, "items": [self._item(row) for row in selected]}
 
     def get_document(self, document_id: str) -> dict[str, Any]:
         row = self._db.execute("SELECT * FROM rag_documents WHERE document_id=?", (document_id,)).fetchone()
         if not row: raise RagError("RH_RAG_NOT_FOUND", "document was not found")
         result = dict(row); result["errors"] = json.loads(result["errors"]); result["versions"] = [dict(version) for version in self._db.execute("SELECT * FROM rag_versions WHERE document_id=? ORDER BY created", (document_id,))]
-        for version in result["versions"]: version["errors"] = json.loads(version["errors"])
+        parse_revisions = []
+        for version in result["versions"]:
+            version["errors"] = json.loads(version["errors"])
+            version_id = version["version_id"]
+            version["current_parse_revision_id"] = self._current_parse_revision_id(version_id)
+            if self._parse_revision_tables:
+                revisions = [dict(item) for item in self._db.execute("SELECT * FROM rag_parse_revisions WHERE version_id=? ORDER BY created", (version_id,))]
+                for item in revisions:
+                    item["parser_config"] = json.loads(item["parser_config"])
+                    item["errors"] = json.loads(item["errors"])
+            else:
+                revisions = []
+            unmapped = bool(self._db.execute("SELECT 1 FROM rag_evidence WHERE version_id=? LIMIT 1", (version_id,)).fetchone()) if not self._parse_revision_tables else bool(self._db.execute("SELECT 1 FROM rag_evidence e LEFT JOIN rag_evidence_parse_revisions p ON p.evidence_id=e.evidence_id WHERE e.version_id=? AND p.evidence_id IS NULL LIMIT 1", (version_id,)).fetchone())
+            if unmapped:
+                revision_id = self._legacy_parse_revision_id(version_id)
+                revisions = [{"parse_revision_id": revision_id, "version_id": version_id,
+                              "parser_fingerprint": "legacy" if revision_id.startswith("pr-legacy-") else "unresolved_legacy",
+                              "parser_config": None, "output_sha256": None,
+                              "evidence_count": self._db.execute("SELECT COUNT(*) FROM rag_evidence WHERE version_id=?", (version_id,)).fetchone()[0]}]
+            version["parse_revisions"] = revisions
+            parse_revisions.extend(revisions)
+        result["parse_revisions"] = parse_revisions
+        current_version_id = result["current_version_id"]
+        result["current_parse_revision_id"] = next((item["current_parse_revision_id"] for item in result["versions"] if item["version_id"] == current_version_id), None)
         return result
 
     def get_library_status(self) -> dict[str, Any]:

@@ -5,6 +5,7 @@ import base64, hashlib, json, os, re, sqlite3, time, uuid
 import requests
 from xml.etree import ElementTree
 from pathlib import Path
+from urllib.parse import urlsplit
 from jsonschema import Draft202012Validator
 from langgraph.graph import StateGraph, START, END
 from .errors import HarnessError, NotFoundError, ValidationError
@@ -15,6 +16,7 @@ from .rag import RagLibrary, RagError
 from .investigation_contracts import get_task_schema, validate_spec, validate_runtime
 from .investigation_monitoring import MonitorStore
 from .investigation_review import ReviewStore
+from .patent_source_gateway import PatentSourceGateway
 from filelock import FileLock, Timeout
 
 ROLES = ("planning", "paper_search", "patent_search", "evidence_analysis", "business_judgment", "synthesis", "writing", "verification")
@@ -42,16 +44,20 @@ TASK_SCHEMAS = {
 # D19 C2 extensions remain optional for C1 compatibility, but are required
 # before a frozen reader-facing ReportData object can be produced.
 TASK_SCHEMAS["evidence_analysis"]["properties"]["findings"]["items"]["properties"].update({"finding_id":{"type":"string"},"value":{"type":["string","number","null"]},"unit":{"type":["string","null"]},"conditions":{"type":["string","null"]}})
-TASK_SCHEMAS["synthesis"]["properties"]["claims"]["items"]["properties"].update({"claim_id":{"type":"string"},"evidence_refs":{"type":"array","items":{"type":"string"}},"quote":{"type":"string"},"document_id":{"type":"string"},"version_id":{"type":"string"}})
-TASK_SCHEMAS["writing"]["properties"]["sections"]["items"]["properties"].update({"deliverable_type":{"enum":["technical_report","literature_review","patent_monitor_digest"]},"language":{"type":"string"},"section_id":{"type":"string"},"body":{"type":"string"},"claim_ids":{"type":"array","items":{"type":"string"}}})
+TASK_SCHEMAS["synthesis"]["properties"]["claims"]["items"]["properties"].update({"claim_id":{"type":"string"},"evidence_refs":{"type":"array","items":{"type":"string"}},"quote":{"type":"string"},"document_id":{"type":"string"},"version_id":{"type":"string"},"parse_revision_id":{"type":"string"}})
+TASK_SCHEMAS["writing"]["properties"]["sections"]["items"]["properties"].update({"deliverable_type":{"enum":["technical_report","literature_review","patent_monitor_digest"]},"language":{"type":"string"},"section_id":{"type":"string"},"body":{"type":"string"},"claim_ids":{"type":"array","items":{"type":"string"}},"section_kind":{"enum":["fact","explanation","method"]},"block_kind":{"enum":["fact","explanation","method"]}})
 TASK_SCHEMAS["planning"]["properties"]["search_plan"]["properties"]["queries"]["items"]["properties"].update({"query_id":{"type":"string"},"parent_query_id":{"type":["string","null"]},"input_refs":{"type":"array","items":{"type":"string"}}})
 
 class InvestigationService:
-    def __init__(self, workspace):
+    def __init__(self, workspace, *, source_request_callback=None):
         self.root=Path(workspace); self.root.mkdir(parents=True, exist_ok=True)
         self._lock=FileLock(str(self.root/".investigation.write.lock"))
         self._acquire_lock()
-        self.db=sqlite3.connect(self.root/"investigation.sqlite"); self.db.row_factory=sqlite3.Row
+        # The JSONL supervisor executes the bounded core RPC callback on a
+        # dedicated thread so its deadline can be enforced. SQLite remains
+        # serialized by this service/workspace boundary, while allowing that
+        # callback to use the same connection.
+        self.db=sqlite3.connect(self.root/"investigation.sqlite",check_same_thread=False); self.db.row_factory=sqlite3.Row
         self.db.executescript("""CREATE TABLE IF NOT EXISTS investigations(id TEXT PRIMARY KEY,spec TEXT NOT NULL,runtime TEXT NOT NULL,scenario TEXT NOT NULL,status TEXT NOT NULL,stage TEXT NOT NULL,budget TEXT NOT NULL,created REAL NOT NULL,updated REAL NOT NULL,result TEXT,trace TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,task_version INTEGER NOT NULL,role TEXT NOT NULL,task_type TEXT NOT NULL,payload TEXT NOT NULL,output_schema TEXT NOT NULL,status TEXT NOT NULL,result TEXT,result_hash TEXT,created REAL NOT NULL, UNIQUE(run_id,role,task_type,task_version));""")
         self.db.execute("CREATE TABLE IF NOT EXISTS source_attempts(run_id TEXT,query_id TEXT,cursor TEXT,attempt INTEGER,status TEXT,result TEXT,PRIMARY KEY(run_id,query_id,cursor,attempt))")
@@ -63,10 +69,15 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.execute("CREATE TABLE IF NOT EXISTS epo_query_details(run_id TEXT,query_id TEXT,payload TEXT NOT NULL,PRIMARY KEY(run_id,query_id))")
         self.db.execute("CREATE TABLE IF NOT EXISTS source_query_details(run_id TEXT,query_id TEXT,payload TEXT NOT NULL,PRIMARY KEY(run_id,query_id))")
         self.db.execute("CREATE TABLE IF NOT EXISTS model_api_calls(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,task_id TEXT NOT NULL,task_version INTEGER NOT NULL,status TEXT NOT NULL,usage TEXT,created REAL NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS model_call_events(id INTEGER PRIMARY KEY AUTOINCREMENT,call_id TEXT NOT NULL,event TEXT NOT NULL,details TEXT,created REAL NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS model_call_receipts(call_id TEXT PRIMARY KEY,context_path TEXT NOT NULL,context_hash TEXT NOT NULL,response_path TEXT,response_hash TEXT,logical_hash TEXT NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS engine_task_leases(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,task_id TEXT NOT NULL,task_version INTEGER NOT NULL,status TEXT NOT NULL,created REAL NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS engine_model_calls(call_id TEXT PRIMARY KEY,lease_id TEXT NOT NULL,request_id TEXT NOT NULL,kind TEXT NOT NULL,purpose TEXT NOT NULL,UNIQUE(lease_id,request_id))")
+        self.db.execute("CREATE TABLE IF NOT EXISTS engine_receipts(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,task_id TEXT NOT NULL,task_version INTEGER NOT NULL,lease_id TEXT NOT NULL,path TEXT NOT NULL,sha256 TEXT NOT NULL,created REAL NOT NULL,UNIQUE(lease_id))")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_runs(run_id TEXT PRIMARY KEY,monitor_id TEXT NOT NULL,cycle_id TEXT NOT NULL,profile TEXT NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_cycle_facts(monitor_id TEXT NOT NULL,cycle_key TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(monitor_id,cycle_key))")
         self.db.execute("CREATE TABLE IF NOT EXISTS monitor_defaults(monitor_id TEXT PRIMARY KEY,scenario TEXT NOT NULL)")
-        self.db.commit(); self._epo_clients={}; self.monitors=MonitorStore(self.root); self.reviews=ReviewStore(self.root); self.graph=self._graph()
+        self.db.commit(); self._epo_clients={}; self._source_request_callback=source_request_callback; self.monitors=MonitorStore(self.root); self.reviews=ReviewStore(self.root); self.graph=self._graph()
     def close(self):
         self.db.close()
         self.monitors.close(); self.reviews.close()
@@ -81,6 +92,27 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         present=bool(os.environ.get("OPENALEX_API_KEY"))
         epo_present=bool(os.environ.get("EPO_CONSUMER_KEY") and os.environ.get("EPO_CONSUMER_SECRET"))
         return {"ok":True,"modes":["host","api"],"network":"opt_in","data_modes":["synthetic","live"],"missing":[],"capabilities":{"langgraph":True,"model_api":{"adapters":["openai","anthropic","deepseek","qwen","kimi","openai_compatible"],"online":"not_checked"},"sources":{"synthetic":True,"openalex":{"available":True,"anonymous":True,"api_key":"present" if present else "missing"},"epo":{"available":True,"credentials":"present" if epo_present else "missing"}}}}
+    def diagnose_patent_sources(self,run_id):
+        self._run(run_id)
+        return PatentSourceGateway(self,self._source_request_callback).diagnose(run_id)
+    def execute_patent_source(self,run_id,task_id,task_version,request_id,source,operation,params,*,input_refs):
+        """Run one authorized source operation through the shared budgeted gateway."""
+        run=self._run(run_id)
+        if run["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"}:
+            raise InvestigationError("RH_PATENT_RUN_TERMINAL","source dispatch requires an active run")
+        task=self.db.execute("SELECT task_version,status,payload FROM model_tasks WHERE id=? AND run_id=?",(task_id,run_id)).fetchone()
+        if not task or task["status"]!="pending" or task["task_version"]!=task_version:
+            raise InvestigationError("RH_TASK_VERSION","source operation requires the current pending task version")
+        payload=json.loads(task["payload"])
+        if "execute_patent_source" not in payload.get("allowed_operations",[]):
+            raise InvestigationError("RH_TASK_OPERATION","task does not authorize patent source operations")
+        current_budget=json.loads(run["budget"])
+        maximum=current_budget.get("max_source_calls"); used=current_budget.get("reserved_source_calls")
+        if type(maximum) is int and type(used) is int and used>=maximum:
+            from .patent_sources.contracts import pending
+            return pending(source,operation,"budget_denied","RH_PATENT_BUDGET","source call budget is exhausted")
+        return PatentSourceGateway(self,self._source_request_callback).execute(
+            run_id,task_id,task_version,request_id,source,operation,params,input_refs=input_refs)
     def validate_plan(self, plan):
         if not isinstance(plan,dict): raise ValidationError("plan must be an object")
         search_plan=plan.get("search_plan",plan if "queries" in plan else None)
@@ -164,7 +196,9 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if spec.get("status")!="ready" or runtime.get("mode") not in {"host","api"} or runtime.get("data_mode") not in {"synthetic","live"}: raise InvestigationError("RH_PRECONDITION","ready investigation inputs are required")
         if runtime.get("mode")=="api":
             config=runtime["model_api"]
-            if not os.environ.get(config["api_key_env"]): raise InvestigationError("RH_MODEL_KEY_MISSING","configured model API credential is missing")
+            from .provider_profiles import validate_profile
+            profile=validate_profile(config)
+            if not profile["local"] and not os.environ.get(config["api_key_env"]): raise InvestigationError("RH_MODEL_KEY_MISSING","configured model API credential is missing")
             runtime={**runtime,"model_id":config["model"]}
         if live and runtime.get("allow_network") is not True: raise InvestigationError("RH_PRECONDITION","live source requires explicit network opt-in")
         scenario=scenario or {}
@@ -185,8 +219,13 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             frozen_versions={item.get("document_id"):item.get("current_version_id") for item in registered_snapshot["member_document_versions"] if isinstance(item,dict)}
             if len(frozen_versions)!=len(registered_snapshot["member_document_versions"]) or any(not doc or not version for doc,version in frozen_versions.items()):
                 raise InvestigationError("RH_REFERENCE_SNAPSHOT","registered document versions are invalid")
+            if any("current_parse_revision_id" in item and (not isinstance(item["current_parse_revision_id"],str) or not item["current_parse_revision_id"]) for item in registered_snapshot["member_document_versions"] if isinstance(item,dict)):
+                raise InvestigationError("RH_REFERENCE_SNAPSHOT","registered parse revisions are invalid")
             if not isinstance(explicit_reference_evidence,list) or any(not isinstance(item,dict) or item.get("document_id") not in frozen_versions or item.get("version_id")!=frozen_versions[item.get("document_id")] for item in explicit_reference_evidence):
                 raise InvestigationError("RH_REFERENCE_SNAPSHOT","reference evidence does not match the frozen library versions")
+            frozen_revisions={item.get("document_id"):item.get("current_parse_revision_id") for item in registered_snapshot["member_document_versions"] if isinstance(item,dict) and item.get("current_parse_revision_id")}
+            if frozen_revisions and any(item.get("document_id") in frozen_revisions and item.get("parse_revision_id")!=frozen_revisions[item.get("document_id")] for item in explicit_reference_evidence):
+                raise InvestigationError("RH_REFERENCE_SNAPSHOT","reference evidence does not match the frozen parse revisions")
         rag_workspace=scenario.get("reference_rag_workspace")
         if rag_workspace is not None:
             if not live or explicit_reference_evidence:
@@ -217,35 +256,288 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         scenario["baseline_snapshot"]=explicit_reference_evidence if live or registered_snapshot is not None else baseline_snapshot(scenario.get("references",[]),runtime)
         blocked=[x.get("document_id") for x in scenario.get("references",[]) if not policy_allows(x,runtime)]
         if live or registered_snapshot is not None: blocked.extend(x.get("evidence_id") for x in explicit_reference_evidence if not policy_allows(x,runtime))
-        run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=dict(runtime.get("budget",{})); budget.setdefault("max_tasks",8); budget.setdefault("max_source_calls",32); budget.setdefault("max_downloads",1); budget.setdefault("max_download_calls",12); budget.setdefault("max_download_bytes",30*1024*1024); budget["reserved_tasks"]=0; budget["reserved_model_calls"]=0; budget["reserved_source_calls"]=0; budget["reserved_openalex_calls"]=0; budget["reserved_download_calls"]=0; budget["reserved_downloads"]=0; budget["received_download_bytes"]=0; budget["received_source_bytes"]=0
+        run="inv-"+uuid.uuid4().hex[:12]; now=time.time(); budget=dict(runtime.get("budget",{})); budget.setdefault("max_tasks",8); budget.setdefault("max_source_calls",0); budget.setdefault("max_source_bytes",0); budget.setdefault("max_source_response_bytes",0); budget.setdefault("max_downloads",0); budget.setdefault("max_download_calls",0); budget.setdefault("max_download_bytes",0); budget["reserved_tasks"]=0; budget["reserved_model_calls"]=0; budget["reserved_source_calls"]=0; budget["reserved_source_bytes"]=0; budget["reserved_openalex_calls"]=0; budget["reserved_download_calls"]=0; budget["reserved_download_bytes"]=0; budget["reserved_downloads"]=0; budget["received_download_bytes"]=0; budget["received_source_bytes"]=0
         self.db.execute("INSERT INTO investigations VALUES (?,?,?,?,?,?,?,?,?,?,?)",(run,json.dumps(spec),json.dumps(runtime),json.dumps(scenario),"running","planning",json.dumps(budget),now,now,None,"[]")); self.db.commit()
         if blocked:
             self._trace(run,"planning_gate","policy_blocked",{"code":"RH_POLICY_BLOCKED","references":blocked})
             self._set(run,status="policy_blocked",stage="policy_blocked")
             return {"run_id":run,"stage":"policy_blocked","status":"policy_blocked"}
-        self._task(run,"planning","plan",{"spec":spec,"scenario_refs":["scenario:sources"],"baseline_evidence":scenario["baseline_snapshot"],"reference_rag_diagnostics":scenario.get("reference_rag_diagnostics"),"reference_rag_evidence_ids":scenario.get("reference_rag_evidence_ids",[])}); self._set(run,status="waiting_model",stage="planning")
+        self._task(run,"planning","plan",{"input_refs":[item["evidence_id"] for item in scenario["baseline_snapshot"] if isinstance(item,dict) and isinstance(item.get("evidence_id"),str)],"spec":spec,"scenario_refs":["scenario:sources"],"baseline_evidence":scenario["baseline_snapshot"],"reference_rag_diagnostics":scenario.get("reference_rag_diagnostics"),"reference_rag_evidence_ids":scenario.get("reference_rag_evidence_ids",[])}); self._set(run,status="waiting_model",stage="planning")
         return {"run_id":run,"stage":"planning","status":"waiting_model"}
     def get_pending_tasks(self,run_id):
         self._run(run_id); rows=self.db.execute("SELECT * FROM model_tasks WHERE run_id=? AND status='pending' ORDER BY created,id",(run_id,))
-        return [{"task_id":r["id"],"task_version":r["task_version"],"role":r["role"],"task_type":r["task_type"],"input_refs":json.loads(r["payload"]).get("input_refs",[]),"payload":json.loads(r["payload"]),"output_schema":json.loads(r["output_schema"]),"allowed_operations":["submit_structured_result"]} for r in rows]
+        output=[]
+        for r in rows:
+            payload=json.loads(r["payload"])
+            if self._has_unresolved_source_query(run_id):
+                continue
+            if self.db.execute("SELECT 1 FROM model_api_calls WHERE task_id=? AND task_version=? AND status IN ('reserved','prepared','dispatching','response_received','outcome_unknown')",(r["id"],r["task_version"])).fetchone(): continue
+            if self.db.execute("SELECT 1 FROM engine_task_leases WHERE task_id=? AND task_version=? AND status IN ('reserved','dispatching','outcome_unknown','accepted')",(r["id"],r["task_version"])).fetchone(): continue
+            operations=["submit_structured_result"]
+            run_row=self._run(run_id); runtime=json.loads(run_row["runtime"])
+            if self._source_task_allowed(run_row,r["role"],r["task_type"],runtime):
+                operations.append("execute_patent_source")
+            output.append({"task_id":r["id"],"task_version":r["task_version"],"role":r["role"],"task_type":r["task_type"],"input_refs":payload.get("input_refs",[]),"payload":payload,"output_schema":json.loads(r["output_schema"]),"allowed_operations":operations})
+        return output
+    def _has_unresolved_source_query(self,run_id,task_id=None,task_version=None):
+        # Source query leases are created before the first physical attempt, so
+        # this guard must include dispatching logical queries with no attempt row.
+        return (self.db.execute("SELECT 1 FROM source_queries WHERE run_id=? AND status IN ('pending','dispatching','outcome_unknown') LIMIT 1",(run_id,)).fetchone() is not None
+                or self.db.execute("SELECT 1 FROM source_attempts WHERE run_id=? AND status IN ('pending','dispatching','outcome_unknown') LIMIT 1",(run_id,)).fetchone() is not None)
+    @staticmethod
+    def _source_task_allowed(run_row,role,task_type,runtime):
+        profiles=runtime.get("patent_sources")
+        if run_row["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"} or not isinstance(profiles,dict): return False
+        if not any(isinstance(value,dict) and value.get("enabled") is True for value in profiles.values()): return False
+        allowed={("planning","planning"): {"plan"}, ("planning","patent_search"): {"screen:*"}, ("planning","paper_search"): {"screen:*"},
+                 ("source","patent_search"): {"search","screen","source_screening"},
+                 ("source","paper_search"): {"search","screen","source_screening"},
+                 ("source","evidence_analysis"): {"extract"}, ("analysis","evidence_analysis"): {"extract"}}
+        candidates=allowed.get((run_row["stage"],role),set())
+        return task_type in candidates or ("screen:*" in candidates and task_type.startswith("screen:"))
     def reserve_model_call(self,run_id,task_id,task_version):
-        run=self._run(run_id); runtime=json.loads(run["runtime"])
-        if runtime.get("mode")!="api": raise InvestigationError("RH_MODEL_MODE","run is not configured for model API execution")
-        task=self.db.execute("SELECT task_version,status FROM model_tasks WHERE id=? AND run_id=?",(task_id,run_id)).fetchone()
-        if not task or task["status"]!="pending" or task["task_version"]!=task_version:
-            raise InvestigationError("RH_TASK_VERSION","model task is no longer pending")
-        budget=json.loads(run["budget"])
-        if budget.get("reserved_model_calls",0)>=budget["max_model_calls"]:
-            raise InvestigationError("RH_MODEL_CALL_BUDGET","model API call budget exhausted")
-        call_id="call-"+uuid.uuid4().hex[:16]
-        budget["reserved_model_calls"]=budget.get("reserved_model_calls",0)+1
-        self.db.execute("INSERT INTO model_api_calls VALUES (?,?,?,?,?,?,?)",(call_id,run_id,task_id,task_version,"reserved",None,time.time()))
-        self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
-        self.db.commit()
+        run=self._run(run_id)
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            run=self._run(run_id); task=self.db.execute("SELECT task_version,status FROM model_tasks WHERE id=? AND run_id=?",(task_id,run_id)).fetchone()
+            if not task or task["status"]!="pending" or task["task_version"]!=task_version: raise InvestigationError("RH_TASK_VERSION","model task is no longer pending")
+            if self._has_unresolved_source_query(run_id): raise InvestigationError("RH_SOURCE_CALL_IN_FLIGHT","a source request is unresolved")
+            if json.loads(run["runtime"]).get("mode")!="api": raise InvestigationError("RH_MODEL_MODE","run is not configured for model API execution")
+            if self.db.execute("SELECT 1 FROM engine_task_leases WHERE run_id=? AND status IN ('reserved','dispatching','outcome_unknown') LIMIT 1",(run_id,)).fetchone(): raise InvestigationError("RH_ENGINE_LEASE","an engine request is unresolved")
+            if self.db.execute("SELECT 1 FROM model_api_calls WHERE task_id=? AND task_version=? AND status IN ('reserved','prepared','dispatching','response_received','outcome_unknown')",(task_id,task_version)).fetchone(): raise InvestigationError("RH_MODEL_CALL_IN_FLIGHT","this task version already has an unresolved model call")
+            budget=json.loads(run["budget"])
+            if budget.get("reserved_model_calls",0)>=budget["max_model_calls"]: raise InvestigationError("RH_MODEL_CALL_BUDGET","model API call budget exhausted")
+            call_id="call-"+uuid.uuid4().hex[:16]; budget["reserved_model_calls"]=budget.get("reserved_model_calls",0)+1
+            now=time.time(); self.db.execute("INSERT INTO model_api_calls VALUES (?,?,?,?,?,?,?)",(call_id,run_id,task_id,task_version,"reserved",None,now))
+            self.db.execute("INSERT INTO model_call_events(call_id,event,created) VALUES (?,?,?)",(call_id,"reserved",now))
+            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),now,run_id)); self.db.commit()
+        except Exception:
+            self.db.rollback(); raise
         return call_id
+    def reserve_engine_lease(self,run_id,task_id,task_version):
+        """Atomically claim the engine send-right for exactly one task version."""
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            run=self._run(run_id)
+            if run["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"}: raise InvestigationError("RH_RUN_INACTIVE","engine lease requires an active run")
+            row=self.db.execute("SELECT status FROM model_tasks WHERE id=? AND run_id=? AND task_version=? AND status='pending'",(task_id,run_id,task_version)).fetchone()
+            if not row: raise InvestigationError("RH_TASK_VERSION","engine task is no longer pending")
+            if self._has_unresolved_source_query(run_id): raise InvestigationError("RH_SOURCE_CALL_IN_FLIGHT","a source request is unresolved")
+            if self.db.execute("SELECT 1 FROM model_api_calls WHERE run_id=? AND status IN ('reserved','prepared','dispatching','response_received','outcome_unknown') LIMIT 1",(run_id,)).fetchone(): raise InvestigationError("RH_MODEL_CALL_IN_FLIGHT","a model request is unresolved")
+            if self.db.execute("SELECT 1 FROM engine_task_leases WHERE task_id=? AND task_version=? AND status IN ('reserved','dispatching','outcome_unknown','accepted')",(task_id,task_version)).fetchone():
+                raise InvestigationError("RH_ENGINE_LEASE","task version already has an engine lease")
+            if self.db.execute("SELECT 1 FROM engine_task_leases WHERE run_id=? AND status IN ('reserved','dispatching','outcome_unknown') LIMIT 1",(run_id,)).fetchone(): raise InvestigationError("RH_ENGINE_LEASE","another engine request is unresolved")
+            lease="engine-"+uuid.uuid4().hex[:16]; now=time.time()
+            self.db.execute("INSERT INTO engine_task_leases VALUES (?,?,?,?,?,?)",(lease,run_id,task_id,task_version,"reserved",now)); self.db.commit(); return lease
+        except Exception:
+            self.db.rollback(); raise
+    def mark_engine_dispatching(self,lease_id):
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            changed=self.db.execute("UPDATE engine_task_leases SET status='dispatching' WHERE id=? AND status='reserved'",(lease_id,)).rowcount
+            if changed!=1: raise InvestigationError("RH_ENGINE_LEASE","engine lease is not reserved")
+            self.db.commit()
+        except Exception: self.db.rollback(); raise
+    def finish_engine_lease(self,lease_id,status):
+        if status not in {"accepted","failed","outcome_unknown"}: raise InvestigationError("RH_ENGINE_LEASE","invalid engine terminal state")
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row=self.db.execute("SELECT status FROM engine_task_leases WHERE id=?",(lease_id,)).fetchone()
+            if not row or row["status"]!="dispatching": raise InvestigationError("RH_ENGINE_LEASE","engine lease is terminal or was never dispatched")
+            unresolved=self.db.execute("SELECT 1 FROM engine_model_calls e JOIN model_api_calls m ON m.id=e.call_id WHERE e.lease_id=? AND m.status IN ('reserved','prepared','dispatching','response_received','outcome_unknown')",(lease_id,)).fetchone()
+            if unresolved:
+                if status=="accepted": raise InvestigationError("RH_ENGINE_LEASE","accepted engine lease requires no unresolved child calls")
+                status="outcome_unknown"
+            if status=="accepted":
+                parent=self.db.execute("SELECT task_id,task_version FROM engine_task_leases WHERE id=?",(lease_id,)).fetchone()
+                task=self.db.execute("SELECT status FROM model_tasks WHERE id=? AND task_version=?",(parent["task_id"],parent["task_version"])).fetchone()
+                if not task or task["status"]!="completed" or unresolved or not self.db.execute("SELECT 1 FROM engine_model_calls e JOIN model_api_calls m ON m.id=e.call_id WHERE e.lease_id=? AND m.status='accepted'",(lease_id,)).fetchone():
+                    raise InvestigationError("RH_ENGINE_LEASE","accepted engine lease requires an accepted task result and no unresolved child calls")
+            changed=self.db.execute("UPDATE engine_task_leases SET status=? WHERE id=? AND status='dispatching'",(status,lease_id)).rowcount
+            if changed!=1: raise InvestigationError("RH_ENGINE_LEASE","engine lease changed before finalization")
+            self.db.commit()
+        except Exception: self.db.rollback(); raise
+    def reserve_engine_model_call(self,lease_id,request_id,kind,purpose):
+        if kind not in {"model_call","embedding","retrieve_frozen"} or not isinstance(request_id,str) or not request_id or not isinstance(purpose,str) or not purpose:
+            raise InvestigationError("RH_ENGINE_RPC","invalid engine broker request")
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            lease=self.db.execute("SELECT run_id,task_id,task_version,status FROM engine_task_leases WHERE id=?",(lease_id,)).fetchone()
+            if not lease or lease["status"]!="dispatching": raise InvestigationError("RH_ENGINE_LEASE","engine does not own an active dispatch lease")
+            if self.db.execute("SELECT 1 FROM engine_model_calls WHERE lease_id=? AND request_id=?",(lease_id,request_id)).fetchone(): raise InvestigationError("RH_ENGINE_RPC","engine request id was already reserved")
+            if self.db.execute("SELECT 1 FROM engine_model_calls e JOIN model_api_calls m ON m.id=e.call_id WHERE e.lease_id=? AND m.status IN ('reserved','prepared','dispatching','response_received','outcome_unknown')",(lease_id,)).fetchone(): raise InvestigationError("RH_MODEL_CALL_IN_FLIGHT","engine already has an unresolved broker call")
+            run=self._run(lease["run_id"]); task=self.db.execute("SELECT task_version,status FROM model_tasks WHERE id=? AND run_id=?",(lease["task_id"],lease["run_id"])).fetchone()
+            if self._has_unresolved_source_query(lease["run_id"]): raise InvestigationError("RH_SOURCE_CALL_IN_FLIGHT","a source request is unresolved")
+            if not task or task["status"]!="pending" or task["task_version"]!=lease["task_version"]: raise InvestigationError("RH_TASK_VERSION","engine task is no longer pending")
+            budget=json.loads(run["budget"])
+            if budget.get("reserved_model_calls",0)>=budget["max_model_calls"]: raise InvestigationError("RH_MODEL_CALL_BUDGET","model API call budget exhausted")
+            call_id="call-"+uuid.uuid4().hex[:16]; budget["reserved_model_calls"]=budget.get("reserved_model_calls",0)+1
+            now=time.time(); self.db.execute("INSERT INTO model_api_calls VALUES (?,?,?,?,?,?,?)",(call_id,lease["run_id"],lease["task_id"],lease["task_version"],"reserved",None,now))
+            self.db.execute("INSERT INTO model_call_events(call_id,event,created) VALUES (?,?,?)",(call_id,"reserved",now))
+            ledger_kind = {"embedding":"embedding", "retrieve_frozen":"retrieval", "model_call":"model"}[kind]
+            self.db.execute("INSERT INTO engine_model_calls VALUES (?,?,?,?,?)",(call_id,lease_id,request_id,ledger_kind,purpose))
+            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),now,lease["run_id"])); self.db.commit()
+        except Exception:
+            self.db.rollback(); raise
+        return call_id
+    def engine_context(self,run_id,task,rpc,profile,authorization=None):
+        from .investigation_context import build_context_bundle
+        prompt=json.dumps(rpc["request"],ensure_ascii=False,sort_keys=True,separators=(",",":"))
+        evidence=task["payload"].get("evidence",[])
+        evidence_ids=[item.get("evidence_id") for item in evidence if isinstance(item,dict) and isinstance(item.get("evidence_id"),str)] if isinstance(evidence,list) else []
+        request=rpc["request"]
+        selected_context={key:request[key] for key in ("texts","input","context_ids","citation_ids") if key in request}
+        messages=request.get("messages",[])
+        prompt_text="\n".join(item.get("content","") for item in messages if isinstance(item,dict) and isinstance(item.get("content"),str)) if isinstance(messages,list) else ""
+        prompt_context_ids=sorted(set(re.findall(r"pqac-[A-Za-z0-9_-]+",prompt_text)))
+        selected_context["paperqa_context_ids_in_request"] = prompt_context_ids
+        budget=self.status(run_id)["budget"]
+        return build_context_bundle(run_id=run_id,task_id=task["task_id"],task_version=task["task_version"],payload=task["payload"],
+            output_schema=task["output_schema"],prompt=prompt,profile={k:v for k,v in profile.items() if k not in {"api_key_env"}},
+            included_refs=task.get("input_refs",[]),template_version="paperqa-2026.8.12",budget={**{k:budget.get(k) for k in ("max_model_calls","reserved_model_calls")},"kind":rpc["op"]},
+            authorization=authorization or {"result":"unknown","policy":"core broker"},retrieval_selection={"offered_frozen_evidence_ids":evidence_ids,
+                "request_selection":selected_context,"selection_status":"context_ids_available" if prompt_context_ids else "not_available_in_this_rpc"})
+    def record_engine_receipt(self,run_id,task,lease_id,result,resolution,authorization):
+        from .investigation_context import canonical_bytes
+        directory=self.root/"engine_receipts"; directory.mkdir(parents=True,exist_ok=True)
+        receipt_id="engine-receipt-"+uuid.uuid4().hex[:16]; target=directory/(receipt_id+".json")
+        body={"run_id":run_id,"task_id":task["task_id"],"task_version":task["task_version"],"lease_id":lease_id,
+              "engine_result":result,"resolution":resolution,"authorization":authorization}
+        data=canonical_bytes(body); digest=hashlib.sha256(data).hexdigest(); temporary=target.with_name(target.name+"."+uuid.uuid4().hex+".tmp"); created=False
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            if self.db.execute("SELECT 1 FROM engine_receipts WHERE lease_id=?",(lease_id,)).fetchone() or self.db.execute("SELECT status FROM engine_task_leases WHERE id=?",(lease_id,)).fetchone()["status"]!="dispatching":
+                raise InvestigationError("RH_ENGINE_RECEIPT","engine receipt already exists or lease is not dispatching")
+            temporary.write_bytes(data); os.replace(temporary,target); created=True
+            self.db.execute("INSERT INTO engine_receipts VALUES (?,?,?,?,?,?,?,?)",(receipt_id,run_id,task["task_id"],task["task_version"],lease_id,str(target.relative_to(self.root)),digest,time.time()))
+            self.db.commit()
+        except Exception:
+            self.db.rollback(); temporary.unlink(missing_ok=True)
+            if created: target.unlink(missing_ok=True)
+            raise
+        return receipt_id
+    def read_engine_receipt(self,receipt_id):
+        row=self.db.execute("SELECT * FROM engine_receipts WHERE id=?",(receipt_id,)).fetchone()
+        if not row: raise NotFoundError()
+        base=self.root.resolve(); path=(base/row["path"]).resolve()
+        if base not in path.parents or not path.is_file(): raise InvestigationError("RH_ENGINE_RECEIPT_PATH","engine receipt path is invalid")
+        raw=path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=row["sha256"]: raise InvestigationError("RH_ENGINE_RECEIPT_HASH","engine receipt hash does not match")
+        return json.loads(raw)
+    def add_engine_coverage_issue(self,run_id,task_id,task_version,receipt_id,gaps,issues,excluded_claims):
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row=self.db.execute("SELECT payload,task_version,status FROM model_tasks WHERE id=? AND run_id=?",(task_id,run_id)).fetchone()
+            if not row or row["task_version"]!=task_version or row["status"]!="pending": raise InvestigationError("RH_TASK_VERSION","engine task changed before recording coverage gaps")
+            payload=json.loads(row["payload"]); coverage={"code":"RH_ENGINE_COVERAGE_GAP","status":"open","receipt_id":receipt_id,"gaps":gaps,"issues":[item.get("code") for item in issues],"excluded_claims":excluded_claims}
+            payload["acquisition_issues"]=[*payload.get("acquisition_issues",[]),coverage]
+            self.db.execute("UPDATE model_tasks SET payload=? WHERE id=? AND task_version=? AND status='pending'",(json.dumps(payload,ensure_ascii=False),task_id,task_version)); self.db.commit()
+        except Exception: self.db.rollback(); raise
+    def run_local_embedding(self,runtime,texts):
+        import subprocess,sys
+        config=runtime.get("research_engine",{}).get("local_embedding",{})
+        python=config.get("python_executable"); model=config.get("model"); cache=config.get("cache_dir")
+        if not all(isinstance(value,str) and value for value in (python,model,cache)) or not Path(python).is_absolute() or not Path(cache).is_absolute():
+            raise InvestigationError("RH_ENGINE_EMBEDDING_PENDING","local embedding executable, model and cache must be explicitly configured")
+        if not isinstance(texts,list) or any(not isinstance(value,str) for value in texts): raise InvestigationError("RH_ENGINE_EMBEDDING","embedding input must be text array")
+        code="import json,socket,sys; deny=lambda *a,**k: (_ for _ in ()).throw(PermissionError('network disabled')); socket.create_connection=deny; socket.getaddrinfo=deny; socket.socket.connect=deny; from fastembed import TextEmbedding; from fastembed.common.model_description import ModelSource,PoolingType; cfg=json.loads(sys.stdin.read()); supported={x['model'] for x in TextEmbedding.list_supported_models()}; (TextEmbedding.add_custom_model(model=cfg['model'],pooling=PoolingType.MEAN,normalization=True,sources=ModelSource(hf=cfg['model']),dim=384,model_file='onnx/model.onnx',license='mit') if cfg['model']=='intfloat/multilingual-e5-small' and cfg['model'] not in supported else None); e=TextEmbedding(model_name=cfg['model'],cache_dir=cfg['cache'],threads=2); print(json.dumps([v.tolist() for v in e.embed(cfg['texts'])]))"
+        proc=subprocess.run([python,"-c",code],input=json.dumps({"model":model,"cache":cache,"texts":texts}),text=True,capture_output=True,timeout=120,check=False,env=self._embedding_environment())
+        if proc.returncode: raise InvestigationError("RH_ENGINE_EMBEDDING_FAILED","local embedding execution failed")
+        try: return json.loads(proc.stdout)
+        except ValueError as error: raise InvestigationError("RH_ENGINE_EMBEDDING_FAILED","local embedding output is invalid") from error
+    @staticmethod
+    def _embedding_environment():
+        allowed={"SYSTEMROOT","WINDIR","TEMP","TMP","PATH"}
+        return {key:value for key,value in os.environ.items() if key.upper() in allowed} | {"PYTHONNOUSERSITE":"1","PYTHONUTF8":"1","HF_HUB_OFFLINE":"1"}
+    def local_embedding_model_supported(self,runtime):
+        import subprocess
+        config=runtime.get("research_engine",{}).get("local_embedding",{}); python=config.get("python_executable"); model=config.get("model")
+        if not isinstance(python,str) or not Path(python).is_absolute() or not Path(python).is_file() or not isinstance(model,str): return False
+        code="import json,socket,sys; deny=lambda *a,**k: (_ for _ in ()).throw(PermissionError('network disabled')); socket.create_connection=deny; socket.getaddrinfo=deny; socket.socket.connect=deny; from fastembed import TextEmbedding; from fastembed.common.model_description import ModelSource,PoolingType; model=sys.argv[1]; supported={x['model'] for x in TextEmbedding.list_supported_models()}; (TextEmbedding.add_custom_model(model=model,pooling=PoolingType.MEAN,normalization=True,sources=ModelSource(hf=model),dim=384,model_file='onnx/model.onnx',license='mit') if model=='intfloat/multilingual-e5-small' and model not in supported else None); print(json.dumps(sorted({x['model'] for x in TextEmbedding.list_supported_models()})))"
+        proc=subprocess.run([python,"-c",code,model],text=True,capture_output=True,timeout=30,check=False,env=self._embedding_environment())
+        if proc.returncode: return False
+        try: return model in json.loads(proc.stdout)
+        except (ValueError,TypeError): return False
+    def prepare_model_call(self,call_id,body,context):
+        from .investigation_context import canonical_bytes, verify_context_bundle
+        if not verify_context_bundle(context): raise InvestigationError("RH_CONTEXT_INVALID","context receipt failed hash verification")
+        directory=self.root/"model_context"; directory.mkdir(parents=True,exist_ok=True)
+        target=directory/(call_id+".json"); data=canonical_bytes({"request_body":body,"context":context}); digest=hashlib.sha256(data).hexdigest()
+        temporary=target.with_name(target.name+"."+uuid.uuid4().hex+".tmp"); created=False
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row=self.db.execute("SELECT status FROM model_api_calls WHERE id=?",(call_id,)).fetchone()
+            if not row or row["status"]!="reserved" or self.db.execute("SELECT 1 FROM model_call_receipts WHERE call_id=?",(call_id,)).fetchone() or target.exists():
+                raise InvestigationError("RH_MODEL_CALL_STATE","model call is not an unprepared reservation")
+            temporary.write_bytes(data); os.replace(temporary,target); created=True
+            now=time.time(); changed=self.db.execute("UPDATE model_api_calls SET status='prepared' WHERE id=? AND status='reserved'",(call_id,)).rowcount
+            if changed!=1: raise InvestigationError("RH_MODEL_CALL_STATE","model call reservation changed before prepare")
+            self.db.execute("INSERT INTO model_call_receipts(call_id,context_path,context_hash,logical_hash) VALUES (?,?,?,?)",(call_id,str(target.relative_to(self.root)),digest,context["logical_sha256"]))
+            self.db.execute("INSERT INTO model_call_events(call_id,event,details,created) VALUES (?,?,?,?)",(call_id,"prepared",json.dumps({"context_sha256":digest}),now)); self.db.commit()
+        except Exception:
+            self.db.rollback(); temporary.unlink(missing_ok=True)
+            if created: target.unlink(missing_ok=True)
+            raise
+    def mark_model_call_dispatching(self,call_id):
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            now=time.time(); changed=self.db.execute("UPDATE model_api_calls SET status='dispatching' WHERE id=? AND status='prepared'",(call_id,)).rowcount
+            if changed!=1: raise InvestigationError("RH_MODEL_CALL_STATE","model call is not prepared for dispatch")
+            self.db.execute("INSERT INTO model_call_events(call_id,event,created) VALUES (?,?,?)",(call_id,"dispatching",now)); self.db.commit()
+        except Exception:
+            self.db.rollback(); raise
+    def record_model_response(self,call_id,response_bytes):
+        directory=self.root/"model_context"; target=directory/(call_id+".response"); digest=hashlib.sha256(response_bytes).hexdigest(); temporary=target.with_name(target.name+"."+uuid.uuid4().hex+".tmp"); created=False
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row=self.db.execute("SELECT status FROM model_api_calls WHERE id=?",(call_id,)).fetchone()
+            if not row or row["status"]!="dispatching" or target.exists(): raise InvestigationError("RH_MODEL_CALL_STATE","model call cannot accept another response")
+            temporary.write_bytes(response_bytes); os.replace(temporary,target); created=True
+            now=time.time(); changed=self.db.execute("UPDATE model_api_calls SET status='response_received' WHERE id=? AND status='dispatching'",(call_id,)).rowcount
+            if changed!=1: raise InvestigationError("RH_MODEL_CALL_STATE","model call changed before response receipt")
+            changed=self.db.execute("UPDATE model_call_receipts SET response_path=?,response_hash=? WHERE call_id=? AND response_path IS NULL",(str(target.relative_to(self.root)),digest,call_id)).rowcount
+            if changed!=1: raise InvestigationError("RH_MODEL_CALL_STATE","model call receipt already has a response")
+            self.db.execute("INSERT INTO model_call_events(call_id,event,details,created) VALUES (?,?,?,?)",(call_id,"response_received",json.dumps({"response_sha256":digest}),now)); self.db.commit()
+        except Exception:
+            self.db.rollback(); temporary.unlink(missing_ok=True)
+            if created: target.unlink(missing_ok=True)
+            raise
+    def read_model_call_receipt(self,call_id):
+        from .investigation_context import verify_context_bundle
+        row=self.db.execute("SELECT r.*,c.status FROM model_call_receipts r JOIN model_api_calls c ON c.id=r.call_id WHERE r.call_id=?",(call_id,)).fetchone()
+        if not row: raise NotFoundError()
+        base=self.root.resolve()
+        def read_verified(relative,digest):
+            path=(base/relative).resolve()
+            if base not in path.parents or not path.is_file(): raise InvestigationError("RH_RECEIPT_PATH","saved model receipt path is invalid")
+            raw=path.read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=digest: raise InvestigationError("RH_RECEIPT_HASH","saved model receipt hash does not match")
+            return raw
+        saved=json.loads(read_verified(row["context_path"],row["context_hash"]))
+        if saved["context"].get("logical_sha256")!=row["logical_hash"] or not verify_context_bundle(saved["context"]): raise InvestigationError("RH_RECEIPT_HASH","saved model context receipt is invalid")
+        response=None
+        if row["response_path"]: response=read_verified(row["response_path"],row["response_hash"])
+        return {"request_body":saved["request_body"],"context":saved["context"],"response_bytes":response,"status":row["status"]}
     def finish_model_call(self,call_id,status,usage):
-        self.db.execute("UPDATE model_api_calls SET status=?,usage=? WHERE id=? AND status='reserved'",(status,json.dumps(usage) if usage is not None else None,call_id))
-        self.db.commit()
+        if status not in {"accepted","failed"}: raise InvestigationError("RH_MODEL_CALL_STATE","invalid model call terminal result")
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row=self.db.execute("SELECT c.status,c.task_id,c.task_version,t.status AS task_status,t.task_version AS current_version, e.lease_id FROM model_api_calls c LEFT JOIN model_tasks t ON t.id=c.task_id LEFT JOIN engine_model_calls e ON e.call_id=c.id WHERE c.id=?",(call_id,)).fetchone()
+            if not row: raise NotFoundError()
+            if row["status"] in {"accepted","failed","outcome_unknown"}: raise InvestigationError("RH_MODEL_CALL_STATE","model call is already terminal")
+            if status=="accepted":
+                engine_call = row["lease_id"] is not None
+                if row["status"]!="response_received" or row["current_version"]!=row["task_version"] or (not engine_call and row["task_status"]!="completed"):
+                    raise InvestigationError("RH_MODEL_CALL_STATE","accepted call requires a received response and accepted task result")
+                final="accepted"
+            elif row["status"]=="dispatching": final="outcome_unknown"
+            elif row["status"] in {"reserved","prepared","response_received"}: final="failed"
+            else: raise InvestigationError("RH_MODEL_CALL_STATE","model call cannot be finalized from this state")
+            changed=self.db.execute("UPDATE model_api_calls SET status=?,usage=? WHERE id=? AND status=?",(final,json.dumps(usage) if usage is not None else None,call_id,row["status"])).rowcount
+            if changed!=1: raise InvestigationError("RH_MODEL_CALL_STATE","model call changed before finalization")
+            self.db.execute("INSERT INTO model_call_events(call_id,event,created) VALUES (?,?,?)",(call_id,final,time.time())); self.db.commit()
+        except Exception:
+            self.db.rollback(); raise
     def close_model_call_budget(self,run_id):
         row=self._run(run_id)
         if row["status"] in {"completed","partial","failed","policy_blocked"}: return
@@ -253,18 +545,26 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         self.db.execute("UPDATE investigations SET status='partial',stage='budget_exhausted',result=?,updated=? WHERE id=?",(json.dumps(result),time.time(),run_id))
         self.db.commit()
     def submit_model_result(self,run_id,task_id,result,task_version):
-        if self._run(run_id)["status"] == "stopped":
-            raise InvestigationError("RH_RUN_STOPPED","resume run before submitting a task")
-        row=self.db.execute("SELECT * FROM model_tasks WHERE id=? AND run_id=?",(task_id,run_id)).fetchone()
-        if not row: raise NotFoundError()
-        if row["task_version"]!=task_version: raise InvestigationError("RH_TASK_VERSION","task version is stale")
-        raw=json.dumps(result,ensure_ascii=False,sort_keys=True,separators=(",",":")); digest=hashlib.sha256(raw.encode()).hexdigest()
-        if row["status"]=="completed":
-            if row["result_hash"]==digest:return {"status":"reused","task_id":task_id}
-            raise InvestigationError("RH_TASK_CONFLICT","different task result was submitted")
-        errors=list(Draft202012Validator(json.loads(row["output_schema"])).iter_errors(result))
-        if errors: raise InvestigationError("RH_MODEL_RESULT_INVALID","model result failed schema validation")
-        self._refs(row,result); self.db.execute("UPDATE model_tasks SET status='completed',result=?,result_hash=? WHERE id=?",(raw,digest,task_id)); self.db.commit()
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            run=self._run(run_id)
+            if run["status"] == "stopped": raise InvestigationError("RH_RUN_STOPPED","resume run before submitting a task")
+            if self._has_unresolved_source_query(run_id): raise InvestigationError("RH_SOURCE_CALL_IN_FLIGHT","a source request is unresolved")
+            row=self.db.execute("SELECT * FROM model_tasks WHERE id=? AND run_id=?",(task_id,run_id)).fetchone()
+            if not row: raise NotFoundError()
+            if row["task_version"]!=task_version: raise InvestigationError("RH_TASK_VERSION","task version is stale")
+            raw=json.dumps(result,ensure_ascii=False,sort_keys=True,separators=(",",":")); digest=hashlib.sha256(raw.encode()).hexdigest()
+            if row["status"]=="completed":
+                if row["result_hash"]==digest:
+                    self.db.commit(); return {"status":"reused","task_id":task_id}
+                raise InvestigationError("RH_TASK_CONFLICT","different task result was submitted")
+            errors=list(Draft202012Validator(json.loads(row["output_schema"])).iter_errors(result))
+            if errors: raise InvestigationError("RH_MODEL_RESULT_INVALID","model result failed schema validation at "+".".join(map(str,errors[0].absolute_path))+": "+errors[0].message)
+            self._refs(row,result); self.db.execute("UPDATE model_tasks SET status='completed',result=?,result_hash=? WHERE id=? AND status='pending'",(raw,digest,task_id))
+            if self.db.execute("SELECT changes()").fetchone()[0]!=1: raise InvestigationError("RH_TASK_CONFLICT","task changed before result submission")
+            self.db.commit()
+        except Exception:
+            self.db.rollback(); raise
         if row["role"] == "business_judgment": self._record_monitor_judgments(row,result)
         return {"status":"accepted","task_id":task_id}
     def advance_investigation(self,run_id):
@@ -346,7 +646,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             locator=item.get("locator") or {}
             path=str(locator.get("value","")).lower()
             section="claims" if "/claim" in path else "description" if "/description" in path else "evidence"
-            sections.append({"section":section,"locator":locator,"text":item.get("text",""),"evidence_id":item.get("evidence_id")})
+            sections.append({"section":section,"locator":locator,"text":item.get("text",""),"evidence_id":item.get("evidence_id"),**{key:item[key] for key in ("parse_revision_id","source_sha256") if item.get(key)}})
         return {**bibliography,"document_id":document_id,"content_scope":"frozen_evidence_excerpts","epo_sections":sections,"text":"\n\n".join(item["text"] for item in sections),"fulltext_availability":None}
     def attach_discovery_evidence(self,run_id,evidence,mappings,bibliography=None):
         """Bind explicit C2 RAG facts to an acquired live document before analysis."""
@@ -361,20 +661,28 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             raise InvestigationError("RH_FACT_INPUT","evidence, mappings, and bibliography must be lists")
         acquired={item.get("document_id"):item for item in self._sources(run) if item.get("version")=="openalex-oa-pdf" or item.get("source")=="epo" and item.get("content_type")=="application/xml"}
         downloads={row["cursor"]:json.loads(row["result"]) for row in self.db.execute("SELECT cursor,result FROM source_attempts WHERE run_id=? AND query_id='download-document' AND status='success'",(run_id,)) if row["result"]}
-        by_rag={(item.get("rag_document_id"),item.get("rag_version_id")):item for item in mappings if isinstance(item,dict)}
+        by_rag={(item.get("rag_document_id"),item.get("rag_version_id"),item.get("parse_revision_id")):item for item in mappings if isinstance(item,dict)}
         if len(by_rag) != len(mappings): raise InvestigationError("RH_FACT_INPUT","each RAG document/version mapping must be unique")
+        resolved_mappings=[]
         for item in evidence:
             if not isinstance(item,dict) or not all(isinstance(item.get(key),str) and item[key] for key in ("evidence_id","document_id","version_id","text")) or not isinstance(item.get("locator"),dict):
                 raise InvestigationError("RH_FACT_INPUT","RAG evidence needs identity, text, and locator")
-            mapping=by_rag.get((item["document_id"],item["version_id"]))
+            mapping=by_rag.get((item["document_id"],item["version_id"],item.get("parse_revision_id")))
+            if mapping is None and item.get("parse_revision_id"):
+                mapping=by_rag.get((item["document_id"],item["version_id"],None))
             if not mapping: raise InvestigationError("RH_FACT_IDENTITY","RAG evidence has no identity mapping")
+            if item.get("parse_revision_id") and mapping.get("parse_revision_id") and mapping.get("parse_revision_id")!=item["parse_revision_id"]:
+                raise InvestigationError("RH_FACT_IDENTITY","RAG mapping parse revision does not match evidence")
+            if item.get("source_sha256") and mapping.get("source_sha256") and mapping.get("source_sha256")!=item["source_sha256"]:
+                raise InvestigationError("RH_FACT_IDENTITY","RAG mapping source hash does not match evidence")
+            resolved_mappings.append({**mapping,**{key:item[key] for key in ("parse_revision_id","source_sha256") if item.get(key)}})
             source=acquired.get(mapping.get("investigation_document_id")); download=downloads.get(mapping.get("investigation_document_id"))
             if not source or source.get("version") != mapping.get("investigation_version_id") or source.get("source")=="openalex" and not download:
                 raise InvestigationError("RH_FACT_IDENTITY","mapping does not name an acquired document version")
             fingerprint=download.get("sha256") if download else source.get("content_sha256")
             if canonical_identity(source) != canonical_identity(mapping) or fingerprint != mapping.get("sha256"):
                 raise InvestigationError("RH_FACT_IDENTITY","mapping source identity or content fingerprint does not match")
-        payload={"evidence":evidence,"mappings":mappings,"bibliography":bibliography or []}
+        payload={"evidence":evidence,"mappings":resolved_mappings,"bibliography":bibliography or []}
         encoded=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"))
         existing=self.db.execute("SELECT payload FROM attached_discovery_evidence WHERE run_id=?",(run_id,)).fetchone()
         if existing:
@@ -635,23 +943,87 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             return [*issues,{"code":"RH_DOWNLOAD_BUDGET","status":"open","message":"download limit exhausted"}]
         service=self
         class CountingSession:
-            def __init__(self): self.client=literature.requests.Session()
+            def __init__(self): self.client=literature.requests.Session(); self.active=None
+            def _finish(self,status,result=None,release=True):
+                reservation=self.active
+                if not reservation:return
+                service.db.execute("BEGIN IMMEDIATE")
+                try:
+                    row=service._run(run_id); current=json.loads(row["budget"])
+                    attempt=service.db.execute("SELECT status,result FROM source_attempts WHERE run_id=? AND query_id='download' AND cursor=? AND attempt=?",(run_id,reservation["cursor"],reservation["attempt"])).fetchone()
+                    if not attempt or attempt["status"]!="dispatching": service.db.rollback(); return
+                    if release:
+                        current["reserved_source_bytes"]=max(0,current.get("reserved_source_bytes",0)-reservation["max_bytes"])
+                        current["reserved_download_bytes"]=max(0,current.get("reserved_download_bytes",0)-reservation["max_bytes"])
+                    safe=json.loads(attempt["result"] or "{}")
+                    safe.update(result or {})
+                    service.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id))
+                    service.db.execute("UPDATE source_attempts SET status=?,result=? WHERE run_id=? AND query_id='download' AND cursor=? AND attempt=? AND status='dispatching'",(status,json.dumps(safe),run_id,reservation["cursor"],reservation["attempt"]))
+                    service.db.commit()
+                    self.active=None
+                except Exception:service.db.rollback();raise
             def get(self,url,**kwargs):
-                current=json.loads(service._run(run_id)["budget"])
-                if current["reserved_download_calls"] >= current["max_download_calls"]:
-                    raise literature.LiteratureError("download_call_budget", "download request budget exhausted")
-                current["reserved_download_calls"]+=1
                 cursor="url-"+hashlib.sha256(str(url).encode()).hexdigest()[:16]
-                number=service.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='download' AND cursor=?",(run_id,cursor)).fetchone()[0]+1
-                service.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id))
-                service.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,"download",cursor,number,"pending",json.dumps({"kind":"download"}))); service.db.commit()
+                service.db.execute("BEGIN IMMEDIATE")
+                try:
+                    run=service._run(run_id); current=json.loads(run["budget"]); limits=json.loads(run["runtime"]).get("budget",{})
+                    if run["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"}: raise literature.LiteratureError("inactive_run","run is inactive")
+                    keys=("max_source_calls","max_source_bytes","max_source_response_bytes","max_download_calls","max_download_bytes")
+                    if any(type(current.get(key)) is not int or current[key]<1 for key in keys) or any(current[key]!=limits.get(key,current[key]) for key in keys):
+                        raise literature.LiteratureError("source_budget_missing","explicit source and download budgets are required")
+                    prior=service.db.execute("SELECT status FROM source_attempts WHERE run_id=? AND query_id='download' AND cursor=? ORDER BY attempt DESC LIMIT 1",(run_id,cursor)).fetchone()
+                    if prior and prior["status"] in {"pending","dispatching","outcome_unknown"}: raise literature.LiteratureError("outcome_unknown","prior download request outcome is unknown and cannot be resent")
+                    if current.get("reserved_download_calls",0)>=current["max_download_calls"] or current.get("reserved_source_calls",0)>=current["max_source_calls"]:
+                        raise literature.LiteratureError("download_call_budget","download/source request budget exhausted")
+                    max_bytes=min(current["max_source_response_bytes"],current["max_download_bytes"]-current.get("received_download_bytes",0)-current.get("reserved_download_bytes",0),literature.MAX_FILE_BYTES)
+                    if max_bytes<1 or current.get("received_source_bytes",0)+current.get("reserved_source_bytes",0)+max_bytes>current["max_source_bytes"]:
+                        raise literature.LiteratureError("byte_budget_exceeded","source/download response bytes cannot be reserved")
+                    current["reserved_download_calls"]+=1; current["reserved_source_calls"]+=1
+                    current["reserved_download_bytes"]=current.get("reserved_download_bytes",0)+max_bytes
+                    current["reserved_source_bytes"]=current.get("reserved_source_bytes",0)+max_bytes
+                    number=service.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='download' AND cursor=?",(run_id,cursor)).fetchone()[0]+1
+                    parsed=urlsplit(str(url)); safe_url=f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                    receipt={"kind":"download","method":"GET","url":safe_url,"url_sha256":hashlib.sha256(str(url).encode()).hexdigest(),"header_names":sorted(str(k).lower() for k in kwargs.get("headers",{})),"request_receipt_status":"recorded_before_dispatch"}
+                    service.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id))
+                    service.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,"download",cursor,number,"dispatching",json.dumps(receipt))); service.db.commit()
+                    self.active={"cursor":cursor,"attempt":number,"max_bytes":max_bytes,"received":0}
+                except Exception:service.db.rollback();raise
                 try:
                     response=self.client.get(url,**kwargs)
                 except Exception:
-                    service.db.execute("UPDATE source_attempts SET status='RH_SOURCE_NETWORK_ERROR' WHERE run_id=? AND query_id='download' AND cursor=? AND attempt=?",(run_id,cursor,number)); service.db.commit(); raise
-                status="success" if 200 <= getattr(response,"status_code",0) < 300 else "RH_SOURCE_HTTP_"+str(getattr(response,"status_code",0))
-                service.db.execute("UPDATE source_attempts SET status=? WHERE run_id=? AND query_id='download' AND cursor=? AND attempt=?",(status,run_id,cursor,number)); service.db.commit()
-                return response
+                    self._finish("outcome_unknown",{"outcome":"unknown"},release=False); raise
+                status_code=getattr(response,"status_code",0)
+                if not 200<=status_code<300:
+                    self._finish("RH_SOURCE_HTTP_"+str(status_code),{"http_status":status_code,"received_bytes":0})
+                    return response
+                owner=self
+                class MeteredResponse:
+                    def __init__(self,response):self._response=response;self.status_code=response.status_code;self.headers=response.headers
+                    def iter_content(self,chunk_size=65536):
+                        try:
+                            for chunk in self._response.iter_content(chunk_size=chunk_size):
+                                if not chunk:continue
+                                yield chunk
+                            owner._finish("success",{"http_status":status_code,"received_bytes":owner.active.get("received",0),"request_receipt_status":"recorded"})
+                        except Exception:
+                            owner._finish("outcome_unknown",{"outcome":"unknown"},release=False);raise
+                    def close(self):return self._response.close()
+                return MeteredResponse(response)
+            def note_received(self,count):
+                reservation=self.active
+                if not reservation:return
+                service.db.execute("BEGIN IMMEDIATE")
+                try:
+                    row=service._run(run_id); current=json.loads(row["budget"])
+                    current["received_source_bytes"]=current.get("received_source_bytes",0)+count
+                    current["received_download_bytes"]=current.get("received_download_bytes",0)+count
+                    reservation["received"]+=count
+                    over=(reservation["received"]>reservation["max_bytes"] or current["received_source_bytes"]+current.get("reserved_source_bytes",0)-reservation["max_bytes"]+reservation["received"]>current["max_source_bytes"] or current["received_download_bytes"]+current.get("reserved_download_bytes",0)-reservation["max_bytes"]+reservation["received"]>current["max_download_bytes"])
+                    service.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id)); service.db.commit()
+                except Exception:service.db.rollback();raise
+                if over:
+                    self._finish("RH_SOURCE_BYTE_BUDGET",{"received_bytes":reservation["received"]})
+                    raise literature.LiteratureError("byte_budget_exceeded","download response exceeded reserved bytes")
         def reserve_document(record):
             current=json.loads(self._run(run_id)["budget"]); document_id=record.get("source_id")
             if current["reserved_downloads"] >= current["max_downloads"]: raise literature.LiteratureError("download_budget", "download limit exhausted")
@@ -659,16 +1031,14 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             number=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='download-document' AND cursor=?",(run_id,document_id)).fetchone()[0]+1
             self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id))
             self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,"download-document",document_id,number,"pending",json.dumps({"kind":"download-document"}))); self.db.commit()
-        def received(count):
-            current=json.loads(self._run(run_id)["budget"]); current["received_download_bytes"]+=count
-            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(current),time.time(),run_id)); self.db.commit()
-            if current["received_download_bytes"] > current["max_download_bytes"]: raise literature.LiteratureError("byte_budget_exceeded", "download byte budget exhausted")
+        session=CountingSession()
+        def received(count): session.note_received(count)
         output=self.root/"downloads"/run_id
         records=list(documents.values())
         if "reference_rag_evidence_ids" in json.loads(self._run(run_id)["scenario"]):
             records=[{**record,"locations":sorted(record.get("locations",[]),key=lambda location: 0 if isinstance(location,dict) and location.get("is_oa") and isinstance(location.get("pdf_url"),str) and location["pdf_url"].strip() else 1)} for record in records]
         try:
-            catalog=literature.download({"records":records},output,limit=min(budget["max_downloads"]-budget["reserved_downloads"],len(documents)),session=CountingSession(),max_total_bytes=budget["max_download_bytes"]-budget["received_download_bytes"],on_record_start=reserve_document,on_received=received)
+            catalog=literature.download({"records":records},output,limit=min(budget["max_downloads"]-budget["reserved_downloads"],len(documents)),session=session,max_total_bytes=budget["max_download_bytes"]-budget["received_download_bytes"],on_record_start=reserve_document,on_received=received)
         except literature.LiteratureError as error:
             return [*issues,{"code":"RH_DOWNLOAD_"+error.code.upper(),"status":"open","message":"open-access full text is unavailable"}]
         for outcome in catalog["records"]:
@@ -695,61 +1065,97 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         return self._epo_clients[run_id]
 
     def _epo_request(self,run_id,operation,method,url,**kwargs):
-        request_key=hashlib.sha256(json.dumps([operation,url,kwargs.get("params"),kwargs.get("headers",{}).get("X-OPS-Range")],sort_keys=True).encode()).hexdigest()[:20]
+        auth_sequence=(self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor LIKE 'auth:%'",(run_id,)).fetchone()[0]+1) if operation=="auth" else None
+        request_key=hashlib.sha256(json.dumps([operation,url,kwargs.get("params"),kwargs.get("headers",{}).get("X-OPS-Range"),auth_sequence],sort_keys=True).encode()).hexdigest()[:20]
         cursor=operation+":"+request_key
-        if operation!="auth":
-            prior=self.db.execute("SELECT status,result FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor=? ORDER BY attempt DESC LIMIT 1",(run_id,cursor)).fetchone()
-            if prior and prior["status"]=="pending":
-                raise SourceError("RH_SOURCE_UNCERTAIN","prior OPS request outcome is uncertain")
-            if prior and prior["status"]=="success":
+        prior=self.db.execute("SELECT status,result FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor=? ORDER BY attempt DESC LIMIT 1",(run_id,cursor)).fetchone()
+        if prior:
+            if prior["status"] in {"pending","dispatching","outcome_unknown","RH_SOURCE_TIMEOUT","RH_SOURCE_NETWORK_ERROR"}:
+                raise SourceError("RH_SOURCE_UNCERTAIN","prior OPS request outcome is uncertain and was not resent")
+            if prior["status"]=="success":
                 path=self.root/"epo"/run_id/(cursor.replace(":","-")+".xml")
                 if not path.is_file(): raise SourceError("RH_SOURCE_UNCERTAIN","saved OPS response is missing")
                 data=path.read_bytes()
                 if hashlib.sha256(data).hexdigest()!=json.loads(prior["result"]).get("sha256"):
                     raise SourceError("RH_SOURCE_UNCERTAIN","saved OPS response changed")
                 return data
-        budget=json.loads(self._run(run_id)["budget"])
+        run=self._run(run_id); runtime=json.loads(run["runtime"]); budget=json.loads(run["budget"])
+        if run["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"}:
+            raise SourceError("RH_SOURCE_INACTIVE","OPS dispatch requires an active run")
+        if any(type(budget.get(key)) is not int or budget[key] < 1 for key in ("max_source_calls","max_source_bytes","max_source_response_bytes")):
+            raise SourceError("RH_SOURCE_BUDGET","OPS source call and byte budgets must be explicit and positive")
         epo_limit=json.loads(self._run(run_id)["scenario"]).get("source_call_limits",{}).get("epo")
         if epo_limit is not None and self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='epo-http'",(run_id,)).fetchone()[0]>=epo_limit:
             raise SourceError("RH_SOURCE_BUDGET","OPS request limit exhausted")
-        if budget["reserved_source_calls"]>=budget["max_source_calls"] or budget["received_source_bytes"]>=budget["max_source_bytes"]:
+        if budget["reserved_source_calls"]>=budget["max_source_calls"]:
             raise SourceError("RH_SOURCE_BUDGET","OPS request budget exhausted")
         if operation=="auth":
             used=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor LIKE 'auth:%'",(run_id,)).fetchone()[0]
             if used>=2: raise SourceError("RH_SOURCE_BUDGET","OPS authentication budget exhausted")
         attempt=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor=?",(run_id,cursor)).fetchone()[0]+1
-        safe={"operation":operation,"method":method,"path":url.split("ops.epo.org",1)[-1],"params":kwargs.get("params"),"range":kwargs.get("headers",{}).get("X-OPS-Range"),"started_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())}
+        if budget.get("received_source_bytes",0)+budget.get("reserved_source_bytes",0)+budget["max_source_response_bytes"]>budget["max_source_bytes"]:
+            raise SourceError("RH_SOURCE_BUDGET","OPS response-byte reservation would exceed the run budget")
+        safe={"operation":operation,"method":method,"path":url.split("ops.epo.org",1)[-1].split("?",1)[0],"params_sha256":hashlib.sha256(json.dumps(kwargs.get("params",{}),sort_keys=True).encode()).hexdigest(),"range":kwargs.get("headers",{}).get("X-OPS-Range"),"started_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"request_receipt_status":"prepared"}
         if operation=="search":
             match=self.db.execute("SELECT query_id FROM source_queries WHERE run_id=? AND source='epo' AND query=? ORDER BY rowid LIMIT 1",(run_id,(kwargs.get("params") or {}).get("q"))).fetchone()
             safe["query_id"]=match["query_id"] if match else None
-        budget["reserved_source_calls"]+=1
-        self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
-        self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,"epo-http",cursor,attempt,"pending",json.dumps(safe,ensure_ascii=False)))
-        self.db.commit()
-        status="RH_SOURCE_NETWORK_ERROR"; data=bytearray(); http_status=None
+        self.db.execute("BEGIN IMMEDIATE")
         try:
-            with requests.request(method,url,timeout=30,stream=True,**kwargs) as response:
+            live=self._run(run_id)
+            if live["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"} or self.db.execute("SELECT 1 FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND status IN ('pending','dispatching','outcome_unknown') LIMIT 1",(run_id,)).fetchone():
+                raise SourceError("RH_SOURCE_INACTIVE","run changed or another source request is unresolved")
+            budget=json.loads(live["budget"])
+            if budget.get("reserved_source_calls",0)>=budget["max_source_calls"] or budget.get("received_source_bytes",0)+budget.get("reserved_source_bytes",0)+budget["max_source_response_bytes"]>budget["max_source_bytes"]:
+                raise SourceError("RH_SOURCE_BUDGET","OPS request or response-byte budget is exhausted")
+            if operation=="auth" and self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor LIKE 'auth:%'",(run_id,)).fetchone()[0]>=2:
+                raise SourceError("RH_SOURCE_BUDGET","OPS authentication budget exhausted")
+            attempt=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor=?",(run_id,cursor)).fetchone()[0]+1
+            budget["reserved_source_calls"]+=1; budget["reserved_source_bytes"]=budget.get("reserved_source_bytes",0)+budget["max_source_response_bytes"]
+            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
+            self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,"epo-http",cursor,attempt,"dispatching",json.dumps(safe,ensure_ascii=False)))
+            self.db.commit()
+        except Exception:
+            self.db.rollback(); raise
+        status="RH_SOURCE_NETWORK_ERROR"; data=bytearray(); http_status=None; response_complete=False
+        try:
+            request_kwargs={key:value for key,value in kwargs.items() if key not in {"allow_redirects"}}
+            with requests.request(method,url,timeout=30,stream=True,allow_redirects=False,**request_kwargs) as response:
                 http_status=response.status_code
                 for chunk in response.iter_content(65536):
                     data.extend(chunk)
                     if len(data)>budget["max_source_response_bytes"] or budget["received_source_bytes"]+len(data)>budget["max_source_bytes"]:
                         status="RH_SOURCE_BYTE_BUDGET"; raise SourceError(status,"OPS response exceeds byte budget")
+                response_complete=True
                 status="success" if 200<=http_status<300 else {401:"RH_SOURCE_AUTHENTICATION",403:"RH_SOURCE_AUTHORIZATION",404:"RH_SOURCE_NOT_FOUND",429:"RH_SOURCE_RATE_LIMIT"}.get(http_status,"RH_SOURCE_HTTP_"+str(http_status))
+        except SourceError:
+            raise
         except requests.Timeout as exc:
-            status="RH_SOURCE_TIMEOUT"; raise SourceError(status,"OPS request timed out") from exc
+            status="outcome_unknown"; raise SourceError("RH_SOURCE_TIMEOUT","OPS request timed out; outcome is unknown and will not be resent") from exc
         except requests.RequestException as exc:
-            status="RH_SOURCE_NETWORK_ERROR"; raise SourceError(status,"OPS request failed") from exc
+            status="outcome_unknown"; raise SourceError("RH_SOURCE_NETWORK_ERROR","OPS request failed; outcome is unknown and will not be resent") from exc
+        except Exception as exc:
+            status="outcome_unknown"; raise SourceError("RH_SOURCE_OUTCOME_UNKNOWN","OPS transport failed; outcome is unknown and will not be resent") from exc
         finally:
-            budget=json.loads(self._run(run_id)["budget"]); budget["received_source_bytes"]+=len(data)
-            safe.update({"http_status":http_status,"received_bytes":len(data),"finished_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())})
-            if status=="success" and operation!="auth":
-                raw_dir=self.root/"epo"/run_id; raw_dir.mkdir(parents=True,exist_ok=True)
-                raw=raw_dir/(cursor.replace(":","-")+".xml"); raw.write_bytes(data)
-                safe["raw_xml_path"]=str(raw.relative_to(self.root)).replace("\\","/")
-                safe["sha256"]=hashlib.sha256(data).hexdigest()
-            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
-            self.db.execute("UPDATE source_attempts SET status=?,result=? WHERE run_id=? AND query_id='epo-http' AND cursor=? AND attempt=?",(status,json.dumps(safe,ensure_ascii=False),run_id,cursor,attempt))
-            self.db.commit()
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                live=self._run(run_id)
+                current=self.db.execute("SELECT status FROM source_attempts WHERE run_id=? AND query_id='epo-http' AND cursor=? AND attempt=?",(run_id,cursor,attempt)).fetchone()
+                if (live["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"} or not current or current["status"]!="dispatching") and status=="success":
+                    status="outcome_unknown"; safe["late_response_ignored"]=True
+                budget=json.loads(live["budget"])
+                if response_complete: budget["reserved_source_bytes"]=max(0,budget.get("reserved_source_bytes",0)-budget["max_source_response_bytes"])
+                budget["received_source_bytes"]+=len(data)
+                safe.update({"http_status":http_status,"received_bytes":len(data),"finished_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"request_receipt_status":"recorded"})
+                if status=="success" and operation!="auth":
+                    raw_dir=self.root/"epo"/run_id; raw_dir.mkdir(parents=True,exist_ok=True)
+                    raw=raw_dir/(cursor.replace(":","-")+".xml"); raw.write_bytes(data)
+                    safe["raw_xml_path"]=str(raw.relative_to(self.root)).replace("\\","/")
+                    safe["sha256"]=hashlib.sha256(data).hexdigest()
+                self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
+                self.db.execute("UPDATE source_attempts SET status=?,result=? WHERE run_id=? AND query_id='epo-http' AND cursor=? AND attempt=? AND status='dispatching'",(status,json.dumps(safe,ensure_ascii=False),run_id,cursor,attempt))
+                self.db.commit()
+            except Exception:
+                self.db.rollback(); raise
         if status!="success": raise SourceError(status,"OPS returned "+str(http_status))
         return bytes(data)
 
@@ -762,7 +1168,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             cached=self.db.execute("SELECT result FROM source_attempts WHERE run_id=? AND query_id=? AND cursor=? AND status='success'",(run_id,query_id,cursor)).fetchone()
             if cached: page=json.loads(cached["result"])
             else:
-                if self.db.execute("SELECT 1 FROM source_attempts WHERE run_id=? AND query_id=? AND cursor=? AND status='pending'",(run_id,query_id,cursor)).fetchone():
+                if self.db.execute("SELECT 1 FROM source_attempts WHERE run_id=? AND query_id=? AND cursor=? AND status IN ('pending','dispatching','outcome_unknown')",(run_id,query_id,cursor)).fetchone():
                     return found,"partial","uncertain prior search page"
                 self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,query_id,cursor,1,"pending",json.dumps({"kind":"epo-search-page"}))); self.db.commit()
                 try: page,_=client.search(query,start,page_size)
@@ -927,7 +1333,11 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         if monitor:
             try:self.monitors.reserve_tasks(monitor["monitor_id"],1)
             except Exception as error: raise InvestigationError("RH_MONITOR_BUDGET","monitor task budget exhausted") from error
-        p={"input_refs":payload.get("input_refs",[]),"allowed_operations":["submit_structured_result"],**payload}; self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,typ,json.dumps(p),json.dumps(get_task_schema(role)),"pending",None,None,time.time()));b["reserved_tasks"]+=1;self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(b),time.time(),run));self.db.commit()
+        run_row=self._run(run); runtime=json.loads(run_row["runtime"])
+        operations=["submit_structured_result"]
+        if self._source_task_allowed(run_row,role,typ,runtime):
+            operations.append("execute_patent_source")
+        p={"input_refs":payload.get("input_refs",[]),"allowed_operations":operations,**payload}; self.db.execute("INSERT INTO model_tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)",("task-"+uuid.uuid4().hex[:12],run,1,role,typ,json.dumps(p),json.dumps(get_task_schema(role)),"pending",None,None,time.time()));b["reserved_tasks"]+=1;self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(b),time.time(),run));self.db.commit()
     def _monitor_context(self,run):
         row=self.db.execute("SELECT monitor_id,cycle_id,profile FROM monitor_runs WHERE run_id=?",(run,)).fetchone()
         return {"monitor_id":row["monitor_id"],"cycle_id":row["cycle_id"],"profile":json.loads(row["profile"])} if row else None
@@ -967,6 +1377,8 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
         evidence_lookup={x["evidence_id"]:x for x in (scenario or {}).get("baseline_snapshot",[]) if isinstance(x,dict) and x.get("evidence_id")}
         for item in queries:
             parent=item["parent_query_id"]
+            if runtime is not None and runtime.get("data_mode")=="live" and not item.get("input_refs"):
+                raise InvestigationError("RH_QUERY_REFERENCE","live source queries require explicit frozen input references")
             if parent is not None and (parent not in known or parent==item["query_id"] or sources_by_id[parent]!=item["source"]): raise InvestigationError("RH_QUERY_REFERENCE","parent_query_id must name a different query from the same source")
             if scenario and "reference_rag_evidence_ids" in scenario and parent is not None and not item.get("revision_reason"):
                 raise InvestigationError("RH_QUERY_REFERENCE","query revision needs a reason")
@@ -974,7 +1386,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
                 if not isinstance(ref,str): raise InvestigationError("RH_QUERY_REFERENCE","input_refs must be strings")
                 if reference_ids is None or evidence_ids is None: continue
                 if ref.startswith("baseline:") and ref[9:] not in reference_ids: raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown baseline")
-                if ref.startswith("query:") and ref[6:] not in known: raise InvestigationError("RH_QUERY_REFERENCE","input_refs names an unknown query")
+                if ref.startswith("query:") and (ref[6:] not in known or sources_by_id.get(ref[6:])!=item["source"]): raise InvestigationError("RH_QUERY_REFERENCE","input_refs must name a known query from the same source")
                 if not (ref in evidence_ids or ref.startswith("baseline:") or ref.startswith("query:")): raise InvestigationError("RH_QUERY_REFERENCE","input_refs must name actual baseline evidence or query")
             if item["source"] in {"openalex","epo"}:
                 terms=self._query_terms(item["source"],item["query"])
@@ -1024,15 +1436,16 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             findings=self._done(row["run_id"],"evidence_analysis","extract")[0]["findings"]
             if any(any(i>=len(findings) for i in x["finding_refs"]) for x in result["claims"]):raise InvestigationError("RH_RESULT_REFERENCE","claim references unknown finding")
             evidence=json.loads(self.db.execute("SELECT payload FROM model_tasks WHERE run_id=? AND role='evidence_analysis' AND task_type='extract'",(row["run_id"],)).fetchone()["payload"])["evidence"]
-            for claim in result["claims"]: self._check_claim(claim,evidence)
+            for claim in result["claims"]: self._check_claim(claim,evidence,require_parse_revision=True)
         elif role=="verification":
             claims=self._done(row["run_id"],"synthesis","synthesize")[0]["claims"]
             if any(i>=len(claims) for i in result["verification"]["supported_claim_refs"]):raise InvestigationError("RH_RESULT_REFERENCE","verification references unknown claim")
-    def _check_claim(self,claim,evidence):
+    def _check_claim(self,claim,evidence,require_parse_revision=False):
         lookup={x["evidence_id"]:x for x in evidence}
         for ref in claim["evidence_refs"]:
             item=lookup.get(ref)
             if not item or claim["document_id"]!=item["document_id"] or claim["version_id"]!=item["version_id"] or not item.get("locator") or claim["quote"] not in item["text"]:raise InvestigationError("RH_RESULT_REFERENCE","claim quotation does not bind to normalized evidence")
+            if require_parse_revision and item.get("parse_revision_id") and claim.get("parse_revision_id")!=item["parse_revision_id"]:raise InvestigationError("RH_RESULT_REFERENCE","claim parse revision does not bind to normalized evidence")
     def _done(self,run,role,typ):
         sql="SELECT result FROM model_tasks WHERE run_id=? AND task_type=? AND status='completed'";args=[run,typ]
         if role:sql+=" AND role=?";args.append(role)
@@ -1052,6 +1465,7 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             return self._search_live_pages(run_id,query_id,query,runtime)
         if source=="epo":
             return self._search_epo_pages(run_id,query_id,query,runtime)
+        live_source=runtime.get("data_mode")=="live"
         transport=SyntheticTransport(json.loads(run["scenario"]).get("transport_pages",[])); cursor=None; found=[]; seen=set(); max_pages=int(runtime.get("budget",{}).get("max_pages_per_query",32))
         while True:
             if len(seen)>=max_pages or cursor in seen:
@@ -1064,10 +1478,11 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
                     if pending:
                         self._trace(run_id,"source_task","source_partial",{"query_id":query_id,"code":"RH_SOURCE_UNCERTAIN"}); return found,"partial","uncertain prior source call"
                     budget=json.loads(self._run(run_id)["budget"])
-                    if budget["reserved_source_calls"]>=budget["max_source_calls"]:
+                    if live_source and budget["reserved_source_calls"]>=budget["max_source_calls"]:
                         self._trace(run_id,"source_task","source_partial",{"query_id":query_id,"code":"RH_SOURCE_BUDGET"}); return found,"partial","source call budget exhausted"
                     attempt=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ?",(run_id,query_id,cursor)).fetchone()[0]+1
-                    budget["reserved_source_calls"]+=1; self.db.execute("BEGIN IMMEDIATE")
+                    if live_source: budget["reserved_source_calls"]+=1
+                    self.db.execute("BEGIN IMMEDIATE")
                     self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
                     self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,query_id,cursor,attempt,"pending","{}")); self.db.commit()
                     try: page=transport.search(source,query_id,cursor,attempt=attempt)
@@ -1082,18 +1497,57 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
 
     def _search_live_pages(self,run_id,query_id,query,runtime):
         cursor=None; found=[]; seen=set(); source_config=runtime["sources"]["openalex"]; max_pages=min(int(runtime["budget"].get("max_pages_per_query",32)),int(source_config.get("max_pages",32))); max_candidates=int(source_config.get("max_candidates",100))
+        active={"cursor":None,"attempt":None,"maximum":0}
         def reserve_http(meta):
-            budget=json.loads(self._run(run_id)["budget"])
-            openalex_limit=json.loads(self._run(run_id)["scenario"]).get("source_call_limits",{}).get("openalex")
-            if openalex_limit is not None and budget.get("reserved_openalex_calls",0)>=openalex_limit:
-                raise SourceError("RH_SOURCE_BUDGET","OpenAlex search request limit exhausted")
-            if budget["reserved_source_calls"] >= budget["max_source_calls"]:
-                raise SourceError("RH_SOURCE_BUDGET","source request budget exhausted")
-            budget["reserved_source_calls"]+=1
-            budget["reserved_openalex_calls"]=budget.get("reserved_openalex_calls",0)+1
-            self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id))
-            self.db.commit()
-        transport=OpenAlexTransport(runtime,reserve_http)
+            phase=meta.get("phase") if isinstance(meta,dict) else None
+            if phase is None:  # Backward-compatible deterministic transport doubles.
+                self.db.execute("BEGIN IMMEDIATE")
+                try:
+                    run=self._run(run_id); budget=json.loads(run["budget"])
+                    if run["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"}: raise SourceError("RH_SOURCE_INACTIVE","run is inactive")
+                    if budget.get("reserved_source_calls",0)>=budget.get("max_source_calls",0): raise SourceError("RH_SOURCE_BUDGET","source request budget exhausted")
+                    budget["reserved_source_calls"]+=1; budget["reserved_openalex_calls"]=budget.get("reserved_openalex_calls",0)+1
+                    self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id)); self.db.commit()
+                except Exception: self.db.rollback(); raise
+                return
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                run=self._run(run_id); budget=json.loads(run["budget"])
+                if run["status"] in {"stopped","completed","partial","failed","policy_blocked","cancelled"}: raise SourceError("RH_SOURCE_INACTIVE","run is inactive")
+                if phase=="prepared":
+                    limits=("max_source_calls","max_source_bytes","max_source_response_bytes")
+                    if any(type(budget.get(key)) is not int or budget[key]<1 for key in limits): raise SourceError("RH_SOURCE_BUDGET","OpenAlex numeric source budgets must be explicit and positive")
+                    maximum=budget["max_source_response_bytes"]
+                    if budget.get("reserved_source_calls",0)>=budget["max_source_calls"] or budget.get("received_source_bytes",0)+budget.get("reserved_source_bytes",0)+maximum>budget["max_source_bytes"]:
+                        raise SourceError("RH_SOURCE_BUDGET","OpenAlex source call or byte budget exhausted")
+                    openalex_limit=json.loads(run["scenario"]).get("source_call_limits",{}).get("openalex")
+                    if openalex_limit is not None and budget.get("reserved_openalex_calls",0)>=openalex_limit: raise SourceError("RH_SOURCE_BUDGET","OpenAlex search request limit exhausted")
+                    budget["reserved_source_calls"]+=1; budget["reserved_openalex_calls"]=budget.get("reserved_openalex_calls",0)+1
+                    budget["reserved_source_bytes"]=budget.get("reserved_source_bytes",0)+maximum
+                    active["maximum"]=maximum
+                    params=meta.get("params",{})
+                    receipt={"kind":"openalex-search","method":"GET","url":"https://api.openalex.org/works","params_sha256":hashlib.sha256(json.dumps(params,sort_keys=True).encode()).hexdigest(),"header_names":meta.get("header_names",[]),"request_receipt_status":"prepared"}
+                    row=self.db.execute("SELECT status FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(run_id,query_id,active["cursor"],active["attempt"])).fetchone()
+                    if not row or row["status"]!="pending": raise SourceError("RH_SOURCE_INACTIVE","OpenAlex request lease changed before dispatch")
+                    self.db.execute("UPDATE source_attempts SET status='dispatching',result=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(json.dumps(receipt),run_id,query_id,active["cursor"],active["attempt"]))
+                elif phase in {"received","response_rejected"}:
+                    response_bytes=int(meta.get("response_bytes",0))
+                    budget["reserved_source_bytes"]=max(0,budget.get("reserved_source_bytes",0)-active["maximum"])
+                    budget["received_source_bytes"]=budget.get("received_source_bytes",0)+response_bytes
+                    status="dispatching" if phase=="received" and 200<=int(meta.get("status_code",0))<300 else ("RH_SOURCE_RESPONSE_LIMIT" if phase=="response_rejected" else "RH_SOURCE_HTTP_"+str(meta.get("status_code",0)))
+                    row=self.db.execute("SELECT result FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(run_id,query_id,active["cursor"],active["attempt"])).fetchone()
+                    receipt=json.loads(row["result"]) if row else {}
+                    receipt.update({"request_receipt_status":"recorded","http_status":meta.get("status_code"),"received_bytes":response_bytes})
+                    self.db.execute("UPDATE source_attempts SET status=?,result=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=? AND status='dispatching'",(status,json.dumps(receipt),run_id,query_id,active["cursor"],active["attempt"]))
+                elif phase=="outcome_unknown":
+                    row=self.db.execute("SELECT result FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(run_id,query_id,active["cursor"],active["attempt"])).fetchone()
+                    receipt=json.loads(row["result"]) if row else {}
+                    receipt["request_receipt_status"]="recorded"; receipt["outcome"]="unknown"
+                    self.db.execute("UPDATE source_attempts SET status='outcome_unknown',result=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=? AND status='dispatching'",(json.dumps(receipt),run_id,query_id,active["cursor"],active["attempt"]))
+                    self.db.execute("UPDATE source_queries SET status='outcome_unknown',reason='OpenAlex transport outcome is unknown' WHERE run_id=? AND query_id=?",(run_id,query_id))
+                self.db.execute("UPDATE investigations SET budget=?,updated=? WHERE id=?",(json.dumps(budget),time.time(),run_id)); self.db.commit()
+            except Exception: self.db.rollback(); raise
+        transport=OpenAlexTransport({**runtime,"budget":json.loads(self._run(run_id)["budget"])},reserve_http)
         while True:
             if len(seen)>=max_pages or cursor in seen:
                 return found,"partial","cursor loop or page limit"
@@ -1101,17 +1555,25 @@ CREATE TABLE IF NOT EXISTS model_tasks(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,
             if cached:
                 page=json.loads(cached["result"])
             else:
-                if self.db.execute("SELECT 1 FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND status='pending'",(run_id,query_id,cursor)).fetchone():
+                if self.db.execute("SELECT 1 FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND status IN ('pending','dispatching','outcome_unknown')",(run_id,query_id,cursor)).fetchone():
                     return found,"partial","uncertain prior source call"
                 page=None
                 for _ in range(3):
                     number=self.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ?",(run_id,query_id,cursor)).fetchone()[0]+1
                     self.db.execute("INSERT INTO source_attempts VALUES (?,?,?,?,?,?)",(run_id,query_id,cursor,number,"pending",json.dumps({"kind":"search"}))); self.db.commit()
+                    active.update({"cursor":cursor,"attempt":number,"maximum":0})
                     try:
                         page=transport.search("openalex",query,cursor)
                     except SourceError as error:
-                        self.db.execute("UPDATE source_attempts SET status=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(error.code,run_id,query_id,cursor,number)); self.db.commit()
-                        if error.code in {"RH_SOURCE_RATE_LIMIT","RH_SOURCE_TIMEOUT","RH_SOURCE_SOURCE_UNAVAILABLE","RH_SOURCE_NETWORK_ERROR"}:
+                        lease=self.db.execute("SELECT status,result FROM source_attempts WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(run_id,query_id,cursor,number)).fetchone()
+                        receipt=json.loads(lease["result"] or "{}") if lease else {}
+                        synthetic_transport=not receipt.get("request_receipt_status")
+                        if lease and lease["status"] in {"pending","dispatching"}:
+                            terminal=error.code if synthetic_transport else ("outcome_unknown" if error.code in {"RH_SOURCE_TIMEOUT","RH_SOURCE_NETWORK_ERROR","RH_SOURCE_SOURCE_UNAVAILABLE"} else error.code)
+                            self.db.execute("UPDATE source_attempts SET status=? WHERE run_id=? AND query_id=? AND cursor IS ? AND attempt=?",(terminal,run_id,query_id,cursor,number)); self.db.commit()
+                        known_http=receipt.get("http_status")
+                        retry_known=known_http==429 or (isinstance(known_http,int) and known_http>=500)
+                        if (synthetic_transport and error.code in {"RH_SOURCE_RATE_LIMIT","RH_SOURCE_TIMEOUT","RH_SOURCE_SOURCE_UNAVAILABLE","RH_SOURCE_NETWORK_ERROR"}) or retry_known:
                             if isinstance(error.retry_after,(int,float)) and error.retry_after > 0: time.sleep(min(error.retry_after,5))
                             continue
                         return found,"partial",error.code

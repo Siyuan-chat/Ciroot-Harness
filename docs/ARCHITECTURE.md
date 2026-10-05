@@ -1,4 +1,6 @@
-> 当前整体设计入口：[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)（D19 v1.0，2026-09-10），含总架构图、两模式工作流、八角色、人工分流与保密边界。本文保留 D1/D2 历史架构及阶段补充；新增设计不等于已实现。
+> 当前执行入口：[INTEGRATION_STAGE.md](INTEGRATION_STAGE.md)（2026-10-05，用户批准 S0–S6 实施）。下文历史阶段的“仅设计/不实现 GUI”等表述保留其历史范围，不限制本轮；实际通过状态按本轮固定候选记录。
+
+> 当前整体设计入口：[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)（D19 v1.0，2026-09-10），含总架构图、两模式工作流、八角色、人工分流与保密边界。GUI 本地封装的当前接口见 [GUI_API_CONTRACT.md](GUI_API_CONTRACT.md)。本文保留 D1/D2 历史架构及阶段补充；新增设计不等于已实现。
 
 > 历史阶段更新（2026-09-10）：D2 已验收结束。D18 本地 RAG 与 Codex/Luna 接入的范围、公共契约和 RG01–RG07 验收以 [RAG_STAGE.md](RAG_STAGE.md) 为准；实际完成记录见 RAG_ACCEPTANCE.md。
 

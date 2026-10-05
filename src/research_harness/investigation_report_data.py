@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 from .errors import ValidationError
@@ -22,7 +23,13 @@ def _refs(claim: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(refs, list): return []
     result = []
     for item in refs:
-        result.append({"evidence_id": item} if isinstance(item, str) else item)
+        if isinstance(item, str):
+            normalized = {"evidence_id": item}
+            if isinstance(claim.get("parse_revision_id"), str):
+                normalized["parse_revision_id"] = claim["parse_revision_id"]
+            result.append(normalized)
+        else:
+            result.append(item)
     return result
 
 
@@ -66,6 +73,8 @@ def validate_claims(evidence: list[dict[str, Any]], findings: list[dict[str, Any
                 reasons.append("evidence lacks identity or locator")
             if document_id != item.get("document_id") or version_id != item.get("version_id"):
                 reasons.append("evidence document/version mismatch")
+            if item.get("parse_revision_id") and ref.get("parse_revision_id", claim.get("parse_revision_id")) != item.get("parse_revision_id"):
+                reasons.append("evidence parse revision mismatch or missing")
             if not isinstance(quote, str) or not quote or quote not in str(item.get("text", "")):
                 reasons.append("evidence quote is not a continuous original substring")
         if isinstance(finding_refs, list) and finding_refs and all(isinstance(ref, int) and 0 <= ref < len(findings) for ref in finding_refs):
@@ -85,6 +94,158 @@ def validate_claims(evidence: list[dict[str, Any]], findings: list[dict[str, Any
 def _stable_condition(value: Any) -> str:
     if isinstance(value, (dict, list)): return repr(sorted(value.items()) if isinstance(value, dict) else value)
     return repr(value)
+
+
+def _claim_checks(evidence: list[dict[str, Any]], findings: list[dict[str, Any]], claim: dict[str, Any], index: int, verification: dict[str, Any]) -> dict[str, Any]:
+    """Keep provenance, quote matching, and verifier acceptance distinct."""
+    evidence_by_id = {item.get("evidence_id"): item for item in evidence}
+    refs = _refs(claim)
+    identity_ok = locator_ok = quote_match = parse_revision_ok = bool(refs)
+    for ref in refs:
+        if not isinstance(ref, dict) or not isinstance(ref.get("evidence_id"), str):
+            identity_ok = locator_ok = quote_match = parse_revision_ok = False
+            continue
+        item = evidence_by_id.get(ref["evidence_id"])
+        if not item:
+            identity_ok = locator_ok = quote_match = parse_revision_ok = False
+            continue
+        if (ref.get("document_id", claim.get("document_id")) != item.get("document_id") or
+                ref.get("version_id", claim.get("version_id")) != item.get("version_id")):
+            identity_ok = False
+        if not item.get("document_id") or not item.get("version_id"):
+            identity_ok = False
+        if not item.get("locator"):
+            locator_ok = False
+        if item.get("parse_revision_id") and ref.get("parse_revision_id", claim.get("parse_revision_id")) != item.get("parse_revision_id"):
+            parse_revision_ok = False
+        quote = ref.get("quote", claim.get("quote"))
+        if not isinstance(quote, str) or not quote or quote not in str(item.get("text", "")):
+            quote_match = False
+    finding_refs = claim.get("finding_refs", [])
+    finding_binding_ok = (isinstance(finding_refs, list) and bool(finding_refs) and
+                          all(isinstance(ref, int) and 0 <= ref < len(findings) for ref in finding_refs))
+    if finding_binding_ok:
+        allowed = {evidence_id for finding_ref in finding_refs for evidence_id in findings[finding_ref].get("evidence_ids", [])}
+        finding_binding_ok = bool(refs) and all(isinstance(ref, dict) and ref.get("evidence_id") in allowed for ref in refs)
+    verifier_status = verification.get("status") in {"supported", "partial"}
+    accepted = verifier_status and index in verification.get("supported_claim_refs", [])
+    return {
+        "identity": "pass" if identity_ok else "fail",
+        "parse_revision": "pass" if parse_revision_ok else "fail",
+        "locator": "pass" if locator_ok else "fail",
+        "quote_match": "matched" if quote_match else "unmatched",
+        "quote_match_note": "substring match records provenance only; it is not semantic support",
+        "finding_binding": "pass" if finding_binding_ok else "fail",
+        "independent_verifier": "accepted" if accepted else "not_accepted",
+    }
+
+
+def _language_hint(value: str) -> str:
+    kana = sum("\u3040" <= char <= "\u30ff" for char in value)
+    han = sum("\u3400" <= char <= "\u9fff" for char in value)
+    hangul = sum("\uac00" <= char <= "\ud7af" or "\u1100" <= char <= "\u11ff" for char in value)
+    latin = sum(char.isascii() and char.isalpha() for char in value)
+    if kana and not hangul and not latin:
+        return "ja"
+    if hangul and not kana and not latin and not han:
+        return "ko"
+    if (kana or han or hangul) and latin:
+        return "mixed"
+    if hangul or kana:
+        return "mixed"
+    # Han-only text can be Chinese or Japanese, so leave it unresolved.
+    if han:
+        return "und"
+    if latin:
+        return "en"
+    return "und"
+
+
+def _accepted_section_title(language: str) -> str:
+    return {"zh": "已核验主张", "ja": "検証済みの主張", "ko": "검증된 주장"}.get(language, "Verified claims")
+
+
+def _gap_projection(coverage: dict[str, Any], issues: list[dict[str, Any]], language: str, section_id: str) -> dict[str, Any] | None:
+    """Create a reader gap only from core-owned status fields and issue codes."""
+    coverage_refs = ["coverage.complete"] if coverage.get("complete") is False else []
+    issue_refs = sorted({item["code"] for item in issues
+                         if isinstance(item, dict) and isinstance(item.get("code"), str)
+                         and re.fullmatch(r"RH_[A-Z0-9_]+", item["code"])})
+    if not coverage_refs and not issue_refs:
+        return None
+    if language == "zh":
+        parts = []
+        if coverage_refs: parts.append("冻结运行记录标记覆盖不完整。")
+        if issue_refs: parts.append("记录的问题代码：" + ", ".join(issue_refs) + "。")
+    elif language == "ja":
+        parts = []
+        if coverage_refs: parts.append("凍結実行記録ではカバレッジが不完全です。")
+        if issue_refs: parts.append("記録された問題コード：" + ", ".join(issue_refs) + "。")
+    elif language == "ko":
+        parts = []
+        if coverage_refs: parts.append("고정 실행 기록에서 커버리지가 불완전하다고 표시되었습니다.")
+        if issue_refs: parts.append("기록된 문제 코드: " + ", ".join(issue_refs) + ".")
+    else:
+        parts = []
+        if coverage_refs: parts.append("The frozen run record marks coverage as incomplete.")
+        if issue_refs: parts.append("Recorded issue codes: " + ", ".join(issue_refs) + ".")
+    return {"block_id": f"{section_id}:gap", "kind": "gap", "issue_refs": issue_refs,
+            "coverage_refs": coverage_refs, "text": " ".join(parts)}
+
+
+def _project_sections(sections: list[dict[str, Any]], checked_claims: list[dict[str, Any]], valid_claim_ids: set[str],
+                      coverage: dict[str, Any], source_issues: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Project reader sections solely from accepted claims plus core gap metadata."""
+    claims_by_id = {str(claim["claim_id"]): claim for claim in checked_claims}
+    checked_sections: list[dict[str, Any]] = []
+    result_issues: list[dict[str, Any]] = []
+    for section in sections:
+        if not isinstance(section, dict):
+            raise ValidationError("sections must contain objects")
+        if any(field not in section for field in ("deliverable_type", "language", "section_id", "title", "body", "claim_ids")):
+            raise ValidationError("section has invalid fields")
+        requested_kind = section.get("block_kind", section.get("section_kind", "fact"))
+        if section.get("block_kind") and section.get("section_kind") and section["block_kind"] != section["section_kind"]:
+            requested_kind = "invalid"
+        if requested_kind not in {"fact", "explanation", "method"}:
+            result_issues.append(_issue("RH_SECTION_KIND_DRAFT", "unsupported section kind is withheld; only fact, explanation, and method projections are accepted", section_id=section.get("section_id"), section_kind=requested_kind))
+            continue
+        claim_ids = section.get("claim_ids", [])
+        if not isinstance(claim_ids, list) or not claim_ids or not all(isinstance(value, str) for value in claim_ids) or len(claim_ids) != len(set(claim_ids)):
+            result_issues.append(_issue("RH_SECTION_DRAFT", "section must reference distinct independently accepted claims", section_id=section.get("section_id")))
+            continue
+        missing = [claim_id for claim_id in claim_ids if not isinstance(claim_id, str) or claim_id not in valid_claim_ids]
+        if missing:
+            result_issues.append(_issue("RH_SECTION_DRAFT", "section references unverified or invalid claims and is withheld", section_id=section.get("section_id"), claim_ids=missing))
+            continue
+        blocks = [{"block_id": f"{section['section_id']}:{requested_kind}:{claim_id}", "kind": requested_kind,
+                   "claim_id": claim_id, "text": claims_by_id[claim_id]["claim"]} for claim_id in claim_ids]
+        item = copy.deepcopy(section)
+        item["section_kind"] = requested_kind
+        item["blocks"] = blocks
+        item["title"] = _accepted_section_title(section["language"])
+        body = "\n\n".join(block["text"] for block in blocks)
+        if section["title"] != item["title"]:
+            result_issues.append(_issue("RH_SECTION_TITLE_DRAFT", "free section title retained for diagnosis; reader title uses a fixed localized label", section_id=section.get("section_id")))
+        if section["body"] != body:
+            result_issues.append(_issue("RH_SECTION_DRAFT", "free report prose retained for diagnosis; reader body was assembled from independently accepted claims", section_id=section.get("section_id")))
+        checked_sections.append(item)
+
+    # Project run-recorded gaps once per deliverable/language, attached only to
+    # an already accepted section. No model-provided gap text is copied.
+    seen_targets: set[tuple[str, str]] = set()
+    for item in checked_sections:
+        target = (str(item["deliverable_type"]), str(item["language"]))
+        if target in seen_targets:
+            continue
+        seen_targets.add(target)
+        gap = _gap_projection(coverage, source_issues, target[1], str(item["section_id"]))
+        if gap is not None:
+            item["blocks"].append(gap)
+    for item in checked_sections:
+        item["body"] = "\n\n".join(block["text"] for block in item["blocks"])
+        item["source_language_hint"] = _language_hint(item["body"])
+    return checked_sections, result_issues
 
 
 def _report_targets(spec: dict[str, Any], sections: list[dict[str, Any]]) -> list[Any]:
@@ -120,27 +281,20 @@ def build_report_data(run_id: str, spec: dict[str, Any], evidence: list[dict[str
         raise ValidationError("report inputs have invalid shape")
     validation = validate_claims(evidence, findings, claims, verification)
     valid = set(validation["valid_claim_ids"]); result_issues = [*copy.deepcopy(issues), *validation["issues"]]
+    if coverage.get("complete") is False:
+        result_issues.append(_issue("RH_REPORT_COVERAGE_INCOMPLETE", "coverage is marked incomplete in the frozen run record"))
     checked_claims = []
-    for claim in claims:
+    for index, claim in enumerate(claims):
         item = copy.deepcopy(claim)
         item["verification"] = "verified" if item["claim_id"] in valid else "draft"
+        checks = _claim_checks(evidence, findings, claim, index, verification)
+        item["report_checks"] = checks
         checked_claims.append(item)
-    checked_sections = []
-    for section in sections:
-        if not isinstance(section, dict): raise ValidationError("sections must contain objects")
-        if any(field not in section for field in ("deliverable_type", "language", "section_id", "title", "body", "claim_ids")):
-            raise ValidationError("section has invalid fields")
-        claim_ids = section.get("claim_ids", [])
-        if not isinstance(claim_ids, list): raise ValidationError("section claim_ids must be a list")
-        factual = section.get("section_kind", "scientific") not in {"context", "method", "administrative"}
-        if factual and not claim_ids:
-            result_issues.append(_issue("RH_SECTION_DRAFT", "scientific section has no supported claims and is withheld", section_id=section.get("section_id")))
-            continue
-        missing = [claim_id for claim_id in claim_ids if claim_id not in valid]
-        if missing:
-            result_issues.append(_issue("RH_SECTION_DRAFT", "section references unverified or invalid claims and is withheld", section_id=section.get("section_id"), claim_ids=missing))
-            continue
-        checked_sections.append(copy.deepcopy(section))
+    checked_sections, section_issues = _project_sections(sections, checked_claims, valid, coverage, issues)
+    result_issues.extend(section_issues)
+    for section in checked_sections:
+        if section["source_language_hint"] != section["language"]:
+            result_issues.append(_issue("RH_REPORT_LANGUAGE_UNVERIFIED", "report blocks are rendered with a heuristic source-language hint; no translation was accepted", section_id=section.get("section_id"), requested_language=section["language"], source_language_hint=section["source_language_hint"]))
     targets = _report_targets(spec, sections)
     for target in targets:
         kind = target.get("deliverable_type")
@@ -159,8 +313,10 @@ def build_report_data(run_id: str, spec: dict[str, Any], evidence: list[dict[str
         item = copy.deepcopy(finding); item["evidence_refs"] = copy.deepcopy(finding["evidence_ids"]); checked_findings.append(item)
     outcome = "partial" if result_issues or verification.get("status") == "partial" else "completed"
     return {"synthetic": _synthetic(spec), "run_id": run_id, "report_version": report_version,
+            "report_contract_version": "report-block-v2",
             "research_question": spec.get("research_question"), "spec": copy.deepcopy(spec), "report_targets": targets,
             "findings": checked_findings, "evidence": copy.deepcopy(evidence), "claims": checked_claims,
             "sections": checked_sections, "bibliography": copy.deepcopy(bibliography), "coverage": copy.deepcopy(coverage),
             "issues": result_issues, "validation": {"outcome": outcome, **validation},
+            "report_contract_sources": {"coverage": copy.deepcopy(coverage), "issues": copy.deepcopy(issues)},
             "raw_model_output": {"findings": copy.deepcopy(findings), "claims": copy.deepcopy(claims), "sections": copy.deepcopy(sections), "verification": copy.deepcopy(verification)}}

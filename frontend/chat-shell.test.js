@@ -22,6 +22,17 @@ test('chat is a right-side workspace column with narrow-window content/chat swit
   assert.match(css,/\.workspace\.detail-open>\.detail\{display:block;position:absolute/);
   assert.match(css,/@media\(max-width:650px\)/);
 });
+test('390px layout uses one main column and a collapsible localized navigation menu',()=>{
+  assert.match(app,/id="mobile-nav-toggle" class="mobile-nav-toggle"[^>]*aria-expanded="\$\{mobileNavOpen\}"/);
+  assert.match(app,/app\.querySelector\('#mobile-nav-toggle'\)[\s\S]*?mobileNavOpen=!mobileNavOpen/);
+  assert.match(app,/if\(mobileNavOpen\)\{mobileNavOpen=false/);
+  assert.match(app,/nav-\$\{mobileNavOpen\?'open':'closed'\}/);
+  assert.match(i18n,/'nav\.menu':\[/);
+  assert.match(css,/@media\(max-width:650px\)\{[\s\S]*?\.workspace>\.sidebar,\.workspace\.view-chat>\.sidebar\{display:none!important\}/);
+  assert.match(css,/\.workspace\.nav-open>\.sidebar\{display:block!important;position:absolute/);
+  assert.match(css,/grid-template-columns:minmax\(0,1fr\);grid-template-rows:minmax\(0,1fr\)/);
+  assert.match(css,/\.workspace\.page-overview>main>\.page-head\{display:none\}/);
+});
 test('context and chat keep compact labels, disclosure-only low-frequency controls, and a usable composer',()=>{
   assert.match(app,/<details id="context-controls" class="context-controls">/);
   assert.match(app,/<details id="top-more" class="top-more">/);
@@ -43,11 +54,12 @@ test('CirootHarness logo, page title and native title use the approved brand',as
   assert.doesNotMatch(app,/Patent Agent|PATENT RESEARCH WORKSPACE|PATENT INSPECTOR/);
 });
 test('empty and unindexed libraries have distinct localized labels',()=>{
-  assert.match(app,/state\.library\.length===0\?t\('library\.emptyWorkspace'/);
+  assert.match(app,/state\.library\.length===0\?t\(state\.libraryDocumentCount===0\?'library\.emptyWorkspace':'library\.documentsUnknown'/);
+  assert.match(app,/library\.documentsUnknown/);
   assert.match(i18n,/'library\.emptyWorkspace':\[/);
   assert.match(i18n,/'library\.notIndexed':\[/);
 });
-test('chat history is a visible selectable rail with a separate new action and per-conversation drafts',()=>{
+test('chat history is a dismissible popover with a separate new action and per-conversation drafts',()=>{
   assert.match(app,/class="chat-conversation-list" aria-label=/);
   assert.match(app,/id="chat-new" type="button" class="chat-new"/);
   assert.match(app,/data-conversation="\$\{esc\(x\.conversation_id\)\}" aria-current=/);
@@ -56,6 +68,7 @@ test('chat history is a visible selectable rail with a separate new action and p
   assert.match(app,/state\.chatDrafts\.get\(conversationScopeKey\(captureScope\(\),c\?\.conversation_id\|\|'draft'\)\)/);
   assert.match(app,/state\.chatDrafts\.delete\(draftKey\)/);
   assert.match(css,/\.chat-conversation-list\{grid-column:1;grid-row:1/);
+  assert.match(css,/\.chat-conversation-list\{[^}]*position:absolute!important/);
   assert.match(css,/\.workspace\.chat-closed/);
 });
 test('workspace creation dialog uses aligned full-width fields, compact optional text, accessible focus and responsive actions',()=>{
@@ -76,10 +89,10 @@ test('details drawer overlays content so it does not narrow the document list be
   assert.match(css,/\.workspace\.detail-closed>\.detail\{display:none\}/);
   assert.match(css,/min-width:min\(300px,calc\(100vw - 148px\)\)/);
 });
-test('selecting workspace, library, collection, or the library nav returns to the scoped library content view',()=>{
-  assert.match(app,/state\.page='library';mobileView='content';setScope\(/);
-  assert.match(app,/await loadLibrary\(generation\);await syncEvents/);
-  assert.match(app,/if\(page==='library'\)mobileView='content'/);
+test('selecting workspace, library, collection, or the library nav returns to the scoped overview content view',()=>{
+  assert.match(app,/state\.page='overview';state\.demoStarting=false;state\.demoIdempotencyKey=null;mobileView='content';setScope\(/);
+  assert.match(app,/await Promise\.all\(\[loadLibrary\(generation\),loadOverview\(generation,next\)\]\);await syncEvents/);
+  assert.match(app,/if\(\['overview','library','investigations','reports','settings','demo'\]\.includes\(page\)\)mobileView='content'/);
   assert.match(app,/app\.querySelectorAll\('\[data-page\]'\)\.forEach\(b=>b\.onclick=\(\)=>loadPage\(b\.dataset\.page\)\)/);
   assert.match(app,/state\.loading&&state\.libraryStatus==null[\s\S]*?正在读取所选文献库/);
 });

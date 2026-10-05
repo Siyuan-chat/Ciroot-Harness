@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-engine.schema.json",
+  "title": "Research engine final draft",
+  "type": "object",
+  "required": ["protocol", "op", "identity", "engine", "draft", "trace"],
+  "properties": {
+    "protocol": {"const": "research-engine-jsonl/1"},
+    "op": {"const": "result"},
+    "identity": {"$ref": "research-engine-protocol.schema.json#/$defs/identity"},
+    "engine": {"type": "object", "required": ["name", "version"], "properties": {"name": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}}, "additionalProperties": true},
+    "draft": {"$ref": "research-engine-protocol.schema.json#/$defs/draft"},
+    "trace": {"type": "object"}
+  },
+  "additionalProperties": false
+}

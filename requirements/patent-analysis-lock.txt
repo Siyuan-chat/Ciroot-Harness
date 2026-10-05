@@ -1,0 +1,31 @@
+# Full isolated Windows/Python 3.12 environment lock for requirements/patent-analysis.txt.
+# Installed into .local/integration-20261005/patent-analysis-runtime only.
+# Runtime wheel metadata license identifiers/classifiers recorded below; SciPy and
+# cloudpickle use BSD License classifiers without SPDX expressions in wheel metadata.
+# Actual API smoke: PASS; NetworkX citation graph edges=2; sklearn similarity pairs=4.
+# Inputs were synthetic-only. Test suite was run in project validation runtime (16 passed);
+# isolated venv intentionally contains analysis dependencies only and has no pytest.
+# No study/public patent-source access or model/service call occurred.
+
+# Direct, transitive and environment bootstrap packages, pinned from pip freeze --all.
+cloudpickle==3.1.2
+joblib==1.6.0
+narwhals==2.26.0
+networkx==3.6.1
+numpy==2.5.3
+pip==25.0.1
+scikit-learn==1.9.1
+scipy==1.18.1
+threadpoolctl==3.7.0
+
+# Wheel metadata licenses:
+# cloudpickle==3.1.2: BSD License
+# joblib==1.6.0: BSD-3-Clause
+# narwhals==2.26.0: MIT
+# networkx==3.6.1: BSD-3-Clause
+# numpy==2.5.3: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
+# pip==25.0.1: MIT License (venv bootstrap tool)
+# scikit-learn==1.9.1: BSD-3-Clause
+# scipy==1.18.1: BSD License
+# threadpoolctl==3.7.0: BSD-3-Clause
+

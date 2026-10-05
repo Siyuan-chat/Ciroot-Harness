@@ -30,16 +30,19 @@ def _ready_service(tmp_path):
 
 def test_bridge_binds_baseline_acquisition_and_rag_facts_idempotently(tmp_path):
     service,run=_ready_service(tmp_path)
-    rag={"evidence_id":"rag-1","document_id":"rag-doc","version_id":"rag-v1","text":"Docling fact","locator":{"page":1,"pages":[1],"provenance":[{"page":1,"bbox":{"l":1,"t":1,"r":2,"b":2}}]}}
-    mapping={"investigation_document_id":"W1","investigation_version_id":"openalex-oa-pdf","doi":"10.1/example","sha256":"abc","rag_document_id":"rag-doc","rag_version_id":"rag-v1"}
+    rag={"evidence_id":"rag-1","document_id":"rag-doc","version_id":"rag-v1","parse_revision_id":"pr-rag-1","source_sha256":"source-hash","text":"Docling fact","locator":{"page":1,"pages":[1],"provenance":[{"page":1,"bbox":{"l":1,"t":1,"r":2,"b":2}}]}}
+    mapping={"investigation_document_id":"W1","investigation_version_id":"openalex-oa-pdf","doi":"10.1/example","sha256":"abc","rag_document_id":"rag-doc","rag_version_id":"rag-v1","parse_revision_id":"pr-rag-1","source_sha256":"source-hash"}
     try:
         old_task=next(item for item in service.get_pending_tasks(run) if item["role"] == "evidence_analysis")
         assert service.attach_discovery_evidence(run,[rag],[mapping],[{"id":"rag-doc","title":"Candidate"}])["status"] == "attached"
         task=next(item["payload"] for item in service.get_pending_tasks(run) if item["role"] == "evidence_analysis")
         assert {item["evidence_id"] for item in task["evidence"]} == {"base-1","page-1","rag-1"}
+        assert next(item for item in task["evidence"] if item["evidence_id"]=="rag-1")["parse_revision_id"] == "pr-rag-1"
+        saved_mapping=service.db.execute("SELECT payload FROM attached_discovery_evidence WHERE run_id=?",(run,)).fetchone()
+        assert json.loads(saved_mapping["payload"])["mappings"][0]["source_sha256"] == "source-hash"
         assert {item["id"] for item in task["bibliography"]} == {"base-doc","W1","rag-doc"}
         service._check_claim({"evidence_refs":["base-1"],"document_id":"base-doc","version_id":"base-v1","quote":"baseline fact"},task["evidence"])
-        service._check_claim({"evidence_refs":["rag-1"],"document_id":"rag-doc","version_id":"rag-v1","quote":"Docling fact"},task["evidence"])
+        service._check_claim({"evidence_refs":["rag-1"],"document_id":"rag-doc","version_id":"rag-v1","parse_revision_id":"pr-rag-1","quote":"Docling fact"},task["evidence"])
         assert service.attach_discovery_evidence(run,[rag],[mapping],[{"id":"rag-doc","title":"Candidate"}])["status"] == "reused"
         with pytest.raises(InvestigationError, match="task version is stale"):
             service.submit_model_result(run,old_task["task_id"],{},old_task["task_version"])

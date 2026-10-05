@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlsplit
 from jsonschema import Draft202012Validator
 from .errors import ValidationError
+from .provider_profiles import validate_profile
 
 def _load(name: str) -> dict[str, Any]:
     return json.loads(resources.files("research_harness").joinpath("schemas", name).read_text(encoding="utf-8"))
@@ -23,17 +24,28 @@ def validate_spec(spec: dict[str, Any]) -> None:
 def validate_runtime(runtime: dict[str, Any]) -> None:
     _validate(runtime, "investigation-runtime.schema.json")
     b=runtime["budget"]; allowed={"max_tasks","max_model_calls","max_source_calls","max_pages_per_query","max_cycles","max_total_tasks","max_downloads","max_download_calls","max_download_bytes","max_source_bytes","max_source_response_bytes"}
-    if set(b)-allowed or any(type(v) is not int or v<1 for v in b.values()): raise ValidationError("invalid runtime budget")
+    if set(b)-allowed or any(type(v) is not int or v < (0 if key=="max_source_calls" else 1) for key,v in b.items()): raise ValidationError("invalid runtime budget")
+    patent_sources=runtime.get("patent_sources")
+    if patent_sources is not None:
+        _validate(patent_sources, "patent-sources.schema.json")
+        if any(profile.get("enabled") is True for profile in patent_sources.values()):
+            if any(type(b.get(key)) is not int or b[key] < 1 for key in ("max_source_bytes","max_source_response_bytes")):
+                raise ValidationError("enabled patent sources require explicit positive source byte and response budgets")
+            if any("document_download" in profile.get("capabilities",[]) and (type(b.get(key)) is not int or b[key] < 1) for profile in patent_sources.values() for key in ("max_download_calls","max_download_bytes")):
+                raise ValidationError("document download requires explicit call and byte budgets")
     if runtime.get("mode")=="api":
         config=runtime.get("model_api")
         if not isinstance(config,dict) or "max_model_calls" not in b or runtime.get("allow_network") is not True:
             raise ValidationError("model API runtime requires configuration, call budget, and network opt-in")
-        if config.get("provider")=="openai_compatible" and not config.get("endpoint"):
-            raise ValidationError("OpenAI-compatible provider requires an HTTPS endpoint")
-        if config.get("endpoint"):
-            endpoint=urlsplit(config["endpoint"])
-            if endpoint.scheme!="https" or not endpoint.hostname or endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
-                raise ValidationError("model API endpoint must be an HTTPS URL without credentials or query")
+        validate_profile(config)
+    engine=runtime.get("research_engine")
+    if engine is not None:
+        if runtime.get("mode")!="api" or not isinstance(engine,dict) or engine.get("name") not in {"paperqa", "storm"}:
+            raise ValidationError("research engine requires API mode and a supported engine name")
+        if not isinstance(engine.get("python_executable"),str):
+            raise ValidationError("research engine requires an isolated Python runtime")
+        if engine.get("name")=="paperqa" and not isinstance(engine.get("embedding_model"),str):
+            raise ValidationError("PaperQA requires an explicit embedding model")
     p=runtime.get("data_policy",{})
     if p and (not isinstance(p,dict) or "allowed_models" in p and (not isinstance(p["allowed_models"],list) or not all(isinstance(x,str) for x in p["allowed_models"])) or "allow_query_egress" in p and type(p["allow_query_egress"]) is not bool): raise ValidationError("invalid data policy")
     if runtime.get("data_mode")=="live":

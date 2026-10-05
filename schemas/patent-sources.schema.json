@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-harness.local/schemas/patent-sources.schema.json",
+  "title": "Patent source runtime profiles",
+  "description": "Opt-in source configuration. Credentials are environment variable names only; values never belong in runtime JSON.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "jpo": { "$ref": "#/$defs/jpo" },
+    "epo_eps": { "$ref": "#/$defs/epo_eps" },
+    "epo_linked": { "$ref": "#/$defs/epo_linked" },
+    "uspto_odp": { "$ref": "#/$defs/uspto_odp" },
+    "wipo_pearl": { "$ref": "#/$defs/pending" },
+    "kipris_plus": { "$ref": "#/$defs/kipris" },
+    "tipo_opd": { "$ref": "#/$defs/tipo" },
+    "tipo_gpss": { "$ref": "#/$defs/pending" }
+  },
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["enabled", "capabilities", "max_calls", "max_response_bytes"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "max_calls": { "type": "integer", "minimum": 1 },
+        "max_response_bytes": { "type": "integer", "minimum": 1 },
+        "token_env": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "api_key_env": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "username_env": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "password_env": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "opd_enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "jpo": { "allOf": [ { "$ref": "#/$defs/base" }, { "required": ["token_env"], "properties": { "capabilities": { "items": { "enum": ["case_progress", "case_relation", "party_reference", "number_conversion", "application_documents", "citation_lookup", "registration_lookup", "case_reference", "family_lookup"] } } } } ] },
+    "epo_eps": { "allOf": [ { "$ref": "#/$defs/base" }, { "properties": { "capabilities": { "items": { "enum": ["publication_date_index", "publication_date_list", "publication_format_lookup", "official_publication_document"] } } } } ] },
+    "epo_linked": { "allOf": [ { "$ref": "#/$defs/base" }, { "properties": { "capabilities": { "items": { "enum": ["application_record", "publication_record", "cpc_vocabulary", "ipc_vocabulary", "publication_date_filter"] } } } } ] },
+    "uspto_odp": { "allOf": [ { "$ref": "#/$defs/base" }, { "required": ["api_key_env"], "properties": { "capabilities": { "items": { "enum": ["patent_search", "application_record", "document_download"] } } } } ] },
+    "pending": { "allOf": [ { "$ref": "#/$defs/base" }, { "properties": { "capabilities": { "items": { "type": "string" } } } } ] },
+    "kipris": { "allOf": [ { "$ref": "#/$defs/pending" }, { "required": ["api_key_env"] } ] },
+    "tipo": { "allOf": [ { "$ref": "#/$defs/pending" }, { "required": ["username_env", "password_env"] } ] }
+  }
+}

@@ -1,6 +1,6 @@
 # User guide: D2 fixture framework
 
-D2 validates the offline framework and extension interfaces. Real APIs, production RAG, PDF/OCR, standalone chat and GUI are not integrated; optional dependencies do not enable them. The host assistant clarifies requirements and supplies ResearchSpec JSON. Product runs are manually triggered.
+This page retains the D2 synthetic fixture instructions. The project now includes local RAG, PDF parsing and a desktop GUI; see the [GUI quickstart](GUI_QUICKSTART.zh-CN.md). Research engines, regional patent sources and deployment integration are tracked in [S0–S6 status](INTEGRATION_STAGE.md). Passing a component test does not activate a real API. The host assistant clarifies requirements and supplies ResearchSpec JSON. Product runs are manually triggered.
 
 ## Install and run
 

@@ -63,6 +63,8 @@ def test_epo_only_search_family_versions_and_ledger(monkeypatch,tmp_path):
         assert status=="complete" and [x["document_id"] for x in found]==["EP1234567A1","EP1234567B1"]
         assert service._search_epo_pages(run,"Q1","ta=membrane",config)[1]=="complete"
         assert len(calls)==2  # auth and one CQL page, then cached page
+        assert service.status(run)["budget"]["reserved_source_calls"] == 2
+        assert service.db.execute("SELECT COUNT(*) FROM source_attempts WHERE run_id=? AND query_id='epo-http'",(run,)).fetchone()[0] == 2
         issues=service._acquire_epo_documents(run,config,["EP1234567A1","EP1234567B1"])
         assert not issues
         assert any("EP1234567.A1/fulltext" in url for _,url,_ in calls)
@@ -194,14 +196,15 @@ def test_query_revision_stays_in_one_run_and_budget(monkeypatch,tmp_path):
     calls=[]; monkeypatch.setattr("research_harness.investigation.requests.request",fake_ops(calls))
     monkeypatch.setenv("EPO_CONSUMER_KEY","key"); monkeypatch.setenv("EPO_CONSUMER_SECRET","secret")
     with InvestigationService(tmp_path) as service:
-        run=service.create_investigation(spec(),runtime(),{"reference_evidence":[]})["run_id"]
+        reference={"evidence_id":"ref-1","document_id":"baseline-1","version_id":"v1","text":"membrane ionomer","locator":{"kind":"page","value":"1"},"visibility":"public"}
+        run=service.create_investigation(spec(),runtime(),{"reference_evidence":[reference]})["run_id"]
         planning=service.get_pending_tasks(run)[0]
-        q1={"query_id":"Q1","source":"epo","query":"ta=membrane","input_refs":[],"parent_query_id":None}
+        q1={"query_id":"Q1","source":"epo","query":"ta=membrane","input_refs":["ref-1"],"parent_query_id":None}
         service.submit_model_result(run,planning["task_id"],{"search_plan":{"queries":[q1]}},planning["task_version"])
         service.advance_investigation(run)
         screen=service.get_pending_tasks(run)[0]
         service.submit_model_result(run,screen["task_id"],{"candidates":[{"document_id":x["document_id"],"relevance":"relevant","reason":"fixture"} for x in screen["payload"]["candidates"]]},screen["task_version"])
-        q2={"query_id":"Q2","source":"epo","query":"ta=ionomer","input_refs":[],"parent_query_id":"Q1","revision_reason":"narrow ionomer term"}
+        q2={"query_id":"Q2","source":"epo","query":"ta=ionomer","input_refs":["ref-1"],"parent_query_id":"Q1","revision_reason":"narrow ionomer term"}
         assert service.add_epo_query(run,q2)["candidate_count"]==2
         assert service.status(run)["budget"]["reserved_source_calls"]==3
         assert len(service.get_pending_tasks(run))==1

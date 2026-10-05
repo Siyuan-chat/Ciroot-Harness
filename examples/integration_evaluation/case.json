@@ -1,0 +1,39 @@
+{
+  "case_id": "synthetic-integration-case-v1",
+  "case_mode": "offline_synthetic",
+  "synthetic_only": true,
+  "corpus_digest": "sha256:b194e3f17f09bb7bca34ffe2832184eff9a37b87b4283746e81f8d899cd903a5",
+  "question_digest": "sha256:6ef1436cb2ef9c832ff59eb1d88526b56f901130c8900de304cb8500bff061c7",
+  "model": {
+    "provider": "synthetic",
+    "model": "none",
+    "version": "fixture-v1"
+  },
+  "budget": {
+    "max_model_calls": 0,
+    "max_embedding_calls": 0,
+    "max_downloads": 0
+  },
+  "research_question": "What pressure did the synthetic fixture report?",
+  "dimensions": [
+    "value_extraction",
+    "condition_context",
+    "source_coverage"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "syn-ev-01",
+      "document_id": "syn-doc-01",
+      "version_id": "syn-v1",
+      "parse_revision_id": "syn-parse-1",
+      "locator": "page:1/paragraph:1",
+      "text": "Synthetic membrane reached 12 MPa at 80 C in the test fixture.",
+      "synthetic": true
+    }
+  ],
+  "sample_composition": {
+    "synthetic_paper_excerpt": 1,
+    "synthetic_patent_excerpt": 0
+  },
+  "evidence_bundle_digest": "sha256:78433c4eb7f781c60ad30bca1b81a4b9f4dacc25a170dc4de32cc8840752849b"
+}
