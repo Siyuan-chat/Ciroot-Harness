@@ -36,6 +36,14 @@ nav:
   - Home: index.md
   - Getting started: getting-started.md
   - Current status: current-status.md
+  - Concepts:
+      - What is auditable AI research?: concepts/auditable-ai-research.md
+      - Evidence traceability: concepts/evidence-traceability.md
+      - Local RAG for scientific literature: concepts/local-rag-scientific-literature.md
+      - AI-assisted patent research: concepts/ai-patent-research.md
+      - Research agent vs research harness: concepts/research-agent-vs-research-harness.md
+      - Reproducible AI research workflows: concepts/reproducible-ai-research-workflows.md
+  - Glossary: glossary.md
 
 extra:
   social:
