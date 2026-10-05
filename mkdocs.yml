@@ -10,6 +10,7 @@ copyright: Apache-2.0 licensed open-source software
 
 theme:
   name: material
+  custom_dir: docs/theme_overrides
   language: en
   features:
     - navigation.sections
@@ -44,6 +45,7 @@ nav:
       - Research agent vs research harness: concepts/research-agent-vs-research-harness.md
       - Reproducible AI research workflows: concepts/reproducible-ai-research-workflows.md
   - Glossary: glossary.md
+  - Crawler & machine access: crawler-policy.md
 
 extra:
   social:
