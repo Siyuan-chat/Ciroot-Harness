@@ -53,6 +53,7 @@ export async function uploadLibraryFile(file, requestScope) {
   if(!response.ok){let data;try{data=await response.json()}catch{data=null}throw new ApiError(data,response.status)}
   const data=await response.json();if(data?.schema_version!=='1')throw new ApiError({code:'RH_SCHEMA_VERSION',message:'接口版本不匹配'},response.status);return data;
 }
+
 export const api = {
   conversations: () => request('/conversations'),
   conversation: (id, requestScope) => request(`/conversations/${encodeURIComponent(id)}`, {requestScope}),
@@ -104,6 +105,8 @@ export const api = {
   libraryDocument: (id,requestScope) => request(`/library/documents/${encodeURIComponent(id)}`,{requestScope}),
   runDocument: (runId,id,requestScope) => request(`/runs/${encodeURIComponent(runId)}/documents/${encodeURIComponent(id)}`,{requestScope}),
   runs: (cursor,requestScope) => request('/runs?limit=50' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),{requestScope}),
+  overview: requestScope => request('/overview',{requestScope}),
+  reviewInbox: (cursor, requestScope, limit=50) => request('/review-inbox?limit=' + encodeURIComponent(limit) + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''), {requestScope}),
   run: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}`,{requestScope}),
   referenceSnapshot: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}/reference-snapshot`,{requestScope}),
   events: (id, after=0,requestScope) => request(`/runs/${encodeURIComponent(id)}/events?after=${encodeURIComponent(after)}&limit=100`,{requestScope}),
@@ -121,5 +124,8 @@ export const api = {
   stop: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}/stop`, { method: 'POST', body: {},requestScope }),
   resume: (id,requestScope) => request(`/runs/${encodeURIComponent(id)}/resume`, { method: 'POST', body: {},requestScope }),
   submitTask: (id, taskId, version, output,requestScope) => request(`/runs/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`, { method: 'POST', body: { task_version: version, result: output },requestScope }),
-  decide: (issueId, decision, note,requestScope) => request(`/reviews/${encodeURIComponent(issueId)}/decision`, { method: 'POST', body: { decision, note },requestScope })
+  decide: (issueId, decision, note,requestScope) => request(`/reviews/${encodeURIComponent(issueId)}/decision`, { method: 'POST', body: { decision, note },requestScope }),
+  goldenDemo: () => request('/golden-demo',{unscoped:true}),
+  runGoldenDemo: (idempotencyKey) => request('/golden-demo',{method:'POST',body:{},unscoped:true,idempotencyKey}),
+  runGoldenDemoScoped: (requestScope,idempotencyKey) => request('/demos/golden',{method:'POST',body:{},requestScope,idempotencyKey})
 };

@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pytest
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -36,7 +37,35 @@ def test_storm_claim_without_extract_finding_is_excluded():
     assert excluded[0]["reason"] == "citation is not linked to an accepted extraction finding"
 
 
-def test_storm_rm_scope_rereads_the_five_frozen_paper_and_patent_extracts():
+def test_storm_rm_scope_rereads_synthetic_paper_and_patent_extracts(tmp_path):
+    evidence = []
+    for kind, count in (("paper", 2), ("patent", 3)):
+        for index in range(count):
+            evidence.append({
+                "evidence_id": f"synthetic-{kind}-{index + 1}",
+                "document_id": f"synthetic-doc-{kind}-{index + 1}",
+                "version_id": "synthetic-v1",
+                "text": f"Synthetic {kind} passage {index + 1} about polymer membrane examples.",
+                "locator": {"kind": "page", "value": index + 1},
+                "legacy_unversioned": True,
+            })
+    manifest = {"scope": "extracts_only", "legacy_revision_policy": "marked legacy_unversioned"}
+    before = [(row["evidence_id"], row["document_id"], row["version_id"], row["text"], row["locator"], row["legacy_unversioned"]) for row in evidence]
+    scoped = [{**row, "legacy": True} if manifest["legacy_revision_policy"].find("marked legacy_unversioned") >= 0 and not row.get("parse_revision_id") else row for row in evidence]
+    rows = _storm_frozen_rows(scoped, "polymer membrane examples patent", 5)
+    assert manifest["scope"] == "extracts_only"
+    assert len(rows) == 5
+    assert {row["meta"]["evidence_id"] for row in rows} == {item[0] for item in before}
+    for row in rows:
+        source = next(item for item in evidence if item["evidence_id"] == row["meta"]["evidence_id"])
+        assert row["snippets"] == [source["text"]]
+        assert row["meta"]["locator"] == source["locator"]
+        assert row["meta"]["legacy"] is True
+    assert before == [(row["evidence_id"], row["document_id"], row["version_id"], row["text"], row["locator"], row["legacy_unversioned"]) for row in evidence]
+
+
+@pytest.mark.skipif(not Path(".local/integration-20261005/s2-case/evidence.json").is_file(), reason="private frozen S2 evidence is local-only")
+def test_local_frozen_s2_evidence_is_read_without_mutation():
     root = Path(".local/integration-20261005/s2-case")
     raw = (root / "evidence.json").read_bytes()
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
@@ -48,7 +77,7 @@ def test_storm_rm_scope_rereads_the_five_frozen_paper_and_patent_extracts():
     assert "marked legacy_unversioned" in manifest["legacy_revision_policy"]
     assert all(not row.get("parse_revision_id") for row in evidence)
     before = [(row["evidence_id"], row["document_id"], row["version_id"], row["text"], row["locator"]) for row in evidence]
-    scoped = [{**row, "legacy": True} if manifest.get("legacy_revision_policy", "").find("marked legacy_unversioned") >= 0 and not row.get("parse_revision_id") else row for row in evidence]
+    scoped = [{**row, "legacy": True} if "marked legacy_unversioned" in manifest.get("legacy_revision_policy", "") and not row.get("parse_revision_id") else row for row in evidence]
     rows = _storm_frozen_rows(scoped, "polymer membrane examples patent", 5)
     assert {row["meta"]["evidence_id"] for row in rows} <= {entry[0] for entry in before}
     assert all(row["snippets"][0] in next(e["text"] for e in evidence if e["evidence_id"] == row["meta"]["evidence_id"]) for row in rows)

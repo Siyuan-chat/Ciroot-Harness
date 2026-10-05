@@ -315,3 +315,20 @@ button.danger,[data-danger],#quit-app{color:var(--status-failed);border-color:#e
 .report-technical,.investigation-list-id code,.investigation-identity code,.review-item code{font-size:var(--text-technical)}
 .overview-run-title{white-space:normal}
 .status-badge{white-space:normal;overflow-wrap:anywhere}
+
+.status-needs_review,.status-open{color:var(--status-review,#6d52a3);background:var(--status-review-bg,#f1ecfb)}.badge.synthetic{color:#005f60;background:#e6f3f2;border-color:#b8d8d4}
+
+:root{--status-review:#6d52a3;--status-review-bg:#f1ecfb}
+:focus-visible{outline:3px solid var(--brand-teal);outline-offset:2px}
+.badge.partial,.status-partial,.status-waiting{color:var(--status-partial);background:var(--status-partial-bg)}
+.status-needs_review,.status-open{color:var(--status-review);background:var(--status-review-bg)}
+.badge.synthetic{color:var(--brand-teal-dark);background:var(--brand-tint);border-color:#b8d8d4}
+.workspace code,.workspace dd,.workspace .page-status{overflow-wrap:anywhere}
+
+.badge.failed,.status-failed{color:var(--status-failed);background:var(--status-failed-bg)}
+.status-badge[class*="unknown"],.status-unknown{color:#536273;background:#edf1f5}
+.workspace.chat-open.view-chat>.chat-dock{display:grid!important}
+
+@media(min-width:1101px){.workspace.detail-closed.chat-closed{grid-template-columns:220px minmax(0,1fr) 0}}
+
+@media(min-width:1101px){.workspace.page-overview.detail-closed.chat-closed{grid-template-columns:196px minmax(0,1fr)}}
