@@ -16,14 +16,14 @@ S0–S6 の整合はオフライン候補として進行中です。研究エン
 </p>
 
 <p align="center">
-  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Siyuan-chat/Ciroot-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/Ciroot-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-desktop%20preview-orange" alt="Desktop preview">
 </p>
 
 <p align="center">
-  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/releases">Windows 版をダウンロード</a> ·
+  <a href="https://github.com/Siyuan-chat/Ciroot-Harness/releases">Windows 版をダウンロード</a> ·
   <a href="#オフライン-demo">オフライン Demo</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="docs/DEVELOPMENT_STATUS.md">開発状況</a>
@@ -68,7 +68,7 @@ CirootHarness は現在 public preview です。完成済みの production resea
 
 ### Windows desktop preview
 
-[GitHub Releases](https://github.com/Siyuan-chat/autoSearch-Harness/releases) から portable ZIP をダウンロードし、`ResearchHarnessGUI` フォルダ全体を展開して次を実行します。
+[GitHub Releases](https://github.com/Siyuan-chat/Ciroot-Harness/releases) から portable ZIP をダウンロードし、`ResearchHarnessGUI` フォルダ全体を展開して次を実行します。
 
 ```text
 ResearchHarnessGUI.exe

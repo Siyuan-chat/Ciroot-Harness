@@ -16,14 +16,14 @@ S0–S6 整合正在按离线候选推进。研究引擎、多地区专利来源
 </p>
 
 <p align="center">
-  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Siyuan-chat/Ciroot-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/Ciroot-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-desktop%20preview-orange" alt="Desktop preview">
 </p>
 
 <p align="center">
-  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/releases">下载 Windows 预览版</a> ·
+  <a href="https://github.com/Siyuan-chat/Ciroot-Harness/releases">下载 Windows 预览版</a> ·
   <a href="#运行离线-demo">运行离线 Demo</a> ·
   <a href="#架构">架构</a> ·
   <a href="docs/DEVELOPMENT_STATUS.md">工程状态</a>
@@ -70,7 +70,7 @@ CirootHarness 目前仍是持续开发中的公开预览版，不是已经完成
 
 ### 1. Windows 桌面预览版
 
-从 [GitHub Releases](https://github.com/Siyuan-chat/autoSearch-Harness/releases) 下载当前 portable ZIP，**完整解压** `ResearchHarnessGUI` 文件夹，然后运行：
+从 [GitHub Releases](https://github.com/Siyuan-chat/Ciroot-Harness/releases) 下载当前 portable ZIP，**完整解压** `ResearchHarnessGUI` 文件夹，然后运行：
 
 ```text
 ResearchHarnessGUI.exe
