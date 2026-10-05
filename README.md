@@ -4,11 +4,9 @@
 
 <h1 align="center">CirootHarness</h1>
 
-The S0–S6 integration is proceeding as an offline candidate. See the [integration guide](docs/INTEGRATION_GUIDE.en.md), [current acceptance status](docs/INTEGRATION_STAGE.md) and [activation requirements](docs/INTEGRATION_ACTIVATION.md) for research engines, regional patent sources and deployment. Component tests do not represent real API or scientific acceptance.
-
 <p align="center">
-  <strong>Auditable AI research for patents and scientific literature.</strong><br>
-  Turn a research question into a versioned, evidence-linked, reviewable research report.
+  <strong>Open-source, local-first and auditable AI research for patents and scientific literature.</strong><br>
+  Turn a research question into a versioned, evidence-linked, reviewable research record—not just an answer.
 </p>
 
 <p align="center">
@@ -29,11 +27,19 @@ The S0–S6 integration is proceeding as an offline candidate. See the [integrat
   <a href="docs/DEVELOPMENT_STATUS.md">Engineering status</a>
 </p>
 
-CirootHarness is a local-first research harness for literature and patent investigation. Its focus is not just generating an answer: it preserves the research specification, source attempts, document versions, evidence locations, review decisions, and execution outcome so that a result can be inspected after the model finishes.
+## What is CirootHarness?
+
+CirootHarness is an **open-source research harness for patent research, scientific literature review, local RAG, and evidence-traceable AI-assisted investigation**. It preserves the research specification, source attempts, document versions, evidence locations, review decisions, and execution outcome so that a result can be inspected after the model finishes.
 
 > **Project principle:** `partial` is not `completed`, a citation is not evidence until it can be traced back to the source, and target architecture is not presented as implemented functionality.
 
-## Why CirootHarness?
+> **Current integration status:** S0–S6 integration is proceeding as an offline candidate. See the [integration guide](docs/INTEGRATION_GUIDE.en.md), [current acceptance status](docs/INTEGRATION_STAGE.md) and [activation requirements](docs/INTEGRATION_ACTIVATION.md) for research engines, regional patent sources and deployment. Component tests do not represent real API or scientific acceptance.
+
+## Who is CirootHarness for?
+
+CirootHarness is designed for researchers, R&D teams, patent/research tooling developers, and AI4Science practitioners who need **reproducible, reviewable AI research workflows** rather than answer-only generation. The current public preview is strongest for local literature workflows, deterministic demos, accepted local-RAG paths, and auditable research infrastructure; the live patent workflow is still being integrated and should not be treated as production-ready.
+
+## How is CirootHarness different from a typical research agent?
 
 Typical research agents optimize for a fluent final answer. CirootHarness is being built around a different requirement: **a research result should remain auditable after generation**.
 
