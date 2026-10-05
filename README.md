@@ -16,14 +16,14 @@ The S0–S6 integration is proceeding as an offline candidate. See the [integrat
 </p>
 
 <p align="center">
-  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/autoSearch-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Siyuan-chat/Ciroot-Harness/actions/workflows/ci.yml"><img src="https://github.com/Siyuan-chat/Ciroot-Harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-desktop%20preview-orange" alt="Desktop preview">
 </p>
 
 <p align="center">
-  <a href="https://github.com/Siyuan-chat/autoSearch-Harness/releases">Download Windows preview</a> ·
+  <a href="https://github.com/Siyuan-chat/Ciroot-Harness/releases">Download Windows preview</a> ·
   <a href="#run-the-offline-demo">Run the offline demo</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="docs/DEVELOPMENT_STATUS.md">Engineering status</a>
@@ -70,7 +70,7 @@ For the detailed stage-by-stage boundary, see [Engineering status](docs/DEVELOPM
 
 ### 1. Try the Windows desktop preview
 
-Download the current portable ZIP from [GitHub Releases](https://github.com/Siyuan-chat/autoSearch-Harness/releases), extract the **entire** `ResearchHarnessGUI` folder, and run:
+Download the current portable ZIP from [GitHub Releases](https://github.com/Siyuan-chat/Ciroot-Harness/releases), extract the **entire** `ResearchHarnessGUI` folder, and run:
 
 ```text
 ResearchHarnessGUI.exe
