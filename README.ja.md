@@ -4,11 +4,9 @@
 
 <h1 align="center">CirootHarness</h1>
 
-S0–S6 の整合はオフライン候補として進行中です。研究エンジン、各地域の特許情報源と配備については [整合ガイド](docs/INTEGRATION_GUIDE.ja.md)、[受入状況](docs/INTEGRATION_STAGE.md) と [有効化条件](docs/INTEGRATION_ACTIVATION.md) を参照してください。コンポーネント試験の合格は、実 API や科学的効果の受入を意味しません。
-
 <p align="center">
-  <strong>特許・科学文献調査のための監査可能な AI research harness。</strong><br>
-  調査質問を、バージョン管理された要件・追跡可能な証拠・レビュー可能なレポートへ変換します。
+  <strong>特許・科学文献のための、オープンソースで local-first な監査可能 AI research harness。</strong><br>
+  回答だけでなく、研究質問をバージョン化された要件・追跡可能な証拠・レビュー可能な研究記録へ変換します。
 </p>
 
 <p align="center">
@@ -29,11 +27,19 @@ S0–S6 の整合はオフライン候補として進行中です。研究エン
   <a href="docs/DEVELOPMENT_STATUS.md">開発状況</a>
 </p>
 
-CirootHarness は、文献・特許調査を対象とする local-first の research harness です。最終回答を生成するだけではなく、調査仕様、source attempt、document version、evidence locator、review decision、実行結果を後から確認できる形で残すことを重視しています。
+## CirootHarness とは？
 
-> **原則:** `partial` は `completed` ではありません。引用は原文へ戻れる状態になって初めて証拠として扱います。また、target design を実装済み機能として表示しません。
+CirootHarness は、**特許調査、科学文献レビュー、local RAG、証拠追跡可能な AI 支援調査**のためのオープンソース research harness です。research specification、source attempt、document version、evidence locator、review decision、実行結果を保存し、モデルの処理後にも調査過程と結論を検査・再確認できることを重視しています。
 
-## CirootHarness が重視すること
+> **原則:** `partial` は `completed` ではありません。引用は原文へ戻れる状態になって初めて証拠として扱い、target design を実装済み機能として表示しません。
+
+> **現在の整合状況:** S0–S6 はオフライン候補として進行中です。研究エンジン、各地域の特許情報源と配備については [整合ガイド](docs/INTEGRATION_GUIDE.ja.md)、[受入状況](docs/INTEGRATION_STAGE.md) と [有効化条件](docs/INTEGRATION_ACTIVATION.md) を参照してください。コンポーネント試験の合格は、実 API や科学的効果の受入を意味しません。
+
+## CirootHarness は誰向けですか？
+
+CirootHarness は、回答生成だけでなく**再現可能でレビュー可能な AI research workflow**を必要とする研究者、R&D チーム、特許・研究ツール開発者、AI4Science 実践者を想定しています。現在の public preview はローカル文献ワークフロー、決定論的 Demo、受入済み local-RAG 経路、監査可能な研究基盤に最も適しており、live 特許調査はまだ整合中で production-ready とみなすべきではありません。
+
+## 一般的な research agent と CirootHarness の違い
 
 | 課題 | CirootHarness の方針 |
 | --- | --- |

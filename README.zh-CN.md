@@ -4,11 +4,9 @@
 
 <h1 align="center">CirootHarness</h1>
 
-S0–S6 整合正在按离线候选推进。研究引擎、多地区专利来源和部署见 [整合指南](docs/INTEGRATION_GUIDE.zh-CN.md)、[当前验收状态](docs/INTEGRATION_STAGE.md) 和 [待激活清单](docs/INTEGRATION_ACTIVATION.md)。组件测试通过不代表真实 API 或科学效果已经验收。
-
 <p align="center">
-  <strong>面向专利与科学文献的可审计 AI 调查框架。</strong><br>
-  把研究问题转换为版本化、证据可追溯、可人工复核的调查报告。
+  <strong>面向专利与科学文献的开源、本地优先、可审计 AI 调查框架。</strong><br>
+  不只生成答案，而是把研究问题转成版本化、证据可追溯、可人工复核的研究记录。
 </p>
 
 <p align="center">
@@ -29,11 +27,19 @@ S0–S6 整合正在按离线候选推进。研究引擎、多地区专利来源
   <a href="docs/DEVELOPMENT_STATUS.md">工程状态</a>
 </p>
 
-CirootHarness 是一个本地优先的文献／专利调查 harness。它的目标不只是“生成一个答案”，而是让一次调查结束后仍能检查：当时冻结了什么需求、调用了哪些来源、使用了哪个文档版本、结论对应哪段证据、哪些问题进入了人工复核，以及本轮究竟是完成、部分完成还是失败。
+## CirootHarness 是什么？
+
+CirootHarness 是一个面向**专利研究、科学文献综述、本地 RAG 和证据可追溯 AI 调查**的开源 research harness。它会保留研究规格、来源尝试、文档版本、证据位置、人工复核决定和执行结果，使模型结束工作后，调查过程和结论仍然可以被检查、复算和复核。
 
 > **项目原则：** `partial` 不等于 `completed`；引用只有能够回到原文位置时才算证据；目标设计不能被包装成已经实现的功能。
 
-## 为什么做 CirootHarness？
+> **当前整合状态：** S0–S6 整合正在按离线候选推进。研究引擎、多地区专利来源和部署见 [整合指南](docs/INTEGRATION_GUIDE.zh-CN.md)、[当前验收状态](docs/INTEGRATION_STAGE.md) 和 [待激活清单](docs/INTEGRATION_ACTIVATION.md)。组件测试通过不代表真实 API 或科学效果已经验收。
+
+## CirootHarness 适合谁？
+
+CirootHarness 面向需要**可复现、可复核 AI 调研流程**的研究人员、研发团队、专利／研究工具开发者和 AI4Science 实践者。当前公开预览版最适合本地文献工作流、确定性 Demo、已验收的本地 RAG 路径和可审计研究基础设施；live 专利工作流仍在整合中，不能视为生产级能力。
+
+## CirootHarness 与普通 research agent 有什么不同？
 
 很多 research agent 优先优化最终答案的流畅度。CirootHarness 优先解决另一个问题：**AI 调查结果在生成之后还能不能被审计。**
 

@@ -181,4 +181,4 @@ After a real hero screenshot exists, create a 1280×640 repository social previe
 - one real product screenshot crop;
 - `Evidence-linked · Local-first · Reviewable`.
 
-Repository social-preview configuration is a GitHub setting and is intentionally not automated by this file.
+Repository social-preview configuration is a GitHub setting and is intentionally not automated by this file. Canonical repository description, topics, preview copy and SEO/GEO query baselines are tracked in [SEO_GEO_BASELINE.md](SEO_GEO_BASELINE.md).
