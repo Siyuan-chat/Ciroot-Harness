@@ -1,0 +1,43 @@
+site_name: CirootHarness
+site_url: https://siyuan-chat.github.io/Ciroot-Harness/
+site_description: Open-source, local-first and auditable AI research harness for patent research and scientific literature.
+repo_url: https://github.com/Siyuan-chat/Ciroot-Harness
+repo_name: Siyuan-chat/Ciroot-Harness
+edit_uri: edit/master/docs/site/
+docs_dir: docs/site
+site_dir: site
+copyright: Apache-2.0 licensed open-source software
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search:
+      lang: en
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Current status: current-status.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Siyuan-chat/Ciroot-Harness
