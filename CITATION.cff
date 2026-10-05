@@ -4,9 +4,9 @@ title: "CirootHarness: an auditable research harness for patents and scientific 
 type: software
 authors:
   - name: "Siyuan-chat"
-repository-code: "https://github.com/Siyuan-chat/autoSearch-Harness"
-url: "https://github.com/Siyuan-chat/autoSearch-Harness"
-version: "0.1.1"
+repository-code: "https://github.com/Siyuan-chat/Ciroot-Harness"
+url: "https://github.com/Siyuan-chat/Ciroot-Harness"
+version: "0.1.2-desktop-preview"
 date-released: "2026-09-28"
 license: "Apache-2.0"
 keywords:
