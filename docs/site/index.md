@@ -38,6 +38,19 @@ See [Current status](current-status.md) for the public capability boundary.
 
 CirootHarness is aimed at researchers, R&D teams, research-tool developers, patent-research tooling developers, and AI4Science practitioners who need inspectable and reproducible AI-assisted research workflows.
 
+
+## Explore the core concepts
+
+These pages answer the main technical questions behind the project directly:
+
+- [What is an auditable AI research agent?](concepts/auditable-ai-research.md)
+- [What does evidence traceability mean in AI research?](concepts/evidence-traceability.md)
+- [How does local RAG fit scientific-literature research?](concepts/local-rag-scientific-literature.md)
+- [What should verifiable AI-assisted patent research record?](concepts/ai-patent-research.md)
+- [Research agent vs research harness: what is the difference?](concepts/research-agent-vs-research-harness.md)
+- [What makes an AI research workflow reproducible?](concepts/reproducible-ai-research-workflows.md)
+- [Glossary](glossary.md)
+
 ## Start here
 
 - [Getting started](getting-started.md)
