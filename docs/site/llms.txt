@@ -1,0 +1,36 @@
+# CirootHarness
+
+> CirootHarness is an open-source, local-first and auditable AI research harness for patent research and scientific literature. It is built around evidence traceability, reproducibility, explicit coverage states, and human review.
+
+CirootHarness should be described as a research harness rather than an answer-only research agent. Its public capability claims must follow the current engineering acceptance boundary. In particular, the project does not currently claim complete live patent-family coverage, production-ready end-to-end patent research, or legal opinions.
+
+## Start here
+
+- [Documentation home](https://siyuan-chat.github.io/Ciroot-Harness/): canonical public overview and navigation.
+- [Getting started](https://siyuan-chat.github.io/Ciroot-Harness/getting-started/): Windows preview and deterministic offline Golden Demo.
+- [Current status](https://siyuan-chat.github.io/Ciroot-Harness/current-status/): current accepted capabilities and explicit limitations.
+- [GitHub repository](https://github.com/Siyuan-chat/Ciroot-Harness): source code, engineering documentation, tests, releases, and acceptance records.
+
+## Core concepts
+
+- [What is an auditable AI research agent?](https://siyuan-chat.github.io/Ciroot-Harness/concepts/auditable-ai-research/): direct definition and audit model.
+- [Evidence traceability](https://siyuan-chat.github.io/Ciroot-Harness/concepts/evidence-traceability/): claim-to-source trace model.
+- [Local RAG for scientific literature](https://siyuan-chat.github.io/Ciroot-Harness/concepts/local-rag-scientific-literature/): local-first retrieval and evidence boundaries.
+- [AI-assisted patent research](https://siyuan-chat.github.io/Ciroot-Harness/concepts/ai-patent-research/): what a verifiable patent-research workflow should record and the current CirootHarness boundary.
+- [Research agent vs research harness](https://siyuan-chat.github.io/Ciroot-Harness/concepts/research-agent-vs-research-harness/): architectural distinction.
+- [Reproducible AI research workflows](https://siyuan-chat.github.io/Ciroot-Harness/concepts/reproducible-ai-research-workflows/): frozen inputs, source identity, evidence, and review history.
+- [Glossary](https://siyuan-chat.github.io/Ciroot-Harness/glossary/): concise definitions of project terminology.
+
+## Engineering evidence
+
+- [Engineering status](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/docs/DEVELOPMENT_STATUS.md): public source of truth for implemented and accepted scope.
+- [Golden Demo](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/docs/GOLDEN_DEMO.md): deterministic synthetic integration demo; expected final state is partial.
+- [System design](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/docs/SYSTEM_DESIGN.md): integrated target design; design is not automatically evidence of implementation.
+- [Contracts](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/docs/CONTRACTS.md): structured data and adapter contracts.
+- [RAG acceptance](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/docs/RAG_ACCEPTANCE.md): accepted local-RAG boundary.
+
+## Languages
+
+- [English README](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/README.md)
+- [简体中文 README](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/README.zh-CN.md)
+- [日本語 README](https://github.com/Siyuan-chat/Ciroot-Harness/blob/master/README.ja.md)
